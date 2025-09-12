@@ -7,6 +7,6 @@ function setup() {
 }
 
 function draw() {
-    walker.step();
+    walker.step2();
     walker.show();  
 }
