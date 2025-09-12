@@ -1,7 +1,3 @@
-// Edit these values to change quaternions
-let q1_w = 1.0, q1_x = 0.0, q1_y = 0.0, q1_z = 0.0;      // First quaternion
-let q2_w = 0.7, q2_x = 0.7, q2_y = 0.0, q2_z = 0.0;      // Second quaternion
-
 class Quaternion {
   constructor(w, x, y, z) {
     this.w = w;
@@ -40,9 +36,19 @@ class Quaternion {
 }
 
 let t = 0;
+// Edit these values to change quaternions
+let q1_w, q1_x, q1_y, q1_z;      // First quaternion 0 degree
+// let q2_w = -0.92, q2_x = 0.38, q2_y = 0.0, q2_z = 0.0;      // Second quaternion
+let q2_w, q2_x, q2_y, q2_z;      // Second quaternion
 
 function setup() {
   createCanvas(800, 600, WEBGL);
+  angleMode(RADIANS);
+
+  angle = PI/4;
+  q1_w = 1.0; q1_x = 0.0; q1_y = 0.0; q1_z = 0.0;
+  q2_w = cos(angle*0.5); q2_x = sin(angle*0.5); q2_y = sin(angle*0.5); q2_z = 0.0;
+
 }
 
 function draw() {
