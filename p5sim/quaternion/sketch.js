@@ -59,7 +59,7 @@ function draw() {
   
   const q1 = new Quaternion(q1_w, q1_x, q1_y, q1_z);
   const q2 = new Quaternion(q2_w, q2_x, q2_y, q2_z);
-  const currentQ = Quaternion.lerp(q1, q2, t);
+  const currentQ = Quaternion.lerp(q1, q2, t); // at t time, q1 will be rotate to q2, because the animation already divided by t in lerp
   
   drawAxes();
   
@@ -70,14 +70,17 @@ function draw() {
 }
 
 function applyQuaternionRotation(q) {
+  // axis for doing the rotation
   const x = createVector(1, 0, 0);
   const y = createVector(0, 1, 0);
   const z = createVector(0, 0, 1);
   
+  // do rotation
   const rx = q.rotateVector(x);
   const ry = q.rotateVector(y);
   const rz = q.rotateVector(z);
   
+  // apply matrix
   applyMatrix(
     rx.x, ry.x, rz.x, 0,
     rx.y, ry.y, rz.y, 0,
