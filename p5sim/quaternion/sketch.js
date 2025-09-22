@@ -47,7 +47,7 @@ function setup() {
 
   angle = PI/4;
   q1_w = 1.0; q1_x = 0.0; q1_y = 0.0; q1_z = 0.0;
-  q2_w = cos(angle*0.5); q2_x = sin(angle*0.5); q2_y = sin(angle*0.5); q2_z = 0.0;
+  q2_w = cos(angle*0.5); q2_x = sin(angle*0.5); q2_y = sin(angle*0.5); q2_z = sin(angle*0.5);
 
 }
 
