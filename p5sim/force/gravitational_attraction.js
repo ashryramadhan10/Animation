@@ -8,7 +8,7 @@ function setup() {
         movers[i] = new Mover(random(width), 50, floor(random(30, 50)));
     }
 
-    attractor = new Attractor(width / 2, height / 2, 50);
+    attractor = new Attractor(width / 2, height / 2, 100);
 }
 
 function draw() {
