@@ -2,13 +2,13 @@ let movers = [];
 let attractor;
 
 function setup() {
-    createCanvas(500, 500);
+    createCanvas(1520, 720);
 
     for (let i = 0; i < 5; i++) {
-        movers[i] = new Mover(random(width), 50, floor(random(30, 50)));
+        movers[i] = new Mover(random(width), 50, floor(random(80, 100)));
     }
 
-    attractor = new Attractor(width / 2, height / 2, 100);
+    attractor = new Attractor(width / 2, height / 2, 800);
 }
 
 function draw() {

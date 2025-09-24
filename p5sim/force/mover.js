@@ -50,21 +50,35 @@ class Mover {
         this.applyForce(drag_force);
     }
 
+    // edges() {
+    //     if (this.pos.y >= height - this.r) {
+    //         this.pos.y = height - this.r;
+    //         this.vel.y *= -1;
+    //     } else if (this.pos.y <= this.r) {
+    //         this.pos.y = this.r;
+    //         this.vel.y *= -1;
+    //     }
+
+    //     if (this.pos.x >= width - this.r) {
+    //         this.pos.x = width - this.r;
+    //         this.vel.x *= -1;
+    //     } else if (this.pos.x <= this.r) {
+    //         this.pos.x = this.r;
+    //         this.vel.x *= -1;
+    //     }
+    // }
+
     edges() {
-        if (this.pos.y >= height - this.r) {
-            this.pos.y = height - this.r;
-            this.vel.y *= -1;
-        } else if (this.pos.y <= this.r) {
-            this.pos.y = this.r;
-            this.vel.y *= -1;
+        if (this.pos.x > width + this.r) {
+            this.pos.x = -this.r;
+        } else if (this.pos.x < -this.r) {
+            this.pos.x = width + this.r;
         }
 
-        if (this.pos.x >= width - this.r) {
-            this.pos.x = width - this.r;
-            this.vel.x *= -1;
-        } else if (this.pos.x <= this.r) {
-            this.pos.x = this.r;
-            this.vel.x *= -1;
+        if (this.pos.y > height + this.r) {
+            this.pos.y = -this.r;
+        } else if (this.pos.y < -this.r) {
+            this.pos.y = height + this.r;
         }
     }
 
@@ -83,5 +97,19 @@ class Mover {
         strokeWeight(2);
         fill(255, 100);
         ellipse(this.pos.x, this.pos.y, this.r * 2);
+
+        let vel_dir = this.vel.copy();
+        let vel_mag = vel_dir.mag();
+        vel_dir.mult(5);
+
+        push();
+        translate(this.pos.x, this.pos.y);
+        strokeWeight(3);
+        line(0, 0, vel_dir.x, vel_dir.y);
+        fill(0, 255, 0);
+        translate(vel_dir.x, vel_dir.y);
+        rotate(vel_dir.heading());
+        triangle(-vel_mag, -vel_mag/2, -vel_mag, vel_mag/2, vel_mag, 0);
+        pop();
     }
 }
