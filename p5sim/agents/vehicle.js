@@ -1,13 +1,17 @@
 class Vehicle {
     constructor(x, y) {
         this.pos = createVector(x, y);
-        this.vel = createVector(1, 0);
+        this.vel = createVector(0, 0);
         this.acc = createVector(0, 0);
         this.maxspeed = 3;
         this.maxforce = 0.1; // this is really important property to make it looks more life-like movement
         this.r = 20;
         this.angle = 0;
         this.wanderTheta = PI / 2;
+        this.noiseXoff = 0;
+
+        this.currentPath = [];
+        this.paths = [this.currentPath];
     }
 
     wander() {
@@ -23,21 +27,26 @@ class Vehicle {
        circle(wanderPoint.x, wanderPoint.y, wanderRadius*2);
        line(this.pos.x, this.pos.y, wanderPoint.x, wanderPoint.y);
 
-       let theta = this.wanderTheta + this.vel.heading();
-       let x = wanderRadius * cos(theta);
-       let y = wanderRadius * sin(theta);
-       wanderPoint.add(x, y);
+       let theta = noise(this.noiseXoff);
+       let thetaMap = map(theta, 0, 1, 0, PI*2);
+       let x = wanderRadius * cos(thetaMap) + wanderPoint.x;
+       let y = wanderRadius * sin(thetaMap) + wanderPoint.y;
+       
+       let secondPoint = createVector(x, y);
+       // wanderPoint.add(x, y);
 
        fill(0, 255, 0);
-       circle(wanderPoint.x, wanderPoint.y, 16);
-       line(this.pos.x, this.pos.y, wanderPoint.x, wanderPoint.y);
+       circle(secondPoint.x, secondPoint.y, 16);
+       line(this.pos.x, this.pos.y, secondPoint.x, secondPoint.y);
 
-       let steer = wanderPoint.sub(this.pos);
+       let steer = secondPoint.sub(this.pos);
        steer.setMag(this.maxforce);
        this.applyForce(steer);
 
        let displaceRange = 0.3;
        this.wanderTheta += random(-displaceRange, displaceRange);
+
+       this.noiseXoff += 0.01;
     }
 
     evade(vehicle) {
@@ -47,14 +56,14 @@ class Vehicle {
     }
 
     pursue(vehicle) {
-        let estimation = vehicle.pos.copy();
-        let velocity = vehicle.vel.copy(); // prediction
-        velocity.mult(10);
+        let target = vehicle.pos.copy();
+        let prediction = vehicle.vel.copy(); // prediction
+        prediction.mult(10);
 
-        estimation.add(velocity);
-        // fill(0, 255, 0);
-        // ellipse(estimation.x, estimation.y, 16);
-        return this.seek(estimation);
+        target.add(prediction);
+        fill(0, 255, 0);
+        ellipse(target.x, target.y, 16);
+        return this.seek(target);
     }
 
     flee(target) {
@@ -63,7 +72,12 @@ class Vehicle {
 
     arrive(target) {
         // how fast the vehicle should move to the target
-        let desired_force = p5.Vector.sub(target.pos, this.pos);
+        let desired_force = p5.Vector.sub(target.pos, this.pos); // visualize this vector
+        stroke(255);
+        let vis_force = desired_force.copy();
+        vis_force.setMag(50);
+        line(this.pos.x, this.pos.y, vis_force.x + this.pos.x, vis_force.y + this.pos.y);
+
         let slowRadius = 100;
         let distance = desired_force.mag();
 
@@ -102,18 +116,30 @@ class Vehicle {
         this.vel.limit(this.maxspeed);
         this.pos.add(this.vel);
         this.acc.set(0, 0);
+
+        this.currentPath.push(this.pos.copy());
     }
 
     edges() {
+        let hitEdge = false;
         if (this.pos.x > width + this.r) {
             this.pos.x = -this.r;
+            hitEdge = true;
         } else if (this.pos.x < -this.r) {
             this.pos.x = width + this.r;
+            hitEdge = true;
         }
         if (this.pos.y > height + this.r) {
             this.pos.y = -this.r;
+            hitEdge = true;
         } else if (this.pos.y < -this.r) {
             this.pos.y = height + this.r;
+            hitEdge = true;
+        }
+
+        if (hitEdge) {
+            this.currentPath = [];
+            this.paths.push(this.currentPath);
         }
     }
 
@@ -128,6 +154,15 @@ class Vehicle {
         triangle(-this.r, -this.r/2, -this.r, this.r/2, this.r, 0);
         // this.drawArrow(createVector(0, 0), this.vel, 'blue');
         pop();
+        
+        for (let path of this.paths) {
+            beginShape();
+            for (let v of path) {
+                noFill();
+                vertex(v.x, v.y);
+            }
+            endShape();
+        }
     }
 
     drawArrow(base, vec, myColor) {

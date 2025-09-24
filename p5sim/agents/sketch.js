@@ -2,11 +2,11 @@ let pursuer;
 let target;
 
 function setup() {
-    createCanvas(500, 500);
+    createCanvas(1520, 720);
     background(0);
     angleMode(RADIANS);
     pursuer = new Vehicle(width / 2, height / 2);
-    // target = new Target(width / 2, height / 2);
+    target = new Target(width / 2, height / 2);
 }
 
 function draw() {
@@ -18,8 +18,11 @@ function draw() {
     // let seek = pursuer.seek(target.pos);
     // pursuer.applyForce(seek);
 
-    // let pursue_force = pursuer.arrive(target);
+    // let pursue_force = pursuer.pursue(target);
     // pursuer.applyForce(pursue_force);
+
+    // let arrive_force = pursuer.arrive(target);
+    // pursuer.applyForce(arrive_force);
 
     pursuer.wander();
     pursuer.update();
@@ -28,14 +31,15 @@ function draw() {
 
     // let flee = target.flee(pursuer.pos);
     // target.applyForce(flee);
+    
     // let evade_force = target.evade(pursuer);
     // target.applyForce(evade_force);
     
-    // target.edges();
-    // target.pos.x = mouseX;
-    // target.pos.y = mouseY;
-    // target.update();
-    // target.show();
+    target.edges();
+    target.pos.x = mouseX;
+    target.pos.y = mouseY;
+    target.update();
+    target.show();
 
     // noLoop();
 }
