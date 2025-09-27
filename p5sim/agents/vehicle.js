@@ -57,8 +57,8 @@ class Vehicle {
 
     pursue(vehicle) {
         let target = vehicle.pos.copy();
-        let prediction = vehicle.vel.copy(); // prediction
-        prediction.mult(10);
+        let prediction = vehicle.vel.copy();
+        prediction.mult(10); // this is the prediction, current speed * 10
 
         target.add(prediction);
         fill(0, 255, 0);
@@ -137,10 +137,10 @@ class Vehicle {
             hitEdge = true;
         }
 
-        if (hitEdge) {
-            this.currentPath = [];
-            this.paths.push(this.currentPath);
-        }
+        // if (hitEdge) {
+        //     this.currentPath = [];
+        //     this.paths.push(this.currentPath);
+        // }
     }
 
     show() {
@@ -155,14 +155,14 @@ class Vehicle {
         // this.drawArrow(createVector(0, 0), this.vel, 'blue');
         pop();
         
-        for (let path of this.paths) {
-            beginShape();
-            for (let v of path) {
-                noFill();
-                vertex(v.x, v.y);
-            }
-            endShape();
-        }
+        // for (let path of this.paths) {
+        //     beginShape();
+        //     for (let v of path) {
+        //         noFill();
+        //         vertex(v.x, v.y);
+        //     }
+        //     endShape();
+        // }
     }
 
     drawArrow(base, vec, myColor) {
