@@ -5,7 +5,7 @@ class Vehicle {
         this.acc = createVector(0, 0);
         this.maxspeed = 3;
         this.maxforce = 0.1; // this is really important property to make it looks more life-like movement
-        this.r = 20;
+        this.r = 10;
         this.angle = 0;
         this.wanderTheta = PI / 2;
         this.noiseXoff = 0;
@@ -107,6 +107,16 @@ class Vehicle {
         return steering;
     }
 
+    follow(field) {
+        let desired = field.lookup(this.pos);
+        desired.setMag(this.maxspeed);
+
+        let steering = p5.Vector.sub(desired, this.vel);
+        steering.limit(this.maxforce);
+
+        return steering;
+    }
+
     applyForce(force) {
         this.acc.add(force);
     }
@@ -137,10 +147,10 @@ class Vehicle {
             hitEdge = true;
         }
 
-        // if (hitEdge) {
-        //     this.currentPath = [];
-        //     this.paths.push(this.currentPath);
-        // }
+        if (hitEdge) {
+            this.currentPath = [];
+            this.paths.push(this.currentPath);
+        }
     }
 
     show() {
@@ -155,14 +165,15 @@ class Vehicle {
         // this.drawArrow(createVector(0, 0), this.vel, 'blue');
         pop();
         
-        // for (let path of this.paths) {
-        //     beginShape();
-        //     for (let v of path) {
-        //         noFill();
-        //         vertex(v.x, v.y);
-        //     }
-        //     endShape();
-        // }
+        stroke(255, 0, 0, 100);
+        for (let path of this.paths) {
+            beginShape();
+            for (let v of path) {
+                noFill();
+                vertex(v.x, v.y);
+            }
+            endShape();
+        }
     }
 
     drawArrow(base, vec, myColor) {
@@ -179,6 +190,12 @@ class Vehicle {
         // translate(mag - arrowSize, 0); // translate frame again to the tip of the vector mag
         // triangle(0, arrowSize / 2, 0, -arrowSize / 2, arrowSize, 0); // triangle use arrowSize, that's why need to substract by arrowSize
         // pop();
+    }
+
+    run() {
+        this.edges();
+        this.update();
+        this.show();
     }
 }
 
