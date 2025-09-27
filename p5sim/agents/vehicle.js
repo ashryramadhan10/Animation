@@ -70,6 +70,13 @@ class Vehicle {
         return this.seek(target).mult(-1);
     }
 
+    fleeGroup() {
+        let searchRadius = 100;
+        stroke(255);
+        noFill();
+        circle(this.pos.x, this.pos.y, searchRadius);
+    }
+
     arrive(target) {
         // how fast the vehicle should move to the target
         let desired_force = p5.Vector.sub(target.pos, this.pos); // visualize this vector
@@ -165,15 +172,15 @@ class Vehicle {
         // this.drawArrow(createVector(0, 0), this.vel, 'blue');
         pop();
         
-        stroke(255, 0, 0, 100);
-        for (let path of this.paths) {
-            beginShape();
-            for (let v of path) {
-                noFill();
-                vertex(v.x, v.y);
-            }
-            endShape();
-        }
+        // stroke(255, 0, 0, 100);
+        // for (let path of this.paths) {
+        //     beginShape();
+        //     for (let v of path) {
+        //         noFill();
+        //         vertex(v.x, v.y);
+        //     }
+        //     endShape();
+        // }
     }
 
     drawArrow(base, vec, myColor) {

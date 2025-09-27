@@ -1,8 +1,16 @@
 let flow_field;
-let vehicle;
+let numOfVehicles = 50;
+let vehicles = [];
+
+let btn, chunks = [];
+const fr = 60;
 
 function setup() {
-    createCanvas(500, 500);
+    createCanvas(1520, 720);
+    frameRate(fr);
+    btn = document.querySelector('button');
+    btn.onclick = record;
+
     background(0);
     let resolution = 20;
     let rows = height / resolution;
@@ -10,15 +18,20 @@ function setup() {
     flow_field = new FlowField(rows, cols, resolution);
     flow_field.init();
 
-    vehicle = new Vehicle(random(width), random(height));
+    for (let i = 0; i < numOfVehicles; i++) {
+        vehicles[i] = new Vehicle(random(width), random(height));
+    }
 }
 
 function draw() {
     background(0);
 
-    flow_field.display();
+    // flow_field.display();
 
-    let followForce = vehicle.follow(flow_field);
-    vehicle.applyForce(followForce);
-    vehicle.run();
+    for (let i = 0; i < numOfVehicles; i++) {
+        let followForce = vehicles[i].follow(flow_field);
+        vehicles[i].applyForce(followForce);
+        // vehicles[i].fleeGroup();
+        vehicles[i].run();
+    }
 }
