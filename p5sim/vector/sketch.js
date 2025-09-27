@@ -7,12 +7,26 @@ function setup() {
   let v1 = createVector(100, 200);
   let v2 = createVector(200, 100);
   let v3 = v2.copy().sub(v1);
-  let vtest = createVector(100, 200);
+  let futurePos = v1.copy().add(v3);
+
+  let a = createVector(100, 380);
+  let b = createVector(300, 350);
+
+  let ap = futurePos.copy().sub(a);
+  let ab = b.copy().sub(a);
+  ab.normalize();
+  ab.mult(ap.dot(ab));
+  let normalVector = p5.Vector.add(a, ab);
   
-  drawArrow(base, v1, 'red');
-  drawArrow(base, v2, 'blue');
+  // drawArrow(base, v1, 'red');
+  // drawArrow(base, v2, 'blue');
   drawArrow(v1, v3, 'green');
-  drawArrow(v2, vtest, 'yellow');
+  drawArrow(base, a, 'red');
+  drawArrow(base, b, 'red');
+  drawArrow(a, ap, 'blue');
+  drawArrow(a, ab, 'blue');
+  drawArrow(base, futurePos, 'yellow');
+  drawArrow(base, normalVector, (200, 100, 200));
 }
 
 function drawArrow(base, vec, myColor) {
