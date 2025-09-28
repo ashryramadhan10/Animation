@@ -31,7 +31,8 @@ function draw() {
     for (let i = 0; i < numOfVehicles; i++) {
         let followForce = vehicles[i].follow(flow_field);
         vehicles[i].applyForce(followForce);
-        // vehicles[i].fleeGroup();
+
+        vehicles[i].separation(vehicles);
         vehicles[i].run();
     }
 }

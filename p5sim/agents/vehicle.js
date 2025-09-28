@@ -14,6 +14,59 @@ class Vehicle {
         this.paths = [this.currentPath];
     }
 
+    align(vehicles) {
+        let neighbourDist = 50;
+        let sum = createVector(0, 0);
+        let count = 0;
+
+        for (let other of vehicles) {
+            let d = p5.Vector.dist(this.pos, other.pos);
+            if(d > 0 && d < neighbourDist) {
+                sum.add(other.vel);
+                count++;
+            }
+        }
+
+        if (count > 0) {
+            sum.div(float(count)); // means
+            sum.normalize();
+            sum.mult(this.maxspeed);
+            
+            let steer = p5.Vector.sub(sum, this.vel);
+            steer.limit(this.maxforce);
+            this.applyForce(steer);
+        }
+    }
+
+    separation(vehicles) {
+        let desiredSeparation = this.r*3;
+        let sum = createVector(0, 0);
+        let count = 0;
+
+        for (let other of vehicles) {
+            let d = p5.Vector.dist(this.pos, other.pos);
+
+            if (d > 0 && d < desiredSeparation) {
+                // calculate vector pointing away from neighbour
+                let diff = p5.Vector.sub(this.pos, other.pos);
+                diff.normalize();
+                diff.div(d); // proportion by distance, if the distance close enough the bigger the force
+                sum.add(diff);
+                count++;
+            }
+        }
+
+        if (count > 0) {
+            sum.div(count);
+            sum.normalize();
+            sum.mult(this.maxspeed);
+
+            let steer = p5.Vector.sub(sum, this.vel);
+            steer.limit(this.maxforce);
+            this.applyForce(steer);
+        }
+    }
+
     wander() {
        let wanderPoint = this.vel.copy();
        wanderPoint.setMag(100);
@@ -68,13 +121,6 @@ class Vehicle {
 
     flee(target) {
         return this.seek(target).mult(-1);
-    }
-
-    fleeGroup() {
-        let searchRadius = 100;
-        stroke(255);
-        noFill();
-        circle(this.pos.x, this.pos.y, searchRadius);
     }
 
     arrive(target) {
