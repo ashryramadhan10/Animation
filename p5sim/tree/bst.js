@@ -71,17 +71,21 @@ class BST {
     
     update() {
         if (this.root) {
-            this.updateNodePositions(this.root);
+            return this.updateNodePositions(this.root);
         }
+        return false;
     }
     
     updateNodePositions(node) {
-        if (!node) return;
+        if (!node) return false;
         
+        let isMoving = p5.Vector.dist(node.pos, node.targetPos) > 1;
         node.pos.lerp(node.targetPos, this.animationSpeed);
         
-        this.updateNodePositions(node.left);
-        this.updateNodePositions(node.right);
+        let leftMoving = this.updateNodePositions(node.left);
+        let rightMoving = this.updateNodePositions(node.right);
+        
+        return isMoving || leftMoving || rightMoving;
     }
 
     render(node) {
@@ -176,6 +180,11 @@ class BST {
     }
 
     rotateRight(y) {
+        let yParentLevel = 0;
+        if (y.parent != null) {
+            yParentLevel = y.parent.level;
+        }
+
         let x = y.left;
         let T2 = x.right;
 
@@ -191,28 +200,27 @@ class BST {
         x.right = y;
         y.parent = x;
 
-        // swap x and y level
-        let tmpLvl = y.level;
-        y.level = x.level;
-        x.level = tmpLvl;
-
-        // decrease x->left level
-        if (x.left != null) {
-            x.left.level -= 1;
-        }
-
         y.left = T2;
         if (T2 != null) {
             T2.parent = y;
         }
 
+        // update height
         y.height = this.updateHeight(y);
         x.height = this.updateHeight(x);
+
+        // update depth/level start from x traversing
+        this.updateNodeLevel(x, yParentLevel+1);
 
         return x;
     }
 
     rotateLeft(y) {
+        let yParentLevel = 0;
+        if (y.parent != null) {
+            yParentLevel = y.parent.level;
+        }
+        
         let x = y.right;
         let T2 = x.left;
 
@@ -228,16 +236,6 @@ class BST {
         x.left = y;
         y.parent = x;
 
-        // swap x and y level
-        let tmpLvl = y.level;
-        y.level = x.level;
-        x.level = tmpLvl;
-
-        // decrease x->left level
-        if (x.right != null) {
-            x.right.level -= 1;
-        }
-
         y.right = T2;
         if (T2 != null) {
             T2.parent = y;
@@ -246,6 +244,20 @@ class BST {
         y.height = this.updateHeight(y);
         x.height = this.updateHeight(x);
 
+        // update depth/level start from x traversing
+        this.updateNodeLevel(x, yParentLevel+1);
+
         return x;
+    }
+
+    updateNodeLevel(node, level) {
+        if (!node) return;
+
+        // update level
+        node.level = level;
+        level++;
+
+        this.updateNodeLevel(node.left, level);
+        this.updateNodeLevel(node.right, level);
     }
 }
