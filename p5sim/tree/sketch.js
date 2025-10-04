@@ -3,8 +3,11 @@ let btnInsert;
 let inputInsertValue;
 let isAnimating = false;
 
+let btnSearch;
+
 function setup() {
     createCanvas(700, 700);
+    background(255);
     angleMode(RADIANS);
     tree = new BST();
 
@@ -14,6 +17,10 @@ function setup() {
     btnInsert = createButton('insert');
     btnInsert.position(width + 30, 25);
     btnInsert.mousePressed(treeInsert);
+
+    btnSearch = createButton('search');
+    btnSearch.position(width + 80, 25);
+    btnSearch.mousePressed(treeSearch);
     
     // Insert initial values once
     tree.insert(10);
@@ -30,7 +37,7 @@ function setup() {
 }
 
 function draw() {
-    background(127);
+    background(255);
     
     if (tree.root) {
         isAnimating = tree.update(); // update incremently with lerp
@@ -46,6 +53,16 @@ function treeInsert() {
     let value = parseInt(inputInsertValue.value());
     if (!isNaN(value)) {
         tree.insert(value);
+        isAnimating = true;
+        loop();
+        inputInsertValue.value('');
+    }
+}
+
+function treeSearch() {
+    let value = parseInt(inputInsertValue.value());
+    if (!isNaN(value)) {
+        tree.search(value);
         isAnimating = true;
         loop();
         inputInsertValue.value('');

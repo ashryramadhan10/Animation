@@ -220,7 +220,7 @@ class BST {
         if (y.parent != null) {
             yParentLevel = y.parent.level;
         }
-        
+
         let x = y.right;
         let T2 = x.left;
 
@@ -259,5 +259,32 @@ class BST {
 
         this.updateNodeLevel(node.left, level);
         this.updateNodeLevel(node.right, level);
+    }
+
+    search(value) {
+        let searchedNode = this.searchNode(this.root, value);
+        if (searchedNode) {
+            console.log("FOUND", searchedNode);
+        } else {
+            console.log("NOT FOUND");
+        }
+    }
+
+    searchNode(node, value) {
+        if (!node) return null;
+
+        if (node.value == value) {
+            return node;
+        }
+
+        if (node.left != null && value < node.value) {
+            return this.searchNode(node.left, value);
+        }
+
+        if (node.right != null && value > node.value) {
+            return this.searchNode(node.right, value);
+        }
+
+        return null;
     }
 }
