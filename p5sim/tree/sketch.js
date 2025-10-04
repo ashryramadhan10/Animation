@@ -66,5 +66,6 @@ function treeSearch() {
         isAnimating = true;
         loop();
         inputInsertValue.value('');
+        tree.searchPaths = [];
     }
 }

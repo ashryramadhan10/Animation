@@ -10,6 +10,7 @@ class Node {
         this.r = 30;
         this.level = 1;
         this.isNew = false;
+        this.color = [100, 255, 100];
     }
 }
 
@@ -17,6 +18,7 @@ class BST {
     constructor() {
         this.root = null;
         this.animationSpeed = 0.05;
+        this.searchPaths = [];
     }
 
     insert(value) {
@@ -71,19 +73,39 @@ class BST {
     
     update() {
         if (this.root) {
-            return this.updateNodePositions(this.root);
+            return this.updateNodes(this.root);
         }
         return false;
     }
     
-    updateNodePositions(node) {
+    updateNodes(node) {
         if (!node) return false;
         
+        // update position
         let isMoving = p5.Vector.dist(node.pos, node.targetPos) > 1;
         node.pos.lerp(node.targetPos, this.animationSpeed);
+
+        // update color
+         if (node.parent == null) {
+            node.color[0] = 255;
+            node.color[1] = 100;
+            node.color[2] = 100;
+        } else {
+            node.color[0] = 100;
+            node.color[1] = 255;
+            node.color[2] = 100;
+        }
         
-        let leftMoving = this.updateNodePositions(node.left);
-        let rightMoving = this.updateNodePositions(node.right);
+        for (let i = 0; i < this.searchPaths.length; i++) {
+            if (node == this.searchPaths[i]) {
+                node.color[0] = 200;
+                node.color[1] = 200;
+                node.color[2] = 100;
+            }
+        }
+        
+        let leftMoving = this.updateNodes(node.left);
+        let rightMoving = this.updateNodes(node.right);
         
         return isMoving || leftMoving || rightMoving;
     }
@@ -101,9 +123,14 @@ class BST {
 
         // Draw node
         if (node.parent == null) {
-            fill(255, 100, 100);
+
+            node.color[0] = 255;
+            node.color[1] = 100;
+            node.color[2] = 100;
+
+            fill(node.color[0], node.color[1], node.color[2]);
         } else {
-            fill(100, 255, 100);
+            fill(node.color[0], node.color[1], node.color[2]);
         }
         stroke(255);
         circle(node.pos.x, node.pos.y, node.r);
@@ -262,27 +289,30 @@ class BST {
     }
 
     search(value) {
-        let searchedNode = this.searchNode(this.root, value);
+        let searchedNode = this.searchNode(this.root, value, this.searchPaths);
         if (searchedNode) {
-            console.log("FOUND", searchedNode);
+            console.log(searchedNode);
         } else {
             console.log("NOT FOUND");
         }
     }
 
-    searchNode(node, value) {
+    searchNode(node, value, searchPaths) {
         if (!node) return null;
 
+        this.searchPaths.push(node);
+
         if (node.value == value) {
+            console.log("FOUND");
             return node;
         }
 
         if (node.left != null && value < node.value) {
-            return this.searchNode(node.left, value);
+            return this.searchNode(node.left, value, this.searchPaths);
         }
 
         if (node.right != null && value > node.value) {
-            return this.searchNode(node.right, value);
+            return this.searchNode(node.right, value, this.searchPaths);
         }
 
         return null;
