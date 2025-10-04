@@ -216,6 +216,11 @@ class BST {
     }
 
     rotateLeft(y) {
+        let yParentLevel = 0;
+        if (y.parent != null) {
+            yParentLevel = y.parent.level;
+        }
+        
         let x = y.right;
         let T2 = x.left;
 
