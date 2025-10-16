@@ -5,31 +5,55 @@ class Anchor {
         this.pos = createVector(x, y);
         this.vel = createVector(0, 0);
         this.acc = createVector(0, 0);
-        this.maxspeed = 5;
+        this.maxspeed = 10;
         this.maxforce = 0.1;
         this.r = size;
         this.ringRadius = size * 8;
         this.hasRadius = hasRadius;
         this.isAnchor = isAnchor;
+        this.noiseXoff = 0;
+        this.wanderTheta = 0;
+    }
+
+    applyForce(force) {
+        return this.acc.add(force);
     }
 
     wander() {
         let currentVel = this.vel.copy();
         let futurePos = this.pos.copy();
 
-        currentVel.mult(10);
+        currentVel.mult(20);
         futurePos.add(currentVel);
 
-        if (this.isAnchor) {
-            fill(0, 255, 0);
-            circle(futurePos.x, futurePos.y, 16);
-        }
+        // fill(0, 255, 0);
+        // circle(futurePos.x, futurePos.y, 16);
+
+        let radius = 100;
+        let theta = noise(this.noiseXoff);
+        this.wanderTheta = map(theta, 0, 1, 0, PI * 2);
+        let x = radius * cos(this.wanderTheta) + futurePos.x;
+        let y = radius * sin(this.wanderTheta) + futurePos.y;
+        let seekVector = createVector(x, y);
+        // fill(255, 0, 0);
+        // circle(seekVector.x, seekVector.y, 16);
+        // line(this.pos.x, this.pos.y, seekVector.x, seekVector.y);
+        this.seek(seekVector);
+
+        this.noiseXoff += 0.01;
+    }
+
+    seek(vec) {
+        let desired = p5.Vector.sub(vec, this.pos);
+        desired.setMag(this.maxspeed);
+
+        let force = p5.Vector.sub(desired, this.vel);
+        force.limit(this.maxforce);
+
+        this.applyForce(force);
     }
 
     update() {
-        if (this.isAnchor) {
-            this.vel.x = 5;
-        }
         this.vel.add(this.acc);
         this.vel.limit(this.maxspeed);
         this.pos.add(this.vel);
@@ -74,7 +98,7 @@ class Anchor {
         noFill();
         stroke(255);
         strokeWeight(3);
-        drawingContext.setLineDash([1, 1]);
+        // drawingContext.setLineDash([1, 1]);
 
         // if (this.isAnchor) {
         //     this.pos.x = mouseX;
@@ -85,7 +109,7 @@ class Anchor {
 
         if (this.hasRadius) {
             stroke(255, 100);
-            drawingContext.setLineDash([10, 10]);
+            // drawingContext.setLineDash([10, 10]);
             circle(this.pos.x, this.pos.y, this.ringRadius);
         }
     }
@@ -108,7 +132,7 @@ class Anchor {
         translate(this.pos.x, this.pos.y);
         stroke(255, 100, 100);
         strokeWeight(3);
-        drawingContext.setLineDash([1, 1]);
+        // drawingContext.setLineDash([1, 1]);
         line(0, 0, posVec.x, posVec.y);
 
         rotate(angle);
@@ -160,24 +184,35 @@ class Anchor {
 
 let anchor;
 let otherAnchors = [];
-let n = 14;
+let n = 35;
+let cam;
+
+let btn, chunks = [];
+const fr = 60;
 
 function preload() {
     jetBrainsMono = loadFont('../../fonts/JetBrainsMono-Regular.ttf');
 }
 
 function setup() {
-    createCanvas(1530, 710);
+    createCanvas(1850, 950, WEBGL);
+    frameRate(fr);
     background(0);
     textFont(jetBrainsMono);
+    
+    btn = document.querySelector('button');
+    btn.onclick = record;
 
     angleMode(RADIANS);
 
+    cam = createCamera();
+
     anchor = new Anchor(width / 2, height / 2, 16, true, true);
 
-    let sizes = [16, 16, 16, 8, 8, 8, 8, 8, 6, 6, 6, 4, 4, 4];
+    let sizeReducer = 0;
     for (let i = 0; i < n; i++) {
-        otherAnchors[i] = new Anchor(random(width), random(height), sizes[i], true, false);
+        otherAnchors[i] = new Anchor(random(width), random(height), noise(sizeReducer) * 20, true, false);
+        sizeReducer += 0.01;
     }
 }
 
@@ -185,8 +220,12 @@ function draw() {
     background(0);
 
     let wrapOffset = anchor.borders(otherAnchors);
+    anchor.wander();
     anchor.update();
     anchor.render();
+
+    cam.setPosition(anchor.pos.x + 0, anchor.pos.y - 200, 700);
+    cam.lookAt(anchor.pos.x, anchor.pos.y, anchor.pos.z);
 
     // Apply wrap offset to all connected points
     // Thus, otherAnchors[i] will automatically hit the borders with addition from wrapOffset
