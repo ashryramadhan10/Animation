@@ -2,6 +2,10 @@ function setup() {
   createCanvas(500, 500);
   background(50);
   angleMode(RADIANS);
+}
+
+function draw() {
+  background(0);
 
   let base = createVector(0, 0);
   let v1 = createVector(100, 200);
@@ -10,7 +14,8 @@ function setup() {
   let futurePos = v1.copy().add(v3);
 
   let a = createVector(100, 380);
-  let b = createVector(300, 350);
+  let b = createVector(mouseX, mouseY);
+  circle(mouseX, mouseY, 16);
 
   let ap = futurePos.copy().sub(a);
   let ab = b.copy().sub(a);
