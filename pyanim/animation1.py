@@ -18,7 +18,10 @@ altitude=2 # [km]
 y=np.ones(len(t))*altitude
 
 # Speed in the x direction constant through t times
-speed_x=np.ones(len(t))*800
+# speed_x=np.ones(len(t))*800
+# speed_x=np.sin(np.linspace(1, 100, len(t)))
+speed_x = 500 + 200*np.sin(np.linspace(0, 8*np.pi, len(t)))  # example varying speed, always positive
+x = np.cumsum(speed_x) * dt
 
 # drawing dot for every 20 jumps
 frame_amount=len(t)
