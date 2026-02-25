@@ -151,10 +151,19 @@ class Anchor {
     }
 
     constraintAngle(angle, anchor, constraint) {
+        // example, let say anchor is 90 and constraint is 30 degree with range [60, 120]
+        // if the input angle is 10 degree then the 2nd if will be executed
+        // since it is surpass the constraint, calculation
+        // anchor 90, angle 10, constraint 30
+        // relative anggle diff = 180 - simplifyAngle(angle - anchor + PI) -> 180 - simplifyAngle(10 - 90 + 180)
+        // 180 - simplifyAngle(100) = 80
+
+        // check first condition abs(80) <= 30 ? FALSE
         if (abs(this.relativeAngleDiff(angle, anchor)) <= constraint) {
             return this.simplifyAngle(angle);
         }
 
+        // check second condition 80 > 30 ? TRUE
         if (this.relativeAngleDiff(angle, anchor) > constraint) {
             return this.simplifyAngle(anchor - constraint);
         }
