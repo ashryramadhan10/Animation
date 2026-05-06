@@ -41,13 +41,15 @@ function draw() {
     let pow = 3
     let h0 = 5 * (1/10**pow);
     let h1 = -2 * (1/10**pow);
+    h0 = 0;
+    h1 = 0;
 
     let b0 = 0;
     let b1 = 0;
 
     let hMat = [
-        [1, 0, b0],
-        [0, 1, b1],
+        [2, 0, b0],
+        [0, 2, b1],
         [h0, h1, 1]
     ]
 
