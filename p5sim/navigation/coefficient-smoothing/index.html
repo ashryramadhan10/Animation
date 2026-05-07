@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coefficient Smoothing - Vision Pointcloud Pipeline p5js</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <h1>Coefficient Smoothing</h1>
+          <p>Standalone p5js sketch for EMA smoothing on fitted line coefficients.</p>
+        </div>
+        <div class="controls">
+          <a class="nav-link" href="../index.html">Combined app</a>
+          <button id="pauseButton" type="button">Pause</button>
+          <button id="resetButton" type="button">Reset</button>
+        </div>
+      </section>
+      <section id="canvasHost" class="canvas-host"></section>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <script src="sketch.js"></script>
+  </body>
+</html>

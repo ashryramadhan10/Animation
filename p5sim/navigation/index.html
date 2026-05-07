@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vision Pointcloud Pipeline p5js Simulator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <h1>Vision Pointcloud Pipeline</h1>
+          <p>Synthetic p5js simulations for the C++ correction pipeline stages.</p>
+        </div>
+        <div class="controls">
+          <label for="demoSelect">Demo</label>
+          <select id="demoSelect"></select>
+          <button id="pauseButton" type="button">Pause</button>
+          <button id="resetButton" type="button">Reset</button>
+        </div>
+      </section>
+      <section id="canvasHost" class="canvas-host"></section>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <script src="scripts/core.js"></script>
+    <script src="scripts/renderer.js"></script>
+    <script src="scripts/demos.js"></script>
+    <script src="scripts/sketch.js"></script>
+  </body>
+</html>
