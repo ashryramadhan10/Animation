@@ -1,16 +1,51 @@
-// Pipeline Demo
-// Demonstrates the full navigation correction pipeline:
-// pointclouds -> face filter -> line fit -> centerline -> corrected pose
+/**
+ * Pipeline Demo
+ *
+ * PURPOSE:
+ * Demonstrates the full navigation correction pipeline from raw pointclouds
+ * to corrected pose. This is a standalone visualization of all stages.
+ *
+ * PIPELINE STAGES:
+ *   1. Pointclouds: Raw points from segmentation masks + registered depth
+ *   2. Face Filter: Remove interior/noise points, keep outer rack face
+ *   3. Line Fit: Fit lines to left and right rack faces
+ *   4. Centerline: Average left and right fits
+ *   5. Correction: Shift FCU pose toward centerline
+ *
+ * VISUAL:
+ *   [raw points] -> [face points] -> [fitted lines] -> [centerline] -> [pose]
+ *       dim           bright          blue/yellow        green         arrows
+ *
+ * CONTROLS:
+ * - SPACE: Pause/Resume animation
+ * - R: Reset to frame 0
+ */
 
 #include "raylib.h"
 #include <cmath>
 #include <vector>
 #include <string>
 
+//=============================================================================
+// Constants
+//=============================================================================
 const float DEG = PI / 180.0f;
 const float AISLE_YAW = 33.5f * DEG;
 
-// Deterministic PRNG
+//=============================================================================
+// Rng - Deterministic Random Number Generator
+//=============================================================================
+/**
+ * Generates repeatable random numbers from a seed.
+ *
+ * USAGE EXAMPLE:
+ *   Rng rng(42);
+ *   float x = rng.next();           // Random in [0, 1)
+ *   float noise = rng.gaussian(0.02f);  // Gaussian with sigma=0.02
+ *
+ * USED IN THIS SCRIPT:
+ *   - makeTrack(): Creates point clouds for left/right racks
+ */
 class Rng {
 public:
     explicit Rng(unsigned int seed) : state_(seed) {}
@@ -33,7 +68,20 @@ private:
     unsigned int state_;
 };
 
-// 2D vector
+//=============================================================================
+// Vec2 - 2D Vector
+//=============================================================================
+/**
+ * Simple 2D vector with basic operations.
+ *
+ * USAGE EXAMPLE:
+ *   Vec2 a = {1.0f, 2.0f};
+ *   Vec2 b = a * 2.0f;  // {2.0f, 4.0f}
+ *   Vec2 c = a + b;     // {3.0f, 6.0f}
+ *
+ * USED IN THIS SCRIPT:
+ *   - Throughout for position calculations
+ */
 struct Vec2 {
     float x, y;
     Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }
@@ -41,22 +89,79 @@ struct Vec2 {
     Vec2 operator*(float s) const { return {x * s, y * s}; }
 };
 
+/**
+ * Direction vector from angle (unit vector pointing in angle direction).
+ */
 Vec2 dir(float angle) { return {cosf(angle), sinf(angle)}; }
+
+/**
+ * Normal (perpendicular) vector from angle (points left of direction).
+ */
 Vec2 aisleNormal(float angle) { return {-sinf(angle), cosf(angle)}; }
 
-// Line in slope-intercept form
+//=============================================================================
+// Line - Slope-Intercept Form
+//=============================================================================
+/**
+ * Line equation: y = m*x + b
+ *
+ * USED IN THIS SCRIPT:
+ *   - fitLine(): Returns fitted line
+ *   - centerlineFromTwoFits(): Averages two lines
+ */
 struct Line { float m, b; };
 
-// Pose with position and yaw
+//=============================================================================
+// Pose - Position and Orientation
+//=============================================================================
+/**
+ * 2D pose with position and yaw angle.
+ *
+ * USED IN THIS SCRIPT:
+ *   - makeFcu(): Returns simulated FCU pose
+ *   - correctedPose(): Returns corrected pose
+ */
 struct Pose { float x, y, yaw; };
 
-// Track with side label
+//=============================================================================
+// Track - Points from One Rack
+//=============================================================================
+/**
+ * Collection of points from one rack with side label.
+ *
+ * USED IN THIS SCRIPT:
+ *   - makeTrack(): Generates points for one side
+ *   - main(): Stores left and right track data
+ */
 struct Track {
     const char* side;
     std::vector<Vec2> points;
 };
 
-// Generate one track's points
+//=============================================================================
+// makeTrack() - Generate Point Cloud for One Rack
+//=============================================================================
+/**
+ * Creates synthetic point cloud for one rack side.
+ *
+ * PARAMETERS:
+ *   frameIndex - Frame number (affects position along aisle)
+ *   side       - "left" or "right"
+ *
+ * RETURNS:
+ *   Track with 140 face points and 70 interior points
+ *
+ * POINT TYPES:
+ *   - Face points: Along the rack face with small gaussian noise
+ *   - Interior points: Scattered behind face (simulates interior reflections)
+ *
+ * USAGE EXAMPLE:
+ *   Track left = makeTrack(frameIndex, "left");
+ *   Track right = makeTrack(frameIndex, "right");
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Called each frame to generate point clouds
+ */
 Track makeTrack(int frameIndex, const char* side) {
     Rng rng(1200 + frameIndex * 7 + (side[0] == 'l' ? 1 : 2));
 
@@ -64,19 +169,20 @@ Track makeTrack(int frameIndex, const char* side) {
     float halfWidth = 1.58f;
     float sideSign = (side[0] == 'l') ? 1.0f : -1.0f;
 
+    // Base position of rack face
     Vec2 base = dir(AISLE_YAW) * along + aisleNormal(AISLE_YAW) * (sideSign * halfWidth);
     Vec2 inward = aisleNormal(AISLE_YAW) * (-sideSign);
 
     std::vector<Vec2> points;
 
-    // Face points
+    // Face points (outer surface of rack)
     for (int i = 0; i < 140; ++i) {
         float t = -1.6f + 3.2f * rng.next();
         Vec2 noise = {rng.gaussian(0.018f), rng.gaussian(0.018f)};
         points.push_back(base + dir(AISLE_YAW) * t + noise);
     }
 
-    // Interior points
+    // Interior points (noise from rack internals)
     for (int i = 0; i < 70; ++i) {
         float t = -1.6f + 3.2f * rng.next();
         float depth = 0.08f + 0.25f * rng.next();
@@ -87,15 +193,36 @@ Track makeTrack(int frameIndex, const char* side) {
     return {side, points};
 }
 
-// Fit line using least squares
+//=============================================================================
+// fitLine() - Least Squares Line Fitting
+//=============================================================================
+/**
+ * Fits a line to points using least squares regression.
+ *
+ * PARAMETERS:
+ *   points - Vector of 2D points
+ *
+ * RETURNS:
+ *   Line {m, b} minimizing squared vertical distance
+ *
+ * USAGE EXAMPLE:
+ *   Line fit = fitLine(facePoints);
+ *   float y = fit.m * x + fit.b;
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Fits lines to filtered face points
+ *   - filterFace(): Initial fit for distance threshold
+ */
 Line fitLine(const std::vector<Vec2>& points) {
     if (points.empty()) return {0, 0};
 
+    // Compute centroid
     float avgX = 0, avgY = 0;
     for (const auto& p : points) { avgX += p.x; avgY += p.y; }
     avgX /= points.size();
     avgY /= points.size();
 
+    // Compute variance and covariance
     float varX = 0, cov = 0;
     for (const auto& p : points) {
         varX += (p.x - avgX) * (p.x - avgX);
@@ -106,12 +233,41 @@ Line fitLine(const std::vector<Vec2>& points) {
     return {m, avgY - m * avgX};
 }
 
-// Distance from point to line
+//=============================================================================
+// distanceToLine() - Point-to-Line Distance
+//=============================================================================
+/**
+ * Computes perpendicular distance from point to line.
+ *
+ * USED IN THIS SCRIPT:
+ *   - filterFace(): Determines which points are face vs interior
+ */
 float distanceToLine(Vec2 p, Line line) {
     return fabsf(line.m * p.x - p.y + line.b) / sqrtf(line.m * line.m + 1.0f);
 }
 
-// Filter to keep only face points
+//=============================================================================
+// filterFace() - Remove Interior Points
+//=============================================================================
+/**
+ * Keeps only points close to the fitted line (face points).
+ *
+ * PARAMETERS:
+ *   points - All points including interior noise
+ *
+ * RETURNS:
+ *   Filtered vector with only face points (within 0.12m of fit)
+ *
+ * ALGORITHM:
+ *   1. Fit initial line to all points
+ *   2. Keep only points within 0.12m of line
+ *
+ * USAGE EXAMPLE:
+ *   std::vector<Vec2> face = filterFace(allPoints);
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Filters each track's points before final fit
+ */
 std::vector<Vec2> filterFace(const std::vector<Vec2>& points) {
     Line line = fitLine(points);
     std::vector<Vec2> filtered;
@@ -123,12 +279,31 @@ std::vector<Vec2> filterFace(const std::vector<Vec2>& points) {
     return filtered;
 }
 
-// Average two rack lines for centerline
+//=============================================================================
+// centerlineFromTwoFits() - Average Two Rack Lines
+//=============================================================================
+/**
+ * Computes centerline by averaging left and right rack fits.
+ *
+ * USAGE EXAMPLE:
+ *   Line center = centerlineFromTwoFits(leftFit, rightFit);
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Computes centerline from both rack fits
+ */
 Line centerlineFromTwoFits(Line left, Line right) {
     return {(left.m + right.m) * 0.5f, (left.b + right.b) * 0.5f};
 }
 
-// FCU pose for given frame
+//=============================================================================
+// makeFcu() - Generate Simulated FCU Pose
+//=============================================================================
+/**
+ * Creates FCU pose with realistic lateral drift.
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Called each frame to get FCU state
+ */
 Pose makeFcu(int frameIndex) {
     float along = frameIndex * 0.055f;
     float lateral = 0.25f * sinf(frameIndex * 0.035f) + 0.08f;
@@ -137,12 +312,28 @@ Pose makeFcu(int frameIndex) {
     return {pos.x, pos.y, yaw};
 }
 
-// Signed distance to slope-intercept line
+//=============================================================================
+// signedDistanceToLine() - Signed Point-to-Line Distance
+//=============================================================================
+/**
+ * Computes signed distance (positive = above line, negative = below).
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Measures lateral error to centerline
+ */
 float signedDistanceToLine(Vec2 p, Line line) {
     return (line.m * p.x - p.y + line.b) / sqrtf(line.m * line.m + 1.0f);
 }
 
-// Correct pose toward centerline
+//=============================================================================
+// correctedPose() - Apply Lateral Correction
+//=============================================================================
+/**
+ * Shifts FCU pose toward centerline by smoothed distance.
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Computes final corrected pose
+ */
 Pose correctedPose(Pose fcu, Line center, float smoothedDist) {
     Vec2 lineNormal = {center.m, -1.0f};
     float n = sqrtf(lineNormal.x * lineNormal.x + lineNormal.y * lineNormal.y);
@@ -154,7 +345,20 @@ Pose correctedPose(Pose fcu, Line center, float smoothedDist) {
     };
 }
 
-// World renderer
+//=============================================================================
+// WorldRenderer - Coordinate Transformation and Drawing
+//=============================================================================
+/**
+ * Transforms world coordinates to screen coordinates with auto-scaling.
+ *
+ * USAGE EXAMPLE:
+ *   WorldRenderer world(screenW, screenH, allPoints);
+ *   world.drawPoints(facePoints, BLUE, 4);
+ *   world.drawLine(centerline, GREEN, 5);
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Created each frame for rendering
+ */
 class WorldRenderer {
 public:
     Rectangle rect;
@@ -164,6 +368,7 @@ public:
     WorldRenderer(int screenW, int screenH, const std::vector<Vec2>& points) {
         rect = {22, 70, screenW - 360.0f, screenH - 95.0f};
 
+        // Compute bounds from points
         minX = minY = 1e9f;
         maxX = maxY = -1e9f;
         for (const auto& p : points) {
@@ -210,7 +415,9 @@ public:
     }
 };
 
-// Draw panel
+//=============================================================================
+// drawPanel() - Info Panel
+//=============================================================================
 void drawPanel(int screenW, int leftFace, int leftTotal, int rightFace, int rightTotal,
                float slope, float rawDist, float smoothedDist) {
     float x = screenW - 320.0f;
@@ -244,6 +451,9 @@ void drawPanel(int screenW, int leftFace, int leftTotal, int rightFace, int righ
     DrawText("C++ correction pipeline stages.", (int)x + 14, y, 12, {210, 220, 235, 255});
 }
 
+//=============================================================================
+// main()
+//=============================================================================
 int main() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(1000, 650, "Pipeline Demo");
@@ -259,26 +469,28 @@ int main() {
 
         int frameIndex = simFrame / 3;
 
-        // Generate tracks
+        // STAGE 1: Generate raw point clouds
         Track left = makeTrack(frameIndex, "left");
         Track right = makeTrack(frameIndex, "right");
 
-        // Filter face points
+        // STAGE 2: Filter to keep only face points
         std::vector<Vec2> leftFace = filterFace(left.points);
         std::vector<Vec2> rightFace = filterFace(right.points);
 
-        // Fit lines
+        // STAGE 3: Fit lines to face points
         Line leftFit = fitLine(leftFace);
         Line rightFit = fitLine(rightFace);
+
+        // STAGE 4: Compute centerline
         Line center = centerlineFromTwoFits(leftFit, rightFit);
 
-        // Poses
+        // STAGE 5: Compute corrected pose
         Pose fcu = makeFcu(frameIndex);
         float rawDist = signedDistanceToLine({fcu.x, fcu.y}, center);
         smoothedDist = 0.07f * rawDist + 0.93f * smoothedDist;
         Pose corrected = correctedPose(fcu, center, smoothedDist);
 
-        // Collect all points for bounds
+        // Collect all points for bounds calculation
         std::vector<Vec2> allPoints;
         allPoints.insert(allPoints.end(), left.points.begin(), left.points.end());
         allPoints.insert(allPoints.end(), right.points.begin(), right.points.end());
@@ -304,9 +516,11 @@ int main() {
         world.drawPoints(leftFace, {83, 198, 255, 210}, 4);
         world.drawPoints(rightFace, {255, 199, 87, 210}, 4);
 
-        // Lines
+        // Fitted lines
         world.drawLine(leftFit, {83, 198, 255, 255}, 2);
         world.drawLine(rightFit, {255, 199, 87, 255}, 2);
+
+        // Centerline
         world.drawLine(center, {163, 230, 53, 255}, 5);
 
         // Poses

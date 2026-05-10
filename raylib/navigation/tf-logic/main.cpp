@@ -1,14 +1,71 @@
-// TF Logic Demo
-// Demonstrates transform frame yaw composition.
-// Parent rotates by -aisle_yaw, child rotates by +aisle_yaw, producing composed local yaw.
+/**
+ * TF Logic Demo
+ *
+ * PURPOSE:
+ * Demonstrates transform frame yaw composition in the navigation pipeline.
+ * Shows how parent and child rotations combine to produce the final pose.
+ *
+ * KEY CONCEPT:
+ * In ROS/robotics, transforms chain together like nested game objects:
+ *   map -> correction -> base_link
+ *
+ * When the correction frame rotates by -aisle_yaw and the child rotates by
+ * +aisle_yaw, they cancel out, producing zero composed rotation in local frame.
+ *
+ * TF CHAIN:
+ *   map                    (world frame, yaw = 0)
+ *    └── odom_vision_correction  (parent rotates by -aisle_yaw)
+ *         └── base_link          (child rotates by +aisle_yaw)
+ *              └── composed yaw = -aisle_yaw + aisle_yaw = 0
+ *
+ * WHY THIS MATTERS:
+ * The correction shifts/rotates the pose to align with the aisle, but the
+ * composed result in local coordinates shows zero rotation - meaning the
+ * robot is aligned with its local forward direction.
+ *
+ * VISUAL:
+ *   [map]      [correction]      [composed]
+ *    →            ↗                 →
+ *   (0°)      (-33.5°)           (0° local)
+ *
+ * CONTROLS:
+ * - SPACE: Pause/Resume animation
+ * - R: Reset to frame 0
+ */
 
 #include "raylib.h"
 #include <cmath>
 #include <string>
 
+//=============================================================================
+// Constants
+//=============================================================================
+/**
+ * AISLE_YAW - The aisle heading in radians (~33.5 degrees).
+ *
+ * This is the angle the aisle makes with the world X-axis.
+ * The correction frame rotates by -AISLE_YAW to align with the aisle.
+ * The child frame rotates by +AISLE_YAW to compensate.
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Computes parent, child, and composed yaw values
+ *   - drawPanel(): Displays the values in degrees
+ */
 const float AISLE_YAW = 33.5f * (PI / 180.0f);
 
-// World renderer
+//=============================================================================
+// WorldRenderer - Coordinate Transformation and Drawing
+//=============================================================================
+/**
+ * Transforms world coordinates to screen coordinates.
+ *
+ * USAGE EXAMPLE:
+ *   WorldRenderer world(1000, 650);
+ *   world.drawAxis(0.0f, 0.0f, 0.0f, "map");  // Draw frame at origin
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Created each frame to render coordinate frames
+ */
 class WorldRenderer {
 public:
     Rectangle rect;
@@ -40,14 +97,33 @@ public:
         }
     }
 
+    /**
+     * Draws a coordinate frame (two perpendicular axes) at given position.
+     *
+     * PARAMETERS:
+     *   originX, originY - Position of frame origin
+     *   yaw              - Rotation of frame (radians)
+     *   label            - Frame name displayed above
+     *
+     * COLORS:
+     *   Red: X-axis (forward direction)
+     *   Green: Y-axis (left direction)
+     *
+     * USAGE EXAMPLE:
+     *   world.drawAxis(-2.0f, 0.0f, 0.0f, "map");
+     *   world.drawAxis(0.0f, 0.0f, -0.58f, "correction");
+     *
+     * USED IN THIS SCRIPT:
+     *   - main(): Draws map, correction, and composed frames
+     */
     void drawAxis(float originX, float originY, float yaw, const char* label) const {
         Vector2 s = toScreen(originX, originY);
 
-        // X axis (red)
+        // X axis (red) - forward direction
         Vector2 xTip = toScreen(originX + cosf(yaw), originY + sinf(yaw));
         DrawLineEx(s, xTip, 4, {248, 113, 113, 255});
 
-        // Y axis (green)
+        // Y axis (green) - left direction (perpendicular to X)
         Vector2 yTip = toScreen(originX - sinf(yaw) * 0.8f, originY + cosf(yaw) * 0.8f);
         DrawLineEx(s, yTip, 4, {82, 255, 168, 255});
 
@@ -55,7 +131,21 @@ public:
     }
 };
 
-// Draw panel
+//=============================================================================
+// drawPanel() - Info Panel
+//=============================================================================
+/**
+ * Draws the right-side info panel showing yaw values.
+ *
+ * PARAMETERS:
+ *   aisleYaw    - The aisle heading (for reference)
+ *   parentYaw   - Rotation of correction frame (-aisle_yaw)
+ *   childYaw    - Rotation of child frame (+aisle_yaw)
+ *   composedYaw - Net rotation (parent + child = 0)
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Called each frame to display yaw breakdown
+ */
 void drawPanel(int screenW, float aisleYaw, float parentYaw, float childYaw, float composedYaw) {
     float x = screenW - 320.0f;
     DrawRectangleRounded({x, 70, 300, 400}, 0.05f, 8, {14, 18, 28, 235});
@@ -86,6 +176,9 @@ void drawPanel(int screenW, float aisleYaw, float parentYaw, float childYaw, flo
     DrawText("corrected pose has zero yaw.", (int)x + 14, y, 12, {210, 220, 235, 255});
 }
 
+//=============================================================================
+// main()
+//=============================================================================
 int main() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(1000, 650, "TF Logic Demo");
@@ -98,9 +191,15 @@ int main() {
         if (IsKeyPressed(KEY_SPACE)) paused = !paused;
         if (IsKeyPressed(KEY_R)) simFrame = 0;
 
+        // TF chain yaw values:
+        // Parent (map->correction) rotates by -aisle_yaw
+        // Child (correction->base) rotates by +aisle_yaw
+        // Composed = parent + child = 0
         float parentYaw = -AISLE_YAW;
         float childYaw = AISLE_YAW;
         float composedYaw = parentYaw + childYaw;  // = 0
+
+        // Small animation pulse for visual interest
         float pulse = 0.2f * sinf(simFrame * 0.04f);
 
         BeginDrawing();
@@ -113,9 +212,14 @@ int main() {
         WorldRenderer world(GetScreenWidth(), GetScreenHeight());
         world.drawGrid();
 
-        // Draw three frames
+        // Draw three coordinate frames showing the chain:
+        // 1. Map frame (world, yaw = 0)
         world.drawAxis(-2.2f, 0.0f, 0.0f, "map");
+
+        // 2. Correction frame (rotated by -aisle_yaw, with pulse animation)
         world.drawAxis(0.0f, pulse, parentYaw, "odom_vision_correction");
+
+        // 3. Composed local frame (net yaw = 0)
         world.drawAxis(2.2f, 0.0f, composedYaw, "composed local yaw");
 
         drawPanel(GetScreenWidth(), AISLE_YAW, parentYaw, childYaw, composedYaw);

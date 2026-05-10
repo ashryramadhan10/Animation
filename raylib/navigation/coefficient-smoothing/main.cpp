@@ -1,32 +1,128 @@
-// Coefficient Smoothing Demo
-// Demonstrates EMA smoothing of fitted line coefficients before using them
-// in heading/centerline logic. Dampens noisy mask/pointcloud geometry.
+/**
+ * Coefficient Smoothing Demo
+ *
+ * PURPOSE:
+ * Demonstrates EMA (Exponential Moving Average) smoothing of fitted line
+ * coefficients before using them in heading/centerline logic.
+ *
+ * KEY CONCEPT:
+ * Raw fitted lines jitter frame-to-frame due to sensor noise and point cloud
+ * variation. Smoothing the line coefficients (slope m, intercept b) dampens
+ * this noise without changing the line representation itself.
+ *
+ * EMA FORMULA:
+ *   smoothed = alpha * new_value + (1 - alpha) * previous_smoothed
+ *   - alpha near 1.0: Fast response, more noise
+ *   - alpha near 0.0: Slow response, very smooth
+ *   - Typical alpha: 0.1 to 0.3
+ *
+ * VISUAL:
+ *   Orange line: Raw fitted line (noisy, jumps around)
+ *   Cyan line:   Smoothed line (stable, follows trend)
+ *
+ * CONTROLS:
+ * - SPACE: Pause/Resume animation
+ * - R: Reset to frame 0
+ */
 
 #include "raylib.h"
 #include <cmath>
 #include <vector>
 #include <string>
 
-// Line in slope-intercept form
+//=============================================================================
+// Line - Slope-Intercept Form
+//=============================================================================
+/**
+ * Line equation: y = m*x + b
+ *
+ * FIELDS:
+ *   m - Slope (rise/run)
+ *   b - Y-intercept (where line crosses y-axis)
+ *
+ * USAGE EXAMPLE:
+ *   Line line = {0.62f, 0.72f};  // y = 0.62x + 0.72
+ *   float y = line.m * x + line.b;
+ *
+ * USED IN THIS SCRIPT:
+ *   - rawLineAt(): Returns noisy line at given frame
+ *   - smoothLines(): Stores raw and smoothed line pairs
+ *   - WorldRenderer::drawLine(): Renders lines on screen
+ */
 struct Line {
     float m, b;
 };
 
-// History entry
+//=============================================================================
+// HistoryItem - One Frame's Raw and Smoothed Lines
+//=============================================================================
+/**
+ * Pairs the raw fitted line with its EMA-smoothed version.
+ *
+ * USED IN THIS SCRIPT:
+ *   - smoothLines(): Builds a vector of these for animation
+ *   - main(): Cycles through items to show smoothing over time
+ */
 struct HistoryItem {
     Line raw;
     Line smooth;
 };
 
-// Generate noisy raw line at given frame
+//=============================================================================
+// rawLineAt() - Generate Noisy Raw Line
+//=============================================================================
+/**
+ * Simulates a noisy fitted line measurement at a given frame.
+ *
+ * PARAMETERS:
+ *   frame - Frame index (used to vary the noise deterministically)
+ *
+ * RETURNS:
+ *   Line with noisy slope and intercept based on sine functions
+ *
+ * WHY SINUSOIDAL NOISE?
+ * Real sensor noise has multiple frequency components. Using overlapping
+ * sine waves simulates this without true randomness, making demos repeatable.
+ *
+ * USAGE EXAMPLE:
+ *   Line raw = rawLineAt(0);   // First frame's noisy measurement
+ *   Line raw = rawLineAt(100); // Frame 100's noisy measurement
+ *
+ * USED IN THIS SCRIPT:
+ *   - smoothLines(): Generates raw lines for the entire animation sequence
+ */
 Line rawLineAt(int frame) {
     float trueSlope = 0.62f;
+    // Add noise with two frequency components
     float noisySlope = trueSlope + 0.09f * sinf(frame * 0.33f) + 0.035f * sinf(frame * 1.2f);
     float noisyC = 0.72f + 0.16f * sinf(frame * 0.21f) + 0.06f * cosf(frame * 0.77f);
     return {noisySlope, noisyC};
 }
 
-// Generate smoothed line history
+//=============================================================================
+// smoothLines() - Generate Smoothed Line History
+//=============================================================================
+/**
+ * Creates the full animation sequence with EMA-smoothed lines.
+ *
+ * PARAMETERS:
+ *   count - Number of frames to generate
+ *   alpha - EMA smoothing factor (0 to 1, lower = smoother)
+ *
+ * RETURNS:
+ *   Vector of HistoryItems containing raw/smooth pairs
+ *
+ * EMA SMOOTHING LOGIC:
+ *   For each coefficient (m and b):
+ *     smooth = alpha * raw + (1 - alpha) * previous_smooth
+ *
+ * USAGE EXAMPLE:
+ *   auto history = smoothLines(180, 0.3f);
+ *   Line currentSmooth = history[frameIndex].smooth;
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Called once at startup to precompute all frames
+ */
 std::vector<HistoryItem> smoothLines(int count, float alpha) {
     std::vector<HistoryItem> out;
     Line smooth = {0, 0};
@@ -35,10 +131,13 @@ std::vector<HistoryItem> smoothLines(int count, float alpha) {
     for (int i = 0; i < count; ++i) {
         Line raw = rawLineAt(i);
         if (!hasSmooth) {
+            // Initialize smoothed line with first raw measurement
             smooth = raw;
             hasSmooth = true;
         } else {
+            // EMA update for slope
             smooth.m = alpha * raw.m + (1 - alpha) * smooth.m;
+            // EMA update for intercept
             smooth.b = alpha * raw.b + (1 - alpha) * smooth.b;
         }
         out.push_back({raw, smooth});
@@ -46,7 +145,20 @@ std::vector<HistoryItem> smoothLines(int count, float alpha) {
     return out;
 }
 
-// World renderer
+//=============================================================================
+// WorldRenderer - Coordinate Transformation and Drawing
+//=============================================================================
+/**
+ * Transforms world coordinates (meters) to screen coordinates (pixels).
+ *
+ * USAGE EXAMPLE:
+ *   WorldRenderer world(1000, 650);
+ *   world.drawLine(rawLine, ORANGE, 2);
+ *   world.drawLine(smoothLine, CYAN, 4);
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Created each frame to render grid, points, and lines
+ */
 class WorldRenderer {
 public:
     Rectangle rect;
@@ -77,6 +189,10 @@ public:
         DrawLineEx(a, b, thickness, color);
     }
 
+    /**
+     * Draws points scattered along the raw line to simulate point cloud.
+     * These represent the noisy input data that produces the fitted line.
+     */
     void drawPointsOnLine(const Line& line) const {
         for (int i = 0; i < 120; ++i) {
             float x = -2.6f + i / 119.0f * 5.2f;
@@ -87,7 +203,15 @@ public:
     }
 };
 
-// Draw panel
+//=============================================================================
+// drawPanel() - Info Panel
+//=============================================================================
+/**
+ * Draws the right-side info panel showing alpha and coefficient values.
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Called each frame to display smoothing parameters
+ */
 void drawPanel(int screenW, float alpha, const HistoryItem& item) {
     float x = screenW - 320.0f;
     DrawRectangleRounded({x, 70, 300, 400}, 0.05f, 8, {14, 18, 28, 235});
@@ -121,12 +245,18 @@ void drawPanel(int screenW, float alpha, const HistoryItem& item) {
     DrawText("line representation.", (int)x + 14, y, 12, {210, 220, 235, 255});
 }
 
+//=============================================================================
+// main()
+//=============================================================================
 int main() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(1000, 650, "Coefficient Smoothing Demo");
     SetTargetFPS(30);
 
+    // EMA smoothing factor: 0.3 means 30% new value, 70% previous smoothed
     const float alpha = 0.3f;
+
+    // Precompute all frames with smoothing
     std::vector<HistoryItem> history = smoothLines(180, alpha);
 
     int simFrame = 0;
@@ -136,6 +266,7 @@ int main() {
         if (IsKeyPressed(KEY_SPACE)) paused = !paused;
         if (IsKeyPressed(KEY_R)) simFrame = 0;
 
+        // Cycle through history at 1/3 speed (every 3 render frames)
         int index = (simFrame / 3) % (int)history.size();
         const HistoryItem& item = history[index];
 

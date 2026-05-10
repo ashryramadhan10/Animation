@@ -1,16 +1,59 @@
-// Synthetic Input Demo
-// Demonstrates synthetic pointcloud generation for testing the navigation pipeline.
-// Shows per-track pointclouds with face points and interior noise.
+/**
+ * Synthetic Input Demo
+ *
+ * PURPOSE:
+ * Demonstrates synthetic pointcloud generation for testing the navigation
+ * pipeline. Shows per-track pointclouds with face points and interior noise.
+ *
+ * KEY CONCEPT:
+ * The navigation system receives point clouds from segmentation masks and
+ * registered depth. This demo shows what that input looks like:
+ *   - Per-track grouping (left rack, right rack)
+ *   - Face points (outer rack surface)
+ *   - Interior points (noise from inside rack)
+ *
+ * POINT TYPES:
+ *   Blue: Left rack face points
+ *   Yellow: Right rack face points
+ *   Gray: Interior/noisy depth points
+ *
+ * VISUAL:
+ *   [LEFT TRACK]          [FCU]          [RIGHT TRACK]
+ *   ● ● ● ● ●              →              ● ● ● ● ●
+ *   ○ ○ ○ ○ ○                             ○ ○ ○ ○ ○
+ *   (● = face, ○ = interior)
+ *
+ * CONTROLS:
+ * - SPACE: Pause/Resume animation
+ * - R: Reset to frame 0
+ */
 
 #include "raylib.h"
 #include <cmath>
 #include <vector>
 #include <string>
 
+//=============================================================================
+// Constants
+//=============================================================================
 const float DEG = PI / 180.0f;
 const float AISLE_YAW = 33.5f * DEG;
 
-// Deterministic PRNG
+//=============================================================================
+// Rng - Deterministic Random Number Generator
+//=============================================================================
+/**
+ * Generates repeatable random numbers from a seed.
+ *
+ * USAGE EXAMPLE:
+ *   Rng rng(42);
+ *   float x = rng.range(-1.6f, 1.6f);     // Random in [-1.6, 1.6]
+ *   float noise = rng.gaussian(0, 0.018f); // Mean=0, sigma=0.018
+ *
+ * USED IN THIS SCRIPT:
+ *   - generateWallCloud(): Creates point clouds for each rack
+ *   - generateFrame(): Seeds RNG per frame for repeatability
+ */
 class Rng {
 public:
     explicit Rng(unsigned int seed) : state_(seed) {}
@@ -23,10 +66,16 @@ public:
         return static_cast<float>((t ^ (t >> 14)) >> 0) / 4294967296.0f;
     }
 
+    /**
+     * Random float in [min, max] range.
+     */
     float range(float min, float max) {
         return min + (max - min) * next();
     }
 
+    /**
+     * Gaussian-distributed random with specified mean and sigma.
+     */
     float gaussian(float mean, float sigma) {
         float u1 = fmaxf(next(), 1e-9f);
         float u2 = fmaxf(next(), 1e-9f);
@@ -38,28 +87,81 @@ private:
     unsigned int state_;
 };
 
-// 2D vector
+//=============================================================================
+// Vec2 - 2D Vector
+//=============================================================================
+/**
+ * Simple 2D vector with basic operations.
+ *
+ * USED IN THIS SCRIPT:
+ *   - Throughout for position calculations
+ */
 struct Vec2 {
     float x, y;
     Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }
     Vec2 operator*(float s) const { return {x * s, y * s}; }
 };
 
-// Point with side classification
+//=============================================================================
+// Point - Point with Side and Kind Labels
+//=============================================================================
+/**
+ * A point with classification metadata.
+ *
+ * FIELDS:
+ *   pos  - 2D position
+ *   kind - "face" or "interior"
+ *   side - "left" or "right" (which rack)
+ *
+ * USED IN THIS SCRIPT:
+ *   - generateWallCloud(): Creates classified points
+ *   - WorldRenderer::drawTrackPoints(): Colors by classification
+ */
 struct Point {
     Vec2 pos;
-    const char* kind;  // "face" or "interior"
-    const char* side;  // "left" or "right"
+    const char* kind;
+    const char* side;
 };
 
-// Track containing points from one rack
+//=============================================================================
+// Track - Points from One Rack
+//=============================================================================
+/**
+ * Collection of points from one rack side.
+ *
+ * FIELDS:
+ *   trackId - Unique ID for tracking across frames
+ *   side    - "left" or "right"
+ *   points  - All points from this rack
+ *
+ * USED IN THIS SCRIPT:
+ *   - generateFrame(): Creates left and right tracks
+ *   - Frame::tracks: Stores both tracks
+ */
 struct Track {
     int trackId;
     const char* side;
     std::vector<Point> points;
 };
 
-// One simulation frame
+//=============================================================================
+// Frame - One Simulation Frame
+//=============================================================================
+/**
+ * Complete state for one frame of the simulation.
+ *
+ * FIELDS:
+ *   frameIndex  - Frame number
+ *   stamp       - Timestamp in seconds
+ *   fcuPos      - FCU position
+ *   fcuYaw      - FCU orientation
+ *   trueHeading - Ground truth aisle heading
+ *   tracks      - Left and right rack tracks
+ *
+ * USED IN THIS SCRIPT:
+ *   - generateFrame(): Creates one frame
+ *   - main(): Cycles through frames for animation
+ */
 struct Frame {
     int frameIndex;
     float stamp;
@@ -69,23 +171,55 @@ struct Frame {
     std::vector<Track> tracks;
 };
 
-// Direction vectors
+//=============================================================================
+// Direction Vectors
+//=============================================================================
+/**
+ * dir(angle) - Unit vector pointing in angle direction.
+ * normal(angle) - Unit vector perpendicular to angle (points left).
+ */
 Vec2 dir(float angle) { return {cosf(angle), sinf(angle)}; }
 Vec2 normal(float angle) { return {-sinf(angle), cosf(angle)}; }
 
-// Generate synthetic wall/rack point cloud
+//=============================================================================
+// generateWallCloud() - Generate Points for One Rack
+//=============================================================================
+/**
+ * Creates synthetic point cloud for one rack wall.
+ *
+ * PARAMETERS:
+ *   heading     - Aisle heading (radians)
+ *   halfWidth   - Half-width of aisle (meters)
+ *   side        - "left" or "right"
+ *   alongCenter - Position along aisle
+ *   rng         - Random number generator
+ *
+ * RETURNS:
+ *   Vector of Points with 220 face + 80 interior points
+ *
+ * POINT GENERATION:
+ *   - Face points: Along the rack surface with small noise
+ *   - Interior points: Offset inward with larger noise
+ *
+ * USAGE EXAMPLE:
+ *   auto points = generateWallCloud(AISLE_YAW, 1.6f, "left", 5.0f, rng);
+ *
+ * USED IN THIS SCRIPT:
+ *   - generateFrame(): Generates both left and right walls
+ */
 std::vector<Point> generateWallCloud(float heading, float halfWidth, const char* side,
                                       float alongCenter, Rng& rng) {
     Vec2 direction = dir(heading);
     Vec2 norm = normal(heading);
     float sideSign = (side[0] == 'l') ? 1.0f : -1.0f;
 
+    // Base position of rack face
     Vec2 base = direction * alongCenter + norm * (sideSign * halfWidth);
     Vec2 inward = norm * (-sideSign);
 
     std::vector<Point> points;
 
-    // Face points (220)
+    // Face points (outer rack surface)
     for (int i = 0; i < 220; ++i) {
         float t = rng.range(-1.6f, 1.6f);
         Vec2 noise = {rng.gaussian(0, 0.018f), rng.gaussian(0, 0.018f)};
@@ -93,7 +227,7 @@ std::vector<Point> generateWallCloud(float heading, float halfWidth, const char*
         points.push_back({pos, "face", side});
     }
 
-    // Interior points (80)
+    // Interior points (reflections from inside rack)
     for (int i = 0; i < 80; ++i) {
         float t = rng.range(-1.6f, 1.6f);
         float depth = rng.range(0.04f, 0.25f);
@@ -105,17 +239,46 @@ std::vector<Point> generateWallCloud(float heading, float halfWidth, const char*
     return points;
 }
 
-// Generate single frame
+//=============================================================================
+// generateFrame() - Generate Complete Frame
+//=============================================================================
+/**
+ * Creates one frame of simulation data with FCU pose and track points.
+ *
+ * PARAMETERS:
+ *   index      - Frame number
+ *   rng        - Random number generator
+ *   headingDeg - Base aisle heading in degrees (default 33.5)
+ *   halfWidth  - Aisle half-width in meters (default 1.6)
+ *
+ * RETURNS:
+ *   Complete Frame with FCU state and both track pointclouds
+ *
+ * SIMULATION:
+ *   - FCU moves along aisle with lateral drift
+ *   - Heading oscillates slightly around base
+ *   - FCU yaw has additional noise
+ *
+ * USAGE EXAMPLE:
+ *   Rng rng(42 + frameIndex * 7);
+ *   Frame frame = generateFrame(frameIndex, rng);
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Called each frame to generate simulation data
+ */
 Frame generateFrame(int index, Rng& rng, float headingDeg = 33.5f, float halfWidth = 1.6f) {
     float baseHeading = headingDeg * DEG;
     Vec2 direction = dir(baseHeading);
     Vec2 norm = normal(baseHeading);
 
+    // Slight heading variation over time
     float heading = baseHeading + 0.4f * DEG * sinf(index * 0.09f);
+    // FCU position: along aisle with lateral drift
     float along = 0.16f * index;
     float lateral = 0.16f * sinf(index * 0.13f);
 
     Vec2 pos = direction * along + norm * lateral;
+    // FCU yaw has additional noise compared to true heading
     float fcuYaw = heading + 4.0f * DEG * sinf(index * 0.21f);
 
     Frame frame;
@@ -125,7 +288,7 @@ Frame generateFrame(int index, Rng& rng, float headingDeg = 33.5f, float halfWid
     frame.fcuYaw = fcuYaw;
     frame.trueHeading = heading;
 
-    // Left track
+    // Generate left track
     Track leftTrack;
     leftTrack.trackId = 1;
     leftTrack.side = "left";
@@ -133,7 +296,7 @@ Frame generateFrame(int index, Rng& rng, float headingDeg = 33.5f, float halfWid
     for (const auto& p : leftPoints) leftTrack.points.push_back(p);
     frame.tracks.push_back(leftTrack);
 
-    // Right track
+    // Generate right track
     Track rightTrack;
     rightTrack.trackId = 2;
     rightTrack.side = "right";
@@ -144,7 +307,20 @@ Frame generateFrame(int index, Rng& rng, float headingDeg = 33.5f, float halfWid
     return frame;
 }
 
-// World renderer
+//=============================================================================
+// WorldRenderer - Coordinate Transformation and Drawing
+//=============================================================================
+/**
+ * Transforms world coordinates to screen coordinates with auto-scaling.
+ *
+ * USAGE EXAMPLE:
+ *   WorldRenderer world(screenW, screenH, frame);
+ *   world.drawTrackPoints(track);
+ *   world.drawPose(frame.fcuPos, frame.fcuYaw, YELLOW, "FCU");
+ *
+ * USED IN THIS SCRIPT:
+ *   - main(): Created each frame for rendering
+ */
 class WorldRenderer {
 public:
     Rectangle rect;
@@ -154,10 +330,10 @@ public:
     WorldRenderer(int screenW, int screenH, const Frame& frame) {
         rect = {22, 70, screenW - 360.0f, screenH - 95.0f};
 
+        // Compute bounds from all track points
         minX = minY = 1e9f;
         maxX = maxY = -1e9f;
 
-        // Find bounds from all points
         for (const auto& track : frame.tracks) {
             for (const auto& p : track.points) {
                 minX = fminf(minX, p.pos.x);
@@ -192,6 +368,9 @@ public:
         DrawRectangleLinesEx(rect, 1, {42, 51, 72, 255});
     }
 
+    /**
+     * Draws all points in a track with colors based on side and kind.
+     */
     void drawTrackPoints(const Track& track) const {
         Color faceColor = (track.side[0] == 'l') ? Color{83, 198, 255, 190} : Color{255, 199, 87, 190};
         Color interiorColor = {111, 126, 153, 90};
@@ -199,9 +378,9 @@ public:
         for (const auto& p : track.points) {
             Vector2 s = toScreen(p.pos);
             if (p.kind[0] == 'f') {
-                DrawCircleV(s, 3, faceColor);
+                DrawCircleV(s, 3, faceColor);     // Face: colored
             } else {
-                DrawCircleV(s, 2, interiorColor);
+                DrawCircleV(s, 2, interiorColor); // Interior: gray
             }
         }
     }
@@ -216,7 +395,9 @@ public:
         DrawText(label, (int)s.x + 10, (int)s.y - 15, 12, {230, 230, 230, 255});
     }
 
-    // Draw aisle reference lines
+    /**
+     * Draws dotted reference lines showing true aisle walls.
+     */
     void drawAisleReference(float heading, float halfWidth, Vec2 center) const {
         Vec2 direction = dir(heading);
         Vec2 norm = normal(heading);
@@ -230,7 +411,9 @@ public:
     }
 };
 
-// Draw info panel
+//=============================================================================
+// drawPanel() - Info Panel
+//=============================================================================
 void drawPanel(int screenW, const Frame& frame) {
     float x = screenW - 320.0f;
     DrawRectangleRounded({x, 70, 300, 400}, 0.05f, 8, {14, 18, 28, 235});
@@ -269,6 +452,9 @@ void drawPanel(int screenW, const Frame& frame) {
     DrawText("interior / noisy depth", (int)x + 32, y, 12, {210, 220, 235, 255});
 }
 
+//=============================================================================
+// main()
+//=============================================================================
 int main() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(1000, 650, "Synthetic Input Demo");
@@ -281,6 +467,7 @@ int main() {
         if (IsKeyPressed(KEY_SPACE)) paused = !paused;
         if (IsKeyPressed(KEY_R)) simFrame = 0;
 
+        // Generate frame at 1/4 speed, cycling through 80 frames
         int frameIndex = (simFrame / 4) % 80;
         Rng rng(42 + frameIndex * 7);
         Frame frame = generateFrame(frameIndex, rng);
