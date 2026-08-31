@@ -1,0 +1,1555 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raylib Timeline Storyboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e14;
+      --panel: #121722;
+      --panel-2: #171e2c;
+      --line: #2a3447;
+      --text: #eef2ff;
+      --muted: #9ba8bd;
+      --blue: #38bdf8;
+      --violet: #818cf8;
+      --gold: #fbbf24;
+      --red: #fb7185;
+      --green: #34d399;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 85% 8%, rgba(56, 189, 248, 0.12), transparent 25rem),
+        radial-gradient(circle at 15% 32%, rgba(129, 140, 248, 0.1), transparent 24rem),
+        var(--bg);
+      color: var(--text);
+      font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a { color: var(--blue); }
+
+    code, pre {
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: rgba(11, 14, 20, 0.88);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 30px;
+      color: var(--text);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-mark {
+      width: 33px;
+      height: 33px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, var(--blue), var(--violet));
+      box-shadow: 0 0 28px rgba(56, 189, 248, 0.28);
+    }
+
+    nav a {
+      display: block;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      color: var(--text);
+      background: var(--panel-2);
+    }
+
+    main {
+      width: min(1050px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 78px 0 120px;
+    }
+
+    section { margin-top: 88px; }
+
+    .eyebrow {
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 750;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 850px;
+      margin: 14px 0 20px;
+      font-size: clamp(42px, 7vw, 76px);
+      line-height: 1.02;
+      letter-spacing: -0.055em;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.12;
+      letter-spacing: -0.035em;
+    }
+
+    h3 { margin: 0 0 8px; }
+
+    h4 {
+      margin: 26px 0 8px;
+      color: #dbeafe;
+      font-size: 17px;
+    }
+
+    .lead {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 20px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 17px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 680;
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: linear-gradient(135deg, #0284c7, #6366f1);
+    }
+
+    .principles, .api-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 15px;
+      margin-top: 28px;
+    }
+
+    .card {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, rgba(23, 30, 44, 0.92), rgba(18, 23, 34, 0.82));
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+    }
+
+    .card p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .timeline {
+      margin-top: 28px;
+      padding: 24px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .ruler {
+      display: grid;
+      grid-template-columns: 125px repeat(6, minmax(82px, 1fr));
+      min-width: 680px;
+      color: var(--muted);
+      font: 12px/1.2 monospace;
+    }
+
+    .track-row {
+      display: grid;
+      grid-template-columns: 125px 1fr;
+      align-items: center;
+      min-width: 680px;
+      margin-top: 12px;
+    }
+
+    .track-name { color: #cbd5e1; font-size: 13px; }
+
+    .track-lane {
+      position: relative;
+      height: 31px;
+      border-radius: 7px;
+      background: #0b1019;
+      overflow: hidden;
+    }
+
+    .clip {
+      position: absolute;
+      top: 4px;
+      height: 23px;
+      padding: 2px 9px;
+      border-radius: 5px;
+      color: white;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .clip.blue { left: 10%; width: 70%; background: #0369a1; }
+    .clip.violet { left: 30%; width: 58%; background: #4f46e5; }
+    .clip.gold { left: 0; width: 100%; background: #a16207; }
+
+    .playhead {
+      position: absolute;
+      z-index: 2;
+      left: 56%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--red);
+    }
+
+    .code-block {
+      position: relative;
+      margin-top: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #090c12;
+    }
+
+    .code-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      background: #101621;
+      font-size: 13px;
+    }
+
+    pre {
+      margin: 0;
+      padding: 22px;
+      overflow-x: auto;
+      color: #dbeafe;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .note {
+      margin-top: 24px;
+      padding: 18px 20px;
+      border-left: 3px solid var(--green);
+      border-radius: 0 12px 12px 0;
+      background: rgba(52, 211, 153, 0.08);
+      color: #c7f9e7;
+    }
+
+    .note.warning {
+      border-left-color: var(--gold);
+      background: rgba(251, 191, 36, 0.08);
+      color: #fef3c7;
+    }
+
+    .note.danger {
+      border-left-color: var(--red);
+      background: rgba(251, 113, 133, 0.08);
+      color: #ffe4e6;
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 15px;
+      margin-top: 24px;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 9px;
+      margin-top: 24px;
+      color: var(--muted);
+    }
+
+    .flow span {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel-2);
+      color: #dbeafe;
+      font: 13px/1.2 "Cascadia Code", monospace;
+    }
+
+    .flow b { color: var(--violet); }
+
+    .uml-wrap {
+      margin-top: 28px;
+      padding: 18px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #090d14;
+    }
+
+    .uml {
+      display: block;
+      width: 100%;
+      min-width: 920px;
+      height: auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend span::before {
+      display: inline-block;
+      width: 24px;
+      margin-right: 7px;
+      border-top: 2px solid var(--blue);
+      content: "";
+      vertical-align: middle;
+    }
+
+    .legend .dependency::before { border-top-style: dashed; border-top-color: var(--violet); }
+
+    .signature {
+      display: inline-block;
+      max-width: 100%;
+      padding: 3px 7px;
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.07);
+      color: #bfdbfe;
+      overflow-wrap: anywhere;
+    }
+
+    .tag {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(129, 140, 248, 0.13);
+      color: #c7d2fe;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .table-wrap {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    .method-table { min-width: 720px; }
+
+    .method-table th:first-child,
+    .method-table td:first-child { width: 39%; }
+
+    caption {
+      padding: 0 0 9px;
+      color: var(--muted);
+      text-align: left;
+      font-size: 13px;
+    }
+
+    details {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(18, 23, 34, 0.72);
+    }
+
+    summary {
+      padding: 14px 17px;
+      color: #dbeafe;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    details > :not(summary) { margin-left: 17px; margin-right: 17px; }
+    details > :last-child { margin-bottom: 18px; }
+
+    kbd {
+      padding: 2px 7px;
+      border: 1px solid #475569;
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      background: #111827;
+      color: #e2e8f0;
+      font: 12px/1.2 "Cascadia Code", monospace;
+    }
+
+    .muted { color: var(--muted); }
+    .checklist li, .compact li { margin: 7px 0; }
+
+    .source-frame {
+      width: 100%;
+      height: 680px;
+      border: 0;
+      background: white;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 24px;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    th, td {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { color: #cbd5e1; font-size: 13px; }
+    td { color: var(--muted); }
+    td code { color: #bfdbfe; }
+
+    footer {
+      margin-top: 100px;
+      padding-top: 28px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 880px) {
+      .layout { display: block; }
+      aside { position: relative; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      nav { display: flex; flex-wrap: wrap; gap: 4px; }
+      main { padding-top: 52px; }
+      .principles, .api-grid, .two-column { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <div class="brand"><span class="brand-mark"></span> Timeline Storyboard</div>
+      <nav aria-label="Documentation">
+        <a href="#overview">Overview</a>
+        <a href="#mental-model">Editor mental model</a>
+        <a href="#architecture">UML &amp; architecture</a>
+        <a href="#quick-start">Quick start</a>
+        <a href="#clips">Clip timing</a>
+        <a href="#timing-semantics">Exact timing rules</a>
+        <a href="#keyframes">Keyframes</a>
+        <a href="#sequences">Sequences &amp; markers</a>
+        <a href="#api">API map</a>
+        <a href="#core-api">Core API</a>
+        <a href="#story-api">Storyboard API</a>
+        <a href="#plot-api">Plot &amp; rendering API</a>
+        <a href="#recipes">Practical recipes</a>
+        <a href="#complete-example">Complete example</a>
+        <a href="#build">Build and run</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#testing">Testing &amp; extending</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header id="overview">
+        <div class="eyebrow">Raylib scientific animation</div>
+        <h1>Write animations like you edit a video.</h1>
+        <p class="lead">
+          Record an algorithm as deterministic states, place it on a named track, adjust its timing,
+          add keyframes and markers, then render any frame exactly.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="#quick-start">Start authoring</a>
+          <a class="button" href="../examples/sorting_storyboard.cpp">Open complete C++ example</a>
+        </div>
+
+        <div class="principles">
+          <article class="card">
+            <h3>Deterministic</h3>
+            <p>The same global frame always resolves the same state. Seeking and frame stepping are reliable.</p>
+          </article>
+          <article class="card">
+            <h3>Editor-shaped</h3>
+            <p>Tracks, clips, local sequences, duration, trimming, holds, keyframes, fades, and markers.</p>
+          </article>
+          <article class="card">
+            <h3>Memory-aware</h3>
+            <p>Repeated frames and long holds are mapped lazily. Large algorithm states are stored only once.</p>
+          </article>
+        </div>
+      </header>
+
+      <section id="mental-model">
+        <div class="eyebrow">Mental model</div>
+        <h2>One playhead, many independent tracks</h2>
+        <p class="lead">Every track receives the same frame. No object owns a clock and no observer chain coordinates updates.</p>
+
+        <div class="timeline" aria-label="Storyboard timeline diagram">
+          <div class="ruler"><span>GLOBAL FRAME</span><span>0</span><span>60</span><span>120</span><span>180</span><span>240</span><span>300</span></div>
+          <div class="track-row"><span class="track-name">Title opacity</span><div class="track-lane"><span class="playhead"></span><span class="clip gold">keyframes</span></div></div>
+          <div class="track-row"><span class="track-name">Algorithm state</span><div class="track-lane"><span class="playhead"></span><span class="clip blue">recorded states &middot; 12 frames/step &middot; hold</span></div></div>
+          <div class="track-row"><span class="track-name">Annotation</span><div class="track-lane"><span class="playhead"></span><span class="clip violet">local sequence</span></div></div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <div class="eyebrow">Architecture</div>
+        <h2>UML class diagram</h2>
+        <p class="lead">
+          The storyboard owns the clock and named tracks. A sequence is a lightweight editing view into that
+          storyboard; it does not copy state or create another clock. Plotting and rendering remain outside the
+          authoring model, so the same deterministic frame state can be tested without opening a Raylib window.
+        </p>
+
+        <div class="uml-wrap">
+          <svg class="uml" viewBox="0 0 1200 790" role="img" aria-labelledby="uml-title uml-desc">
+            <title id="uml-title">Timeline Storyboard UML class diagram</title>
+            <desc id="uml-desc">Storyboard composes Timeline and named sampled or keyframe tracks. Sequence scopes access to those tracks. StoryTrack creates StoryClipBuilder objects. Core Track composes Clip.</desc>
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#818cf8" />
+              </marker>
+              <style>
+                .u-box { fill:#121722; stroke:#334155; stroke-width:2; }
+                .u-focus { fill:#101c2a; stroke:#38bdf8; stroke-width:2.5; }
+                .u-title { fill:#eef2ff; font:700 20px system-ui,sans-serif; }
+                .u-stereo { fill:#7dd3fc; font:12px ui-monospace,monospace; }
+                .u-member { fill:#cbd5e1; font:14px ui-monospace,monospace; }
+                .u-note { fill:#94a3b8; font:13px system-ui,sans-serif; }
+                .u-line { stroke:#38bdf8; stroke-width:2; fill:none; }
+                .u-dep { stroke:#818cf8; stroke-width:2; stroke-dasharray:8 7; fill:none; marker-end:url(#arrow); }
+                .u-sep { stroke:#334155; stroke-width:1.5; }
+              </style>
+            </defs>
+
+            <text x="32" y="29" class="u-note">Playback</text>
+            <rect x="30" y="50" width="300" height="160" rx="12" class="u-box" />
+            <text x="180" y="78" text-anchor="middle" class="u-stereo">&lt;&lt;core clock&gt;&gt;</text>
+            <text x="180" y="105" text-anchor="middle" class="u-title">Timeline</text>
+            <line x1="30" y1="119" x2="330" y2="119" class="u-sep" />
+            <text x="48" y="144" class="u-member">+ frame() : int</text>
+            <text x="48" y="168" class="u-member">+ play(), pause(), goTo()</text>
+            <text x="48" y="192" class="u-member">+ updatePlayback(dt)</text>
+
+            <text x="426" y="29" class="u-note">Authoring facade and ownership root</text>
+            <rect x="410" y="50" width="380" height="220" rx="12" class="u-focus" />
+            <text x="600" y="78" text-anchor="middle" class="u-stereo">&lt;&lt;facade / owner&gt;&gt;</text>
+            <text x="600" y="106" text-anchor="middle" class="u-title">Storyboard</text>
+            <line x1="410" y1="121" x2="790" y2="121" class="u-sep" />
+            <text x="430" y="147" class="u-member">- timeline_ : Timeline</text>
+            <text x="430" y="171" class="u-member">- tracks_ : vector&lt;NamedTrack&gt;</text>
+            <text x="430" y="195" class="u-member">- markers_ : vector&lt;TimelineMarker&gt;</text>
+            <line x1="410" y1="210" x2="790" y2="210" class="u-sep" />
+            <text x="430" y="235" class="u-member">+ track(), keyframes(), sequence()</text>
+            <text x="430" y="258" class="u-member">+ marker(), update(), transport</text>
+
+            <text x="878" y="29" class="u-note">Non-owning local editing view</text>
+            <rect x="870" y="50" width="300" height="190" rx="12" class="u-box" />
+            <text x="1020" y="78" text-anchor="middle" class="u-stereo">&lt;&lt;scope handle&gt;&gt;</text>
+            <text x="1020" y="105" text-anchor="middle" class="u-title">Sequence</text>
+            <line x1="870" y1="119" x2="1170" y2="119" class="u-sep" />
+            <text x="889" y="145" class="u-member">- storyboard_ : Storyboard*</text>
+            <text x="889" y="169" class="u-member">- [scopeStart, scopeEnd]</text>
+            <line x1="870" y1="183" x2="1170" y2="183" class="u-sep" />
+            <text x="889" y="208" class="u-member">+ track(), keyframes()</text>
+            <text x="889" y="230" class="u-member">+ sequence(), marker()</text>
+
+            <rect x="90" y="355" width="360" height="205" rx="12" class="u-focus" />
+            <text x="270" y="384" text-anchor="middle" class="u-stereo">&lt;&lt;sampled state track&gt;&gt;</text>
+            <text x="270" y="412" text-anchor="middle" class="u-title">StoryTrack&lt;T&gt;</text>
+            <line x1="90" y1="427" x2="450" y2="427" class="u-sep" />
+            <text x="110" y="453" class="u-member">- clips_ : vector&lt;AuthoredClip&gt;</text>
+            <line x1="90" y1="468" x2="450" y2="468" class="u-sep" />
+            <text x="110" y="494" class="u-member">+ clip(states) : StoryClipBuilder</text>
+            <text x="110" y="518" class="u-member">+ at(globalFrame) : const T*</text>
+            <text x="110" y="542" class="u-member">+ storedStateCount()</text>
+
+            <rect x="495" y="355" width="390" height="205" rx="12" class="u-focus" />
+            <text x="690" y="384" text-anchor="middle" class="u-stereo">&lt;&lt;interpolated property track&gt;&gt;</text>
+            <text x="690" y="412" text-anchor="middle" class="u-title">KeyframeTrack&lt;T&gt;</text>
+            <line x1="495" y1="427" x2="885" y2="427" class="u-sep" />
+            <text x="515" y="453" class="u-member">- keyframes_ : vector&lt;Keyframe&gt;</text>
+            <text x="515" y="477" class="u-member">- interpolator_ : function</text>
+            <line x1="495" y1="491" x2="885" y2="491" class="u-sep" />
+            <text x="515" y="517" class="u-member">+ keyframe(), fadeIn(), fadeOut()</text>
+            <text x="515" y="541" class="u-member">+ at(globalFrame) : optional&lt;T&gt;</text>
+
+            <rect x="90" y="630" width="360" height="135" rx="12" class="u-box" />
+            <text x="270" y="659" text-anchor="middle" class="u-stereo">&lt;&lt;move-only fluent builder&gt;&gt;</text>
+            <text x="270" y="687" text-anchor="middle" class="u-title">StoryClipBuilder&lt;T&gt;</text>
+            <line x1="90" y1="701" x2="450" y2="701" class="u-sep" />
+            <text x="110" y="727" class="u-member">+ timing operations + commit()</text>
+            <text x="110" y="750" class="u-member">- source_ : vector&lt;T&gt;</text>
+
+            <text x="955" y="326" class="u-note">Low-level sampled primitives</text>
+            <rect x="940" y="355" width="230" height="115" rx="12" class="u-box" />
+            <text x="1055" y="385" text-anchor="middle" class="u-title">Track&lt;T&gt;</text>
+            <line x1="940" y1="400" x2="1170" y2="400" class="u-sep" />
+            <text x="958" y="426" class="u-member">+ addClip()</text>
+            <text x="958" y="450" class="u-member">+ at() : const T*</text>
+
+            <rect x="940" y="525" width="230" height="135" rx="12" class="u-box" />
+            <text x="1055" y="555" text-anchor="middle" class="u-title">Clip&lt;T&gt;</text>
+            <line x1="940" y1="570" x2="1170" y2="570" class="u-sep" />
+            <text x="958" y="596" class="u-member">+ addFrame()</text>
+            <text x="958" y="620" class="u-member">+ contains(), at()</text>
+            <text x="958" y="644" class="u-member">+ startFrame(), endFrame()</text>
+
+            <path d="M410 130 L330 130" class="u-line" />
+            <polygon points="410,130 398,122 386,130 398,138" fill="#38bdf8" />
+            <text x="350" y="119" class="u-note">owns</text>
+            <path d="M545 270 L320 355" class="u-line" />
+            <polygon points="545,270 532,267 525,279 538,282" fill="#38bdf8" />
+            <text x="385" y="310" class="u-note">owns by name</text>
+            <path d="M655 270 L670 355" class="u-line" />
+            <polygon points="655,270 649,283 659,291 665,278" fill="#38bdf8" />
+            <text x="680" y="316" class="u-note">owns by name</text>
+            <path d="M790 110 L870 110" class="u-dep" />
+            <text x="800" y="97" class="u-note">creates</text>
+            <path d="M980 240 C940 305 420 288 340 355" class="u-dep" />
+            <path d="M1040 240 C1000 320 820 310 760 355" class="u-dep" />
+            <text x="913" y="288" class="u-note">scopes access</text>
+            <path d="M270 560 L270 630" class="u-dep" />
+            <text x="285" y="601" class="u-note">clip() returns</text>
+            <path d="M1055 470 L1055 525" class="u-line" />
+            <polygon points="1055,470 1047,482 1055,494 1063,482" fill="#38bdf8" />
+            <text x="1070" y="503" class="u-note">contains</text>
+          </svg>
+        </div>
+        <div class="legend">
+          <span>ownership / composition</span>
+          <span class="dependency">creation or scoped access</span>
+        </div>
+
+        <div class="two-column">
+          <article class="card">
+            <h3>Header-only deterministic core</h3>
+            <p><code>viz/core</code> and <code>viz/story</code> depend only on the C++17 standard library. They are safe to use in tests, recorders, exporters, and headless tools.</p>
+          </article>
+          <article class="card">
+            <h3>Raylib boundary</h3>
+            <p><code>viz/plot</code>, <code>viz/visual</code>, and <code>viz/math/Functions.hpp</code> use Raylib types. They translate resolved state into pixels, lines, spheres, and cameras.</p>
+          </article>
+        </div>
+        <div class="flow" aria-label="Frame data flow">
+          <span>record algorithm</span><b>&rarr;</b><span>author tracks</span><b>&rarr;</b><span>seek global frame</span><b>&rarr;</b><span>resolve state</span><b>&rarr;</b><span>render</span>
+        </div>
+      </section>
+
+      <section id="quick-start">
+        <div class="eyebrow">Quick start</div>
+        <h2>Record first. Edit timing second.</h2>
+        <div class="code-block">
+          <div class="code-title"><span>Authoring a recorded algorithm</span><span>C++17</span></div>
+          <pre><code>viz::Storyboard storyboard(359, 60.0f);
+
+// A nested sequence uses local frame numbers.
+const auto sorting = storyboard.sequence("Insertion sort", 30, 300);
+
+// The algorithm recorder returns one state per meaningful step.
+auto&amp; states = sorting.track&lt;SortFrame&gt;("Algorithm state");
+states.clip(recordInsertionSort(values))
+    .trim(0, recordedStateCount)
+    .framesPerStep(10)
+    .holdLast()
+    .commit();
+
+// Visual properties use keyframes rather than sampled snapshots.
+auto&amp; opacity = sorting.opacity("Opacity");
+opacity.fadeIn(0, 20).fadeOut(270, 29);
+
+sorting.marker(0, "Sorting begins");
+sorting.marker(299, "Sorting ends");
+
+// Renderers only ask what exists at the global frame.
+if (const SortFrame* state = states.at(storyboard.frame()))
+    drawBars(*state, opacity.at(storyboard.frame()).value_or(1.0f));</code></pre>
+        </div>
+      </section>
+
+      <section id="clips">
+        <div class="eyebrow">Sampled clips</div>
+        <h2>Timing operations stay declarative</h2>
+        <div class="api-grid">
+          <article class="card"><h3><code>startAt(frame)</code></h3><p>Places the clip using frames local to its storyboard or sequence.</p></article>
+          <article class="card"><h3><code>trim(first, end)</code></h3><p>Keeps the half-open source range <code>[first, end)</code>.</p></article>
+          <article class="card"><h3><code>duration(frames)</code></h3><p>Resamples discrete states across an exact editor duration.</p></article>
+          <article class="card"><h3><code>framesPerStep(n)</code></h3><p>Displays each algorithm state for <code>n</code> timeline frames.</p></article>
+          <article class="card"><h3><code>holdLast()</code></h3><p>Extends the final state to the containing sequence boundary.</p></article>
+          <article class="card"><h3><code>commit()</code></h3><p>Finalizes placement. A builder may only be committed once.</p></article>
+        </div>
+        <div class="note">
+          Timing does not expand the state vector. A clip with 40 large snapshots still stores 40 snapshots after
+          <code>framesPerStep(20)</code> and <code>holdLast()</code>.
+        </div>
+      </section>
+
+      <section id="timing-semantics">
+        <div class="eyebrow">Precise semantics</div>
+        <h2>How a sampled state is chosen</h2>
+        <p class="lead">
+          Clip timing is evaluated when <code>at(globalFrame)</code> is called. Repetition, resampling, and holds
+          never materialize extra copies of <code>T</code>.
+        </p>
+
+        <div class="flow" aria-label="Clip timing evaluation order">
+          <span>source states</span><b>&rarr;</b><span>trim</span><b>&rarr;</b><span>framesPerStep</span><b>&rarr;</b><span>duration resample</span><b>&rarr;</b><span>scope clip / hold</span>
+        </div>
+
+        <div class="two-column">
+          <article class="card">
+            <h3>Natural duration</h3>
+            <p>After trimming, <code>S</code> states with <code>framesPerStep(R)</code> have a natural duration of <code>S * R</code> timeline frames.</p>
+          </article>
+          <article class="card">
+            <h3>Requested duration</h3>
+            <p><code>duration(D)</code> nearest-neighbor resamples that repeated virtual sequence to exactly <code>D</code> authored frames, preserving both endpoints.</p>
+          </article>
+        </div>
+
+        <div class="code-block">
+          <div class="code-title"><span>Equivalent frame-mapping formula</span><span>No expanded state vector</span></div>
+          <pre><code>// S = selected states, R = framesPerStep, N = S * R
+// D = duration if supplied, otherwise N
+local = globalFrame - clipStart;
+
+if (holdLast &amp;&amp; local &gt;= D)
+    return states.back();
+
+repeatedIndex = local;
+if (durationWasSupplied &amp;&amp; D &gt; 1 &amp;&amp; N &gt; 1)
+    repeatedIndex = llround(local * (N - 1) / (D - 1));
+
+sourceIndex = min(repeatedIndex / R, S - 1);
+return states[sourceIndex];</code></pre>
+        </div>
+
+        <div class="table-wrap">
+          <table class="method-table">
+            <caption>Example: source <code>[A, B, C]</code></caption>
+            <thead><tr><th>Settings</th><th>Resolved authored frames</th><th>Stored states</th></tr></thead>
+            <tbody>
+              <tr><td><code>framesPerStep(2)</code></td><td><code>A, A, B, B, C, C</code></td><td>3</td></tr>
+              <tr><td><code>framesPerStep(2).duration(5)</code></td><td><code>A, A, B, C, C</code></td><td>3</td></tr>
+              <tr><td><code>framesPerStep(2).duration(3)</code></td><td><code>A, B, C</code></td><td>3</td></tr>
+              <tr><td><code>duration(3).holdLast()</code> in a 7-frame scope</td><td><code>A, B, C, C, C, C, C</code></td><td>3</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Rules that matter while editing</h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Situation</th><th>Exact behavior</th></tr></thead>
+            <tbody>
+              <tr><td>Frame numbering</td><td><code>lastFrame</code> is inclusive. A storyboard from frame 0 through 359 contains 360 frames.</td></tr>
+              <tr><td>Local placement</td><td><code>startAt(0)</code> means the containing track or sequence start. It is converted to a global frame only at <code>commit()</code>.</td></tr>
+              <tr><td>Builder call order</td><td><code>duration()</code> and <code>framesPerStep()</code> store settings, so their call order does not matter. <code>trim()</code> always addresses the original supplied source vector.</td></tr>
+              <tr><td>Sequence boundary</td><td>If an authored clip runs past its scope, it is truncated at the boundary. The visible prefix is not compressed to fit.</td></tr>
+              <tr><td><code>holdLast()</code></td><td>If the authored duration ends early, the last selected state continues through the track's scope end. It never crosses that boundary.</td></tr>
+              <tr><td>Overlapping clips</td><td>The most recently committed clip wins for every overlapping frame. This is intentional layer-style override behavior.</td></tr>
+              <tr><td>Empty frame</td><td><code>StoryTrack&lt;T&gt;::at()</code> returns <code>nullptr</code> outside its scope or where no clip contributes a state.</td></tr>
+              <tr><td>FPS</td><td>FPS controls how quickly playback advances. It does not change clip lengths, keyframe positions, or deterministic seeking.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note warning">
+          <strong>Large requested durations do not create large allocations.</strong> The duration is arithmetic metadata.
+          The actual memory cost is dominated by the selected source states and the number of committed clips.
+        </div>
+      </section>
+
+      <section id="keyframes">
+        <div class="eyebrow">Property animation</div>
+        <h2>Keyframes for values that interpolate</h2>
+        <div class="code-block">
+          <div class="code-title"><span>Float and custom keyframes</span><span>C++17</span></div>
+          <pre><code>auto&amp; opacity = storyboard.opacity("Curve opacity");
+opacity.fadeIn(30, 20).fadeOut(280, 20);
+
+auto&amp; camera = storyboard.keyframes&lt;Vector3&gt;(
+    "Camera position",
+    [](Vector3 from, Vector3 to, float t) {
+        return Vector3{
+            from.x + (to.x - from.x) * t,
+            from.y + (to.y - from.y) * t,
+            from.z + (to.z - from.z) * t
+        };
+    });
+
+camera.keyframe(0, wideView, viz::Easing::EaseInOut)
+      .keyframe(120, closeView);</code></pre>
+        </div>
+        <p>Available easing modes: <code>Linear</code>, <code>EaseIn</code>, <code>EaseOut</code>, <code>EaseInOut</code>, and <code>Step</code>.</p>
+      </section>
+
+      <section id="sequences">
+        <div class="eyebrow">Local editing</div>
+        <h2>Nested sequences keep scripts readable</h2>
+        <div class="code-block">
+          <div class="code-title"><span>Frames are local inside a sequence</span><span>C++17</span></div>
+          <pre><code>const auto search = storyboard.sequence("Search", 60, 240);
+const auto relaxation = search.sequence("Relaxation", 90, 80);
+
+auto&amp; edges = relaxation.track&lt;EdgeFrame&gt;("Edges");
+edges.clip(recordRelaxation())
+     .startAt(0)       // global frame 150
+     .framesPerStep(4)
+     .holdLast()
+     .commit();
+
+relaxation.marker(0, "Relaxation begins");</code></pre>
+        </div>
+      </section>
+
+      <section id="api">
+        <div class="eyebrow">Reference</div>
+        <h2>Public API map</h2>
+        <p class="lead">All library symbols are in <code>namespace viz</code>, except curve generators under <code>viz::math</code>. The library is header-only; include only the pieces you use.</p>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Header</th><th>Public surface</th><th>Raylib</th></tr></thead>
+            <tbody>
+              <tr><td><code>viz/core/Timeline.hpp</code></td><td><code>Timeline</code></td><td>No</td></tr>
+              <tr><td><code>viz/core/Clip.hpp</code></td><td><code>Clip&lt;T&gt;</code></td><td>No</td></tr>
+              <tr><td><code>viz/core/Track.hpp</code></td><td><code>Track&lt;T&gt;</code></td><td>No</td></tr>
+              <tr><td><code>viz/story/Storyboard.hpp</code></td><td><code>Storyboard</code>, <code>Sequence</code>, <code>TimelineMarker</code></td><td>No</td></tr>
+              <tr><td><code>viz/story/StoryTrack.hpp</code></td><td><code>StoryTrack&lt;T&gt;</code>, <code>StoryClipBuilder&lt;T&gt;</code></td><td>No</td></tr>
+              <tr><td><code>viz/story/KeyframeTrack.hpp</code></td><td><code>KeyframeTrack&lt;T&gt;</code></td><td>No</td></tr>
+              <tr><td><code>viz/story/Easing.hpp</code></td><td><code>Easing</code>, <code>applyEasing()</code></td><td>No</td></tr>
+              <tr><td><code>viz/plot/Range.hpp</code>, <code>Plot2D.hpp</code>, <code>Plot3D.hpp</code></td><td><code>Range</code>, <code>Plot2D</code>, <code>Plot3D</code></td><td>Yes</td></tr>
+              <tr><td><code>viz/visual/*.hpp</code></td><td><code>CurveFrame</code>, curve and marker draw helpers</td><td>Yes</td></tr>
+              <tr><td><code>viz/math/Functions.hpp</code></td><td>Sample parameter and example curve generators</td><td>Yes, for vectors</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="core-api">
+        <div class="eyebrow">Core reference</div>
+        <h2>Clock, clips, and low-level tracks</h2>
+        <p class="lead">
+          These primitives are useful when you need direct control without named tracks or sequence scopes.
+          Most editor-style scripts should start with <code>Storyboard</code>.
+        </p>
+
+        <h3><code>Timeline</code> <span class="tag">viz/core/Timeline.hpp</span></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">Timeline(int lastFrame, float fps)</code></td><td>Creates an inclusive frame range <code>[0, lastFrame]</code>, initially paused at frame 0. Throws <code>invalid_argument</code> for a negative last frame or non-positive/non-finite FPS.</td></tr>
+              <tr><td><code class="signature">int frame() const noexcept</code></td><td>Current global frame.</td></tr>
+              <tr><td><code class="signature">int lastFrame() const noexcept</code></td><td>Inclusive final frame.</td></tr>
+              <tr><td><code class="signature">float fps() const noexcept</code></td><td>Playback cadence in frames per second.</td></tr>
+              <tr><td><code class="signature">bool isPlaying() const noexcept</code></td><td>Whether time-based playback is active.</td></tr>
+              <tr><td><code class="signature">void play() noexcept</code></td><td>Starts playback unless already at the final frame.</td></tr>
+              <tr><td><code class="signature">void pause() noexcept</code></td><td>Stops time-based advancement.</td></tr>
+              <tr><td><code class="signature">void togglePlay() noexcept</code></td><td>Switches between <code>play()</code> and <code>pause()</code>.</td></tr>
+              <tr><td><code class="signature">void next() noexcept</code></td><td>Advances at most one frame, clears fractional accumulated time, and pauses upon reaching the end.</td></tr>
+              <tr><td><code class="signature">void previous() noexcept</code></td><td>Moves back at most one frame and clears fractional accumulated time. Playback state is otherwise unchanged.</td></tr>
+              <tr><td><code class="signature">void goTo(int frame) noexcept</code></td><td>Clamps to the valid range and clears accumulated time. Seeking to the final frame pauses playback.</td></tr>
+              <tr><td><code class="signature">void reset() noexcept</code></td><td>Seeks to frame 0 and clears accumulated time. It intentionally does not change the playing flag.</td></tr>
+              <tr><td><code class="signature">void updatePlayback(float dt)</code></td><td>Consumes elapsed seconds, advances all ready frames arithmetically, and pauses at the end. Throws <code>invalid_argument</code> for negative or non-finite <code>dt</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">
+          Call <code>updatePlayback(GetFrameTime())</code> once per application frame. A large <code>dt</code> can advance
+          several timeline frames without looping one frame at a time.
+        </div>
+
+        <h3><code>Clip&lt;T&gt;</code> <span class="tag">viz/core/Clip.hpp</span></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">explicit Clip(int startFrame)</code></td><td>Creates an empty sampled clip at a non-negative global frame. Negative starts throw <code>invalid_argument</code>.</td></tr>
+              <tr><td><code class="signature">void addFrame(const T&amp;)</code><br><code class="signature">void addFrame(T&amp;&amp;)</code></td><td>Appends one state to the clip. Throws <code>length_error</code> if its global end could exceed the supported <code>int</code> frame range.</td></tr>
+              <tr><td><code class="signature">size_t size() const noexcept</code><br><code class="signature">bool empty() const noexcept</code></td><td>Reports stored samples.</td></tr>
+              <tr><td><code class="signature">int startFrame() const noexcept</code></td><td>Returns the placement frame passed to the constructor.</td></tr>
+              <tr><td><code class="signature">int endFrame() const noexcept</code></td><td>Inclusive end. An empty clip reports <code>startFrame() - 1</code>.</td></tr>
+              <tr><td><code class="signature">bool contains(int globalFrame) const noexcept</code></td><td>True only when a stored sample exists at that global frame.</td></tr>
+              <tr><td><code class="signature">const T&amp; at(int globalFrame) const</code></td><td>Returns the exact sample; throws <code>out_of_range</code> when the frame is not inside the clip.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3><code>Track&lt;T&gt;</code> <span class="tag">viz/core/Track.hpp</span></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">void addClip(const Clip&lt;T&gt;&amp;)</code><br><code class="signature">void addClip(Clip&lt;T&gt;&amp;&amp;)</code></td><td>Copies or moves a clip into the track.</td></tr>
+              <tr><td><code class="signature">size_t size() const noexcept</code><br><code class="signature">bool empty() const noexcept</code></td><td>Reports the number of clips, not samples.</td></tr>
+              <tr><td><code class="signature">const T* at(int frame) const noexcept</code></td><td>Returns the contributing state or <code>nullptr</code>. Clips are searched newest-first, so the last added overlapping clip wins.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note warning">
+          A pointer returned by <code>Track::at()</code> refers to storage owned by the track. Use it immediately and
+          resolve it again after adding clips; container growth can invalidate previously returned pointers.
+        </div>
+      </section>
+
+      <section id="story-api">
+        <div class="eyebrow">Storyboard reference</div>
+        <h2>Complete authoring API</h2>
+
+        <h3><code>Storyboard</code> <span class="tag">viz/story/Storyboard.hpp</span></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">Storyboard(int lastFrame, float fps)</code></td><td>Owns a <code>Timeline</code>, named tracks, and markers. Constructor validation is the same as <code>Timeline</code>.</td></tr>
+              <tr><td><code class="signature">frame(), lastFrame(), fps(), isPlaying()</code></td><td>Read-only forwarding access to the owned clock.</td></tr>
+              <tr><td><code class="signature">play(), pause(), togglePlay()</code><br><code class="signature">next(), previous(), goTo(), reset()</code></td><td>Transport controls with the exact <code>Timeline</code> behavior described above.</td></tr>
+              <tr><td><code class="signature">void update(float dt)</code></td><td>Forwards elapsed seconds to <code>Timeline::updatePlayback</code>.</td></tr>
+              <tr><td><code class="signature">template&lt;class T&gt; StoryTrack&lt;T&gt;&amp; track(const string&amp; name)</code></td><td>Gets or creates a full-storyboard sampled track.</td></tr>
+              <tr><td><code class="signature">template&lt;class T&gt; KeyframeTrack&lt;T&gt;&amp; keyframes(name, interpolator)</code></td><td>Gets or creates a full-storyboard keyframe track. Floating types get linear interpolation by default; other types need a callback.</td></tr>
+              <tr><td><code class="signature">KeyframeTrack&lt;float&gt;&amp; opacity(const string&amp; name)</code></td><td>Convenience alias for <code>keyframes&lt;float&gt;(name)</code>.</td></tr>
+              <tr><td><code class="signature">Sequence sequence(name, startFrame, duration)</code></td><td>Creates a lightweight sequence handle for an in-bounds global range.</td></tr>
+              <tr><td><code class="signature">Storyboard&amp; marker(int frame, const string&amp; name)</code></td><td>Adds a globally positioned, uniquely named marker and keeps the collection sorted by frame.</td></tr>
+              <tr><td><code class="signature">optional&lt;int&gt; findMarker(const string&amp; name) const</code></td><td>Finds a marker frame by its exact stored name.</td></tr>
+              <tr><td><code class="signature">vector&lt;TimelineMarker&gt; markersAt(int frame) const</code></td><td>Returns a copy of every marker at a frame. An out-of-range query simply returns an empty vector unless matching data was somehow present.</td></tr>
+              <tr><td><code class="signature">const vector&lt;TimelineMarker&gt;&amp; markers() const noexcept</code></td><td>Read-only access to all markers in frame order.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note warning">
+          Track names are identity keys. Reusing a name returns the existing object only when value type, sampled/keyframed
+          kind, and sequence scope are identical. A mismatch throws <code>logic_error</code>. For keyframes, the
+          interpolator supplied on the first creation remains in use.
+        </div>
+        <div class="code-block">
+          <div class="code-title"><span>Public marker value</span><span>Stored in global frame space</span></div>
+          <pre><code>struct TimelineMarker {
+    int frame = 0;
+    std::string name;
+};</code></pre>
+        </div>
+
+        <h3><code>Sequence</code></h3>
+        <p>
+          A sequence stores a pointer to its storyboard, a qualified name, and an inclusive global scope. It owns no
+          tracks and has no independent playhead. Child names are qualified with <code>/</code>, such as
+          <code>Search/Relaxation/Edges</code>.
+        </p>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">const string&amp; name() const noexcept</code></td><td>Returns the fully qualified sequence name.</td></tr>
+              <tr><td><code class="signature">int startFrame() const noexcept</code><br><code class="signature">int endFrame() const noexcept</code></td><td>Inclusive global scope boundaries.</td></tr>
+              <tr><td><code class="signature">int duration() const noexcept</code></td><td>Returns <code>endFrame - startFrame + 1</code>.</td></tr>
+              <tr><td><code class="signature">template&lt;class T&gt; StoryTrack&lt;T&gt;&amp; track(name) const</code></td><td>Gets or creates a sampled track scoped to this sequence. Clip placement is local; state lookup is global.</td></tr>
+              <tr><td><code class="signature">template&lt;class T&gt; KeyframeTrack&lt;T&gt;&amp; keyframes(name, interpolator) const</code></td><td>Gets or creates a keyframe track scoped to this sequence. Keyframe positions are local.</td></tr>
+              <tr><td><code class="signature">KeyframeTrack&lt;float&gt;&amp; opacity(name) const</code></td><td>Scoped float keyframe shorthand.</td></tr>
+              <tr><td><code class="signature">Sequence sequence(name, localStart, duration) const</code></td><td>Creates a child fully contained by its parent. <code>localStart</code> is relative to the parent.</td></tr>
+              <tr><td><code class="signature">const Sequence&amp; marker(localFrame, name) const</code></td><td>Adds a global marker using a qualified name, then returns the sequence for chaining.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3><code>StoryTrack&lt;T&gt;</code> and <code>StoryClipBuilder&lt;T&gt;</code></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">StoryTrack(string name, int scopeStart, int scopeEnd)</code></td><td>Usually created through a storyboard or sequence. Requires a non-empty name and valid inclusive scope.</td></tr>
+              <tr><td><code class="signature">StoryClipBuilder(StoryTrack&lt;T&gt;&amp; owner, vector&lt;T&gt; source)</code></td><td>Public low-level builder constructor. Prefer <code>owner.clip(...)</code>, which supplies the owner safely.</td></tr>
+              <tr><td><code class="signature">StoryClipBuilder(StoryClipBuilder&amp;&amp;) noexcept</code><br><code class="signature">operator=(StoryClipBuilder&amp;&amp;) noexcept</code></td><td>The builder is movable but not copyable, preventing accidental duplicate commits of one source.</td></tr>
+              <tr><td><code class="signature">name(), startFrame(), endFrame()</code></td><td>Track identity and global scope.</td></tr>
+              <tr><td><code class="signature">size_t clipCount() const noexcept</code></td><td>Number of committed authored clips.</td></tr>
+              <tr><td><code class="signature">size_t storedStateCount() const noexcept</code></td><td>Total selected source states across clips. Saturates at <code>size_t</code> maximum on arithmetic overflow.</td></tr>
+              <tr><td><code class="signature">const T* at(int globalFrame) const noexcept</code></td><td>Resolves the latest committed contributing clip or returns <code>nullptr</code>.</td></tr>
+              <tr><td><code class="signature">StoryClipBuilder&lt;T&gt; clip(vector&lt;T&gt; states)</code><br><code class="signature">clip(initializer_list&lt;T&gt; states)</code></td><td>Starts a move-only builder. Destroying the builder without <code>commit()</code> leaves the track unchanged.</td></tr>
+              <tr><td><code class="signature">builder.startAt(int localFrame)</code></td><td>Places the clip relative to the track scope; default is 0.</td></tr>
+              <tr><td><code class="signature">builder.duration(int frames)</code></td><td>Requests a positive authored duration and enables endpoint-preserving nearest-neighbor resampling.</td></tr>
+              <tr><td><code class="signature">builder.framesPerStep(int frames)</code></td><td>Sets a positive virtual repetition count; default is 1.</td></tr>
+              <tr><td><code class="signature">builder.trim(size_t first, size_t lastExclusive)</code></td><td>Selects a non-empty half-open range from the original source.</td></tr>
+              <tr><td><code class="signature">builder.holdLast(bool enabled = true) noexcept</code></td><td>Controls extension of the final state to the track scope end.</td></tr>
+              <tr><td><code class="signature">StoryTrack&lt;T&gt;&amp; builder.commit()</code></td><td>Moves selected states into a new authored clip and returns its owner. The same builder cannot be committed twice.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-block">
+          <div class="code-title"><span>Multiple clips and explicit overlap</span><span>Later commit wins</span></div>
+          <pre><code>auto&amp; state = scene.track&lt;FrameState&gt;("Algorithm");
+
+state.clip(primaryRecording)
+     .startAt(0)
+     .framesPerStep(8)
+     .holdLast()
+     .commit();
+
+// Temporary correction layer between local frames 80 and 99.
+state.clip(correctedStates)
+     .startAt(80)
+     .duration(20)
+     .commit();</code></pre>
+        </div>
+
+        <h3><code>KeyframeTrack&lt;T&gt;</code></h3>
+        <div class="code-block">
+          <div class="code-title"><span>Public keyframe value</span><span>Internal frame is global after insertion</span></div>
+          <pre><code>struct Keyframe {
+    int frame = 0;
+    T value{};
+    Easing easingToNext = Easing::Linear;
+};</code></pre>
+        </div>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">using Interpolator = function&lt;T(const T&amp;, const T&amp;, float)&gt;</code></td><td>The callback receives left value, right value, and an already-eased alpha in <code>[0, 1]</code>.</td></tr>
+              <tr><td><code class="signature">KeyframeTrack(name, scopeStart, scopeEnd, interpolator)</code></td><td>Requires a name, valid scope, and non-empty interpolator.</td></tr>
+              <tr><td><code class="signature">static Interpolator defaultInterpolator()</code></td><td>Returns arithmetic linear interpolation for floating-point <code>T</code>; returns an empty callback for other types.</td></tr>
+              <tr><td><code class="signature">name(), startFrame(), endFrame(), size()</code></td><td>Identity, global scope, and keyframe count.</td></tr>
+              <tr><td><code class="signature">KeyframeTrack&amp; keyframe(localFrame, value, easingToNext = Linear)</code></td><td>Inserts in sorted order or replaces the value and outgoing easing at an existing frame.</td></tr>
+              <tr><td><code class="signature">optional&lt;T&gt; at(int globalFrame) const</code></td><td>Returns empty outside scope or when no keys exist. Inside scope it holds the first value backward, the last forward, and interpolates between keys.</td></tr>
+              <tr><td><code class="signature">fadeIn(localStart, duration, easing = EaseInOut)</code></td><td>Float-only helper that writes 0 at start and 1 at <code>start + duration</code>.</td></tr>
+              <tr><td><code class="signature">fadeOut(localStart, duration, easing = EaseInOut)</code></td><td>Float-only helper that writes 1 at start and 0 at <code>start + duration</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <details open>
+          <summary>Custom interpolation example</summary>
+          <div class="code-block">
+            <div class="code-title"><span>Raylib Vector3 camera track</span><span>Alpha is already eased</span></div>
+            <pre><code>auto&amp; camera = shot.keyframes&lt;Vector3&gt;(
+    "Camera",
+    [](const Vector3&amp; a, const Vector3&amp; b, float t) {
+        return Vector3{
+            a.x + (b.x - a.x) * t,
+            a.y + (b.y - a.y) * t,
+            a.z + (b.z - a.z) * t
+        };
+    });
+
+camera.keyframe(0,   {10.0f, 7.0f, 10.0f}, viz::Easing::EaseInOut)
+      .keyframe(120, { 4.0f, 3.0f,  4.0f}, viz::Easing::EaseOut)
+      .keyframe(200, { 0.0f, 6.0f,  8.0f});
+
+const Vector3 position = camera.at(storyboard.frame())
+    .value_or(Vector3{10.0f, 7.0f, 10.0f});</code></pre>
+          </div>
+          <p class="muted">For a custom easing curve, author the segment with <code>Easing::Linear</code> and transform <code>t</code> inside your interpolator.</p>
+        </details>
+
+        <h3><code>Easing</code> and <code>applyEasing()</code></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Mode</th><th>Curve</th></tr></thead>
+            <tbody>
+              <tr><td><code>Linear</code></td><td><code>t</code></td></tr>
+              <tr><td><code>EaseIn</code></td><td>Quadratic acceleration: <code>t * t</code>.</td></tr>
+              <tr><td><code>EaseOut</code></td><td>Quadratic deceleration.</td></tr>
+              <tr><td><code>EaseInOut</code></td><td>Quadratic acceleration then deceleration.</td></tr>
+              <tr><td><code>Step</code></td><td>Holds the left keyframe until the right keyframe is reached.</td></tr>
+              <tr><td><code class="signature">float applyEasing(Easing, float alpha) noexcept</code></td><td>Clamps alpha to <code>[0, 1]</code>, then applies the selected curve.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Validation and exceptions</h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Exception</th><th>Typical causes</th></tr></thead>
+            <tbody>
+              <tr><td><code>std::invalid_argument</code></td><td>Empty names; invalid scopes; non-positive duration, FPS, step size, or fade length; empty/invalid trim; missing custom interpolator; sequence exceeding its parent.</td></tr>
+              <tr><td><code>std::out_of_range</code></td><td>Clip start, keyframe, fade, or marker outside its allowed scope.</td></tr>
+              <tr><td><code>std::logic_error</code></td><td>Committing one builder twice; reusing a track name with a different value type, kind, or scope; duplicate marker name.</td></tr>
+              <tr><td><code>std::length_error</code></td><td>Frame-count arithmetic or virtual repetition exceeds the supported numeric range.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Lifetime and performance rules</h3>
+        <ul class="checklist">
+          <li>A <code>Sequence</code> is non-owning. Do not use it after its <code>Storyboard</code> is destroyed.</li>
+          <li>Track references returned by a storyboard refer to storyboard-owned objects. Keep the storyboard alive while using them.</li>
+          <li>A <code>StoryTrack::at()</code> pointer refers to a state owned by that track. Do not retain it across later clip commits; resolve once per rendered frame.</li>
+          <li><code>KeyframeTrack::at()</code> returns an <code>optional&lt;T&gt;</code> value, not an internal pointer.</li>
+          <li>Resolving a sampled state scans committed clips newest-first: worst-case cost is linear in clip count, not in authored duration.</li>
+          <li>Resolving a keyframe uses binary search: logarithmic in keyframe count, plus the cost of copying/interpolating <code>T</code>.</li>
+          <li><code>framesPerStep</code>, <code>duration</code>, and <code>holdLast</code> add constant metadata; they do not duplicate snapshots.</li>
+        </ul>
+        <div class="note">
+          For very large algorithm states, store immutable shared data inside each snapshot (for example
+          <code>shared_ptr&lt;const Graph&gt;</code>) and keep only the changing frontier, indices, colors, or annotations by
+          value. Another good option is event recording plus periodic checkpoints. The timeline intentionally does not
+          impose one storage strategy.
+        </div>
+      </section>
+
+      <section id="plot-api">
+        <div class="eyebrow">Raylib reference</div>
+        <h2>Plots, curves, markers, and sample data</h2>
+        <p class="lead">These helpers consume resolved timeline state. They do not own playback, clips, or keyframes.</p>
+
+        <h3><code>Range</code> and <code>Plot2D</code> <span class="tag">viz/plot</span></h3>
+        <div class="code-block">
+          <div class="code-title"><span>Data types</span><span>Raylib required</span></div>
+          <pre><code>struct Range {
+    float min = 0.0f;
+    float max = 1.0f;
+};
+
+Plot2D(Rectangle viewport, Range xRange, Range yRange);</code></pre>
+        </div>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">Plot2D(Rectangle viewport, Range x, Range y)</code></td><td>Requires positive finite viewport dimensions and finite strictly increasing world ranges; otherwise throws <code>invalid_argument</code>.</td></tr>
+              <tr><td><code class="signature">Vector2 toScreen(Vector2 world) const noexcept</code></td><td>Linearly maps world coordinates into the viewport and flips Y for screen coordinates. It does not clamp or clip out-of-range points.</td></tr>
+              <tr><td><code class="signature">static size_t countGridLines(Range range, float step)</code></td><td>Counts multiples of <code>step</code> inside an ordered inclusive range. Invalid data throws <code>invalid_argument</code>; more than 10,000 lines throws <code>length_error</code>.</td></tr>
+              <tr><td><code class="signature">void drawGrid(float xStep, float yStep) const</code></td><td>Draws light grid lines and emphasizes axes when zero lies in a range. Uses <code>countGridLines</code> safety checks.</td></tr>
+              <tr><td><code class="signature">void drawBorder() const</code></td><td>Draws a one-pixel border around the viewport.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3><code>Plot3D</code> <span class="tag">viz/plot/Plot3D.hpp</span></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Signature</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">Plot3D()</code></td><td>Creates a perspective camera at <code>{10, 7, 10}</code>, aimed at the origin, with Y-up and a 45-degree field of view.</td></tr>
+              <tr><td><code class="signature">const Camera3D&amp; camera() const noexcept</code></td><td>Returns the camera for <code>BeginMode3D</code>. The current API exposes it read-only.</td></tr>
+              <tr><td><code class="signature">void drawGrid(int slices = 20, float spacing = 1) const</code></td><td>Calls Raylib <code>DrawGrid</code>. Non-positive slices or non-positive/non-finite spacing throw <code>invalid_argument</code>.</td></tr>
+              <tr><td><code class="signature">void drawAxes() const</code></td><td>Draws fixed red X, green Y, and blue Z axes centered on the origin.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3><code>CurveFrame</code> and draw helpers <span class="tag">viz/visual</span></h3>
+        <div class="code-block">
+          <div class="code-title"><span>Resolved curve state</span><span>Suitable for StoryTrack&lt;CurveFrame&gt;</span></div>
+          <pre><code>struct CurveFrame {
+    int visiblePoints = 0;
+    bool drawLine = false;
+    bool drawPoints = false;
+};</code></pre>
+        </div>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Function</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">drawCurve2D(plot, vector&lt;Vector2&gt;, state, color)</code></td><td>Clamps <code>visiblePoints</code> to the available data, draws 2.5-pixel connected lines when enabled, and draws every visible point as a 3-pixel circle when enabled.</td></tr>
+              <tr><td><code class="signature">drawCurve3D(vector&lt;Vector3&gt;, state, color)</code></td><td>Clamps visibility, draws connected 3D lines, and renders point spheres every fourth visible sample to reduce clutter.</td></tr>
+              <tr><td><code class="signature">drawMarker2D(plot, position, radius, color)</code></td><td>Maps a world position through <code>Plot2D</code> and draws a circle. Radius must be positive and finite.</td></tr>
+              <tr><td><code class="signature">drawMarker3D(position, radius, color)</code></td><td>Draws a sphere at a world position. Radius must be positive and finite.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Curve generators <span class="tag">viz/math/Functions.hpp</span></h3>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Symbol</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td><code class="signature">inline constexpr float pi</code></td><td>Single-precision pi constant.</td></tr>
+              <tr><td><code class="signature">validateSampleCount(int samples)</code></td><td>Throws <code>invalid_argument</code> when fewer than two samples are requested.</td></tr>
+              <tr><td><code class="signature">sampleParameter(int index, int samples)</code></td><td>Maps an index to <code>[-2*pi, 2*pi]</code>. Call validation first when using directly.</td></tr>
+              <tr><td><code class="signature">makeSinCurve(int samples)</code></td><td>Returns <code>Vector2{x, sin(x)}</code> samples.</td></tr>
+              <tr><td><code class="signature">makeCosCurve(int samples)</code></td><td>Returns <code>Vector2{x, cos(x)}</code> samples.</td></tr>
+              <tr><td><code class="signature">makeSinCosHelix(int samples)</code></td><td>Returns <code>Vector3{t, sin(t), cos(t)}</code> samples.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-block">
+          <div class="code-title"><span>Minimal 2D render loop</span><span>Authoring and rendering stay separate</span></div>
+          <pre><code>viz::Storyboard storyboard(239, 60.0f);
+const auto points = viz::math::makeSinCurve(240);
+auto&amp; reveal = storyboard.track&lt;viz::CurveFrame&gt;("Sine reveal");
+
+std::vector&lt;viz::CurveFrame&gt; frames;
+for (int count = 1; count &lt;= static_cast&lt;int&gt;(points.size()); ++count)
+    frames.push_back({count, true, false});
+reveal.clip(std::move(frames)).duration(180).holdLast().commit();
+
+viz::Plot2D plot({80, 70, 1040, 540},
+                 {-2.0f * viz::math::pi, 2.0f * viz::math::pi},
+                 {-1.25f, 1.25f});
+
+while (!WindowShouldClose()) {
+    storyboard.update(GetFrameTime());
+
+    BeginDrawing();
+    ClearBackground(RAYWHITE);
+    plot.drawGrid(viz::math::pi / 2.0f, 0.25f);
+    if (const auto* frame = reveal.at(storyboard.frame()))
+        viz::drawCurve2D(plot, points, *frame, BLUE);
+    plot.drawBorder();
+    EndDrawing();
+}</code></pre>
+        </div>
+      </section>
+
+      <section id="recipes">
+        <div class="eyebrow">How to use the design</div>
+        <h2>Practical authoring recipes</h2>
+
+        <details open>
+          <summary>1. Record a complex algorithm without coupling it to drawing</summary>
+          <p>Define a small render snapshot, run the algorithm once, and append a snapshot only at meaningful transitions.</p>
+          <div class="code-block">
+            <div class="code-title"><span>Recorder pattern</span><span>Deterministic input to the timeline</span></div>
+            <pre><code>struct SearchFrame {
+    std::vector&lt;int&gt; frontier;
+    std::vector&lt;bool&gt; visited;
+    int activeNode = -1;
+};
+
+std::vector&lt;SearchFrame&gt; recordBfs(const Graph&amp; graph, int start) {
+    std::vector&lt;SearchFrame&gt; result;
+    // Run BFS normally. After enqueue/dequeue/visit:
+    // result.push_back({frontierCopy, visitedCopy, activeNode});
+    return result;
+}
+
+auto&amp; bfs = storyboard.sequence("BFS", 30, 300)
+                      .track&lt;SearchFrame&gt;("State");
+bfs.clip(recordBfs(graph, 0))
+   .framesPerStep(8)
+   .holdLast()
+   .commit();</code></pre>
+          </div>
+          <p class="muted">The algorithm never calls Raylib, reads the playhead, or waits. This makes recording testable and seeking exact.</p>
+        </details>
+
+        <details>
+          <summary>2. Edit one recording into several pacing variants</summary>
+          <div class="code-block">
+            <div class="code-title"><span>Same state type, different editorial timing</span><span>Clips store only selected snapshots</span></div>
+            <pre><code>auto recorded = recordAlgorithm(input);
+const std::size_t recordedStateCount = recorded.size();
+
+track.clip(recorded)
+     .trim(0, 20)
+     .framesPerStep(12)
+     .commit();
+
+track.clip(std::move(recorded))
+     .trim(20, recordedStateCount)
+     .startAt(240)
+     .duration(90)
+     .holdLast()
+     .commit();</code></pre>
+          </div>
+          <p class="muted">Because <code>clip()</code> takes its vector by value, the first call copies <code>recorded</code>; the second explicitly moves it. For large snapshots, plan ownership intentionally.</p>
+        </details>
+
+        <details>
+          <summary>3. Synchronize state, camera, opacity, and annotations</summary>
+          <div class="code-block">
+            <div class="code-title"><span>Every layer reads the same frame</span><span>No observer graph</span></div>
+            <pre><code>const int frame = storyboard.frame();
+
+const AlgorithmFrame* algorithm = stateTrack.at(frame);
+const float opacity = opacityTrack.at(frame).value_or(1.0f);
+const Vector3 camera = cameraTrack.at(frame).value_or(defaultCamera);
+const auto markers = storyboard.markersAt(frame);
+
+if (algorithm)
+    drawAlgorithm(*algorithm, opacity);
+for (const auto&amp; marker : markers)
+    drawAnnotation(marker.name);</code></pre>
+          </div>
+        </details>
+
+        <details>
+          <summary>4. Add editor-style transport controls</summary>
+          <div class="code-block">
+            <div class="code-title"><span>Raylib input</span><span>Call once per loop</span></div>
+            <pre><code>if (IsKeyPressed(KEY_SPACE)) storyboard.togglePlay();
+if (IsKeyPressed(KEY_RIGHT)) storyboard.next();
+if (IsKeyPressed(KEY_LEFT))  storyboard.previous();
+if (IsKeyPressed(KEY_R))     { storyboard.pause(); storyboard.reset(); }
+
+// Numeric seek can come from a slider, marker, or command.
+if (const auto frame = storyboard.findMarker("BFS/Finished"))
+    storyboard.goTo(*frame);
+
+storyboard.update(GetFrameTime());</code></pre>
+          </div>
+          <p class="muted"><code>reset()</code> preserves play state, so pair it with <code>pause()</code> when the desired UI action is &ldquo;stop and rewind.&rdquo;</p>
+        </details>
+
+        <details>
+          <summary>5. Design state for large graphs, matrices, or simulations</summary>
+          <div class="code-block">
+            <div class="code-title"><span>Share immutable bulk data</span><span>Copy only changing metadata</span></div>
+            <pre><code>struct GraphFrame {
+    std::shared_ptr&lt;const GraphGeometry&gt; geometry; // shared by every frame
+    std::vector&lt;NodeStyle&gt; styles;                 // changes per step
+    int activeNode = -1;
+    std::string caption;
+};</code></pre>
+          </div>
+          <ul class="compact">
+            <li>Prefer one snapshot per meaningful algorithm step, then control pace with <code>framesPerStep</code>.</li>
+            <li>For sparse changes, store events and reconstruct snapshots at checkpoints before authoring the clip.</li>
+            <li>Keep GPU textures, fonts, models, and other Raylib resources outside snapshots; store stable IDs or references with clearly managed lifetime.</li>
+            <li>Use <code>storedStateCount()</code> in diagnostics to confirm timing edits did not inflate storage.</li>
+          </ul>
+        </details>
+
+        <details>
+          <summary>6. Add your own renderer or domain state</summary>
+          <p><code>StoryTrack&lt;T&gt;</code> has no domain constraints beyond storing <code>T</code> in a vector. Write a renderer that accepts <code>const T&amp;</code> and call it only when <code>at()</code> succeeds.</p>
+          <div class="code-block">
+            <div class="code-title"><span>Renderer boundary</span><span>Easy to test headlessly</span></div>
+            <pre><code>struct MatrixFrame {
+    std::vector&lt;float&gt; cells;
+    int rows = 0;
+    int columns = 0;
+    int highlighted = -1;
+};
+
+void drawMatrix(const MatrixFrame&amp; frame, Rectangle viewport);
+
+if (const MatrixFrame* state = matrixTrack.at(storyboard.frame()))
+    drawMatrix(*state, viewport);</code></pre>
+          </div>
+        </details>
+      </section>
+
+      <section id="complete-example">
+        <div class="eyebrow">Complete example</div>
+        <h2>Insertion sort as an editable clip</h2>
+        <p class="lead">
+          This is the complete source compiled as <code>timeline_sorting</code>. It records insertion sort,
+          places the recording in a sequence, changes step timing, holds the result, fades the layer, and draws a playhead.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="../examples/sorting_storyboard.cpp">Open complete source</a>
+          <a class="button" href="../examples/algorithm_storyboard.cpp">Open BFS example</a>
+          <a class="button" href="../examples/sine_cosine_2d.cpp">Open 2D example</a>
+          <a class="button" href="../examples/sine_cosine_3d.cpp">Open 3D example</a>
+        </div>
+        <div class="code-block">
+          <div class="code-title"><span>examples/sorting_storyboard.cpp</span><span>Complete runnable file</span></div>
+          <iframe class="source-frame" src="../examples/sorting_storyboard.cpp" title="Complete insertion sort storyboard source"></iframe>
+        </div>
+      </section>
+
+      <section id="build">
+        <div class="eyebrow">Build and run</div>
+        <h2>CMake commands</h2>
+        <p class="lead">
+          The default configuration builds four Raylib programs and three test executables. The project expects a
+          directory containing both <code>raylib.h</code> and the static library <code>libraylib.a</code>.
+        </p>
+        <div class="code-block">
+          <div class="code-title"><span>PowerShell</span><span>Raylib examples + tests</span></div>
+          <pre><code>cmake -S raylib/Timeline -B raylib/Timeline/build -DRAYLIB_SRC=C:/raylib/raylib/src
+cmake --build raylib/Timeline/build --config Release
+ctest --test-dir raylib/Timeline/build -C Release --output-on-failure
+
+raylib\Timeline\build\timeline_sorting.exe
+raylib\Timeline\build\timeline_algorithm.exe
+raylib\Timeline\build\timeline_2d.exe
+raylib\Timeline\build\timeline_3d.exe</code></pre>
+        </div>
+        <div class="code-block">
+          <div class="code-title"><span>Bash</span><span>Linux or macOS</span></div>
+          <pre><code>export RAYLIB_PATH=/path/to/raylib/src
+cmake -S raylib/Timeline -B raylib/Timeline/build
+cmake --build raylib/Timeline/build -j
+ctest --test-dir raylib/Timeline/build --output-on-failure</code></pre>
+        </div>
+        <div class="code-block">
+          <div class="code-title"><span>Core-only build</span><span>No Raylib required</span></div>
+          <pre><code>cmake -S raylib/Timeline -B raylib/Timeline/build-core -DTIMELINE_BUILD_EXAMPLES=OFF
+cmake --build raylib/Timeline/build-core
+ctest --test-dir raylib/Timeline/build-core --output-on-failure</code></pre>
+        </div>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Target</th><th>Source and purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>timeline_sorting</code></td><td><code>sorting_storyboard.cpp</code>: insertion-sort recording, sampled states, sequence, fade, and playhead.</td></tr>
+              <tr><td><code>timeline_algorithm</code></td><td><code>algorithm_storyboard.cpp</code>: breadth-first search storyboard.</td></tr>
+              <tr><td><code>timeline_2d</code></td><td><code>sine_cosine_2d.cpp</code>: 2D plot, curves, and marker.</td></tr>
+              <tr><td><code>timeline_3d</code></td><td><code>sine_cosine_3d.cpp</code>: helix, 3D axes, grid, and marker.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Windows defaults <code>RAYLIB_SRC</code> to <code>C:/raylib/raylib/src</code>. Linux and macOS use
+          <code>RAYLIB_PATH</code> when set. Windows links <code>winmm</code>, <code>gdi32</code>, and
+          <code>opengl32</code>; macOS links IOKit, Cocoa, OpenGL, and CoreVideo; Linux links GL, X11, threads,
+          <code>m</code>, <code>dl</code>, and <code>rt</code>.
+        </p>
+        <p>
+          Multi-config generators such as Visual Studio commonly place executables in
+          <code>build/Release</code> or <code>build/Debug</code>. Single-config generators such as MinGW Makefiles
+          usually place them directly in <code>build</code>.
+        </p>
+        <p>Controls in every example: <kbd>Space</kbd> play/pause, <kbd>Left</kbd>/<kbd>Right</kbd> step, and <kbd>R</kbd> reset.</p>
+      </section>
+
+      <section id="troubleshooting">
+        <div class="eyebrow">Troubleshooting</div>
+        <h2>Common problems and fixes</h2>
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>Symptom</th><th>Cause and fix</th></tr></thead>
+            <tbody>
+              <tr><td>CMake says <code>raylib.h</code> was not found</td><td>Set <code>-DRAYLIB_SRC</code> to the directory that directly contains <code>raylib.h</code>, not the repository root. Or build only the headless core with <code>-DTIMELINE_BUILD_EXAMPLES=OFF</code>.</td></tr>
+              <tr><td>CMake says <code>libraylib.a</code> was not found</td><td>The configured Raylib source directory has not produced the expected static library. Build Raylib first or point at a directory containing both the header and <code>libraylib.a</code>.</td></tr>
+              <tr><td>You only have <code>raylib.lib</code> on MSVC</td><td>The current CMake file explicitly imports <code>libraylib.a</code>. Use the compatible static archive used by this project, build core-only, or adapt <code>IMPORTED_LOCATION</code> and platform linkage for the MSVC library format.</td></tr>
+              <tr><td>Linux link errors mention GL or X11</td><td>Install the OpenGL/X11 development packages for your distribution. Static Raylib also needs its system dependencies; this project links GL, X11, threads, <code>m</code>, <code>dl</code>, and <code>rt</code>.</td></tr>
+              <tr><td>Executable is not directly under <code>build</code></td><td>Visual Studio and other multi-config generators place it under <code>build/Debug</code> or <code>build/Release</code>. Match the <code>--config</code> used for building.</td></tr>
+              <tr><td><code>track.at(frame)</code> is <code>nullptr</code></td><td>The frame is outside the track scope or no committed clip covers it. Check global versus local frames, call <code>commit()</code>, and use <code>holdLast()</code> when the state should persist.</td></tr>
+              <tr><td><code>keyframes&lt;MyType&gt;()</code> throws</td><td>Only floating-point types have a default interpolator. Pass a callback returning <code>MyType</code> from two values and alpha.</td></tr>
+              <tr><td>Reusing a track name throws <code>logic_error</code></td><td>The name was already registered with a different type, sampled/keyframed kind, or scope. Choose a distinct name or request it through the identical storyboard/sequence scope.</td></tr>
+              <tr><td>A clip ends at the sequence boundary</td><td>Scopes are hard boundaries. Longer clips are truncated without time compression. Shorten <code>duration</code>, begin earlier, or enlarge the sequence.</td></tr>
+              <tr><td>Reset immediately begins playing again</td><td><code>reset()</code> rewinds but preserves the play flag. Use <code>pause(); reset();</code> for a stop-and-rewind control.</td></tr>
+              <tr><td><code>Plot2D</code> reports too many grid lines</td><td>Your step is too small for the range. Increase the step; each axis is deliberately limited to 10,000 lines.</td></tr>
+              <tr><td>Window opens but nothing is drawn</td><td>Keep 2D drawing between <code>BeginDrawing()</code>/<code>EndDrawing()</code>, and 3D primitives between <code>BeginMode3D()</code>/<code>EndMode3D()</code>. Also verify the resolved state is not empty.</td></tr>
+              <tr><td>The embedded C++ example is blank in this page</td><td>Some browsers restrict local files inside an iframe. Use the adjacent <em>Open complete source</em> link or open the file in your editor.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="testing">
+        <div class="eyebrow">Verification and extension</div>
+        <h2>Test behavior without rendering</h2>
+        <p class="lead">
+          Core and storyboard tests require no window or Raylib installation. Treat exact frame resolution as the
+          contract: author once, query selected frames, and compare values.
+        </p>
+
+        <div class="table-wrap">
+          <table class="method-table">
+            <thead><tr><th>CTest name</th><th>Coverage</th></tr></thead>
+            <tbody>
+              <tr><td><code>timeline_core_tests</code></td><td>Timeline transport, playback accumulation, clips, bounds, and overlap precedence.</td></tr>
+              <tr><td><code>timeline_storyboard_tests</code></td><td>Sequences, sampled timing, holds, trimming, keyframes, easing, fades, markers, validation, and large-state storage behavior.</td></tr>
+              <tr><td><code>timeline_plot_tests</code></td><td>2D coordinate mapping, grid safety, 3D validation, math helpers, and marker validation; built only when Raylib examples are enabled.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-block">
+          <div class="code-title"><span>Run one suite or inspect failures</span><span>Any platform</span></div>
+          <pre><code>ctest --test-dir raylib/Timeline/build -R timeline_storyboard_tests --output-on-failure
+ctest --test-dir raylib/Timeline/build --output-on-failure --verbose</code></pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-title"><span>Domain-level test pattern</span><span>No Raylib window</span></div>
+          <pre><code>viz::Storyboard story(99, 60.0f);
+auto&amp; track = story.track&lt;int&gt;("Counter");
+track.clip({10, 20, 30})
+     .startAt(5)
+     .framesPerStep(2)
+     .holdLast()
+     .commit();
+
+assert(track.at(4) == nullptr);
+assert(*track.at(5) == 10);
+assert(*track.at(6) == 10);
+assert(*track.at(7) == 20);
+assert(*track.at(99) == 30);
+assert(track.storedStateCount() == 3);</code></pre>
+        </div>
+
+        <h3>Extension guide</h3>
+        <div class="two-column">
+          <article class="card">
+            <h3>New domain visualization</h3>
+            <p>Create a snapshot struct, a pure recorder returning <code>vector&lt;T&gt;</code>, and a renderer accepting <code>const T&amp;</code>. The timeline core needs no modification.</p>
+          </article>
+          <article class="card">
+            <h3>New interpolated type</h3>
+            <p>Supply a <code>KeyframeTrack&lt;T&gt;::Interpolator</code>. Add tests for endpoints, midpoint, easing, first/last holds, and out-of-scope lookup.</p>
+          </article>
+          <article class="card">
+            <h3>New easing enum value</h3>
+            <p>Extend <code>Easing</code> and <code>applyEasing</code>, then test alpha below zero, at 0, midpoint, at 1, and above 1. Existing interpolators need no changes.</p>
+          </article>
+          <article class="card">
+            <h3>New plot or renderer</h3>
+            <p>Keep Raylib includes under <code>viz/plot</code> or <code>viz/visual</code>. Consume resolved state; do not add clocks or mutable playback to visual objects.</p>
+          </article>
+        </div>
+
+        <h3>Current boundaries</h3>
+        <ul class="checklist">
+          <li>The authoring API is programmatic; there is no interactive GUI timeline or serialization format yet.</li>
+          <li>Playback is forward-only and stops at the end; looping, reverse playback, and speed scaling are application responsibilities.</li>
+          <li>Tracks, clips, markers, and keys can be added or replaced as documented, but there are no erase APIs.</li>
+          <li><code>Plot3D</code> exposes a fixed camera by const reference; animate your own <code>Camera3D</code> keyframe track when you need editable camera motion.</li>
+          <li>Clip lookup is a newest-first linear scan. If one track grows to thousands of clips, add an interval index while preserving newest-clip precedence.</li>
+          <li>The classes provide no internal synchronization. Finish authoring before concurrent reads, or protect mutation and access in the application.</li>
+          <li>Audio, export, text layout, axes labels, legends, and general scene-graph ownership are outside the present scope.</li>
+        </ul>
+
+        <div class="note">
+          A contribution is complete when its deterministic behavior has a headless test, invalid inputs have explicit
+          outcomes, Raylib remains outside <code>viz/core</code> and <code>viz/story</code>, and this reference is updated
+          with the public signature and semantics.
+        </div>
+      </section>
+
+      <footer>
+        Timeline Storyboard keeps animation authoring editor-like while preserving a deterministic, testable C++ core.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
