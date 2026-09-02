@@ -1,0 +1,10 @@
+# Plotting dependencies for flow_monitor.py
+matplotlib>=3.7
+numpy>=1.24
+
+# NOTE: the DDS side is NOT pip-installable.
+#   `fastdds`       comes from the eProsima Fast DDS installation, built with
+#                   Python bindings enabled.
+#   `FlowTelemetry` is generated from idl/FlowTelemetry.idl by
+#                   `cmake --build ../build --target python-bindings`.
+# Both must be importable (PYTHONPATH) before running flow_monitor.py.

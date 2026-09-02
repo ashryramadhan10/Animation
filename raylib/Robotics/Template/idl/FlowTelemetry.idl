@@ -1,0 +1,59 @@
+// FlowTelemetry.idl - wire types for the raylib flow-field simulator.
+//
+// Generate C++ type support with:
+//   fastddsgen -replace -d <out> idl/FlowTelemetry.idl
+// Generate Python type support with:
+//   fastddsgen -python -replace -d <out> idl/FlowTelemetry.idl
+//
+// Only plain IDL4 constructs are used (no @extensibility, no anonymous types)
+// so that both the Fast DDS 2.x and 3.x generators accept the file unchanged.
+
+module flowfield {
+
+    struct Vec2f {
+        float x;
+        float y;
+    };
+
+    // Topic: FlowFieldSnapshot
+    // The static grid, published once per re-seed. RELIABLE + TRANSIENT_LOCAL,
+    // so a plotter that starts after the simulator still receives the grid.
+    struct FieldSnapshot {
+        @key unsigned long field_id;
+        unsigned long seed;
+        unsigned long rows;
+        unsigned long cols;
+        float resolution;
+        sequence<Vec2f, 262144> vectors;   // row-major, index = y * cols + x
+    };
+
+    // Topic: FlowVehicleSample
+    // One agent, one tick. Keyed by vehicle_id so subscribers can demultiplex
+    // per-agent instances. BEST_EFFORT: dropping a streaming sample is cheaper
+    // than stalling the render loop.
+    struct VehicleSample {
+        @key unsigned long vehicle_id;
+        unsigned long long frame;
+        double stamp;
+        Vec2f position;
+        Vec2f velocity;
+        Vec2f desired;
+        Vec2f steer;
+        float speed;
+        float heading;
+        float alignment;
+    };
+
+    // Topic: FlowFrameStats
+    // Whole-simulation rollup, one sample per publish tick.
+    struct FrameStats {
+        @key unsigned long field_id;
+        unsigned long long frame;
+        double stamp;
+        float fps;
+        float mean_speed;
+        float mean_alignment;
+        unsigned long vehicle_count;
+    };
+
+};
