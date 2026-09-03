@@ -26,7 +26,7 @@ function setup() {
 function draw() {
     background(0);
 
-    // flow_field.display();
+    flow_field.display();
 
     for (let i = 0; i < numOfVehicles; i++) {
         let followForce = vehicles[i].follow(flow_field);

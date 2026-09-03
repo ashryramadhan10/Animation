@@ -42,7 +42,7 @@ class FlowField {
         let angle = Math.atan2(vec.y, vec.x);
         rotate(angle);
         let arrowSize = 3;
-        translate(vec.mag() - arrowSize, 0);
+        translate(vec.mag() - arrowSize, 0); // translate a bit back depends on the arrowHead size |> that | can't be at tip of the line, we have to move it a bit back.
         triangle(-arrowSize, arrowSize/2, -arrowSize, -arrowSize/2, arrowSize, 0);
         pop();
     }
