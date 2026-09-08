@@ -15,6 +15,7 @@
   }
 
   const math2d = loadModule("./transform2d.js");
+  const tfApi = loadModule("./transform-tree.js");
 
   function test(name, run) {
     tests.push({ name, run });
@@ -72,6 +73,79 @@
     const result = Transform2D.interpolate(from, to, 0.5);
     near(result.x, 5);
     near(Math.abs(result.yaw), Math.PI);
+  });
+
+  test("tree looks up mapFromLaser through the chain", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "odom", transform: new Transform2D(1, 0, 0), isStatic: true, authority: "localization" });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: new Transform2D(2, 0, 0), isStatic: true, authority: "odometry" });
+    tree.setTransform({ parent: "base_link", child: "laser", transform: new Transform2D(0.5, 0, 0), isStatic: true, authority: "robot_state_publisher" });
+    const result = tree.lookup("map", "laser");
+    near(result.transform.x, 3.5);
+    if (result.path.length !== 3) throw new Error("expected three traversed edges");
+  });
+
+  test("tree lookup works in the inverse direction", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "robot", transform: new Transform2D(2, 0, 0), isStatic: true });
+    near(tree.lookup("robot", "map").transform.x, -2);
+  });
+
+  test("tree rejects a second parent", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "base_link", transform: Transform2D.identity(), isStatic: true });
+    try {
+      tree.setTransform({ parent: "odom", child: "base_link", transform: Transform2D.identity(), isStatic: true });
+      throw new Error("expected duplicate parent rejection");
+    } catch (error) {
+      if (error.code !== "DUPLICATE_PARENT") throw error;
+    }
+  });
+
+  test("tree rejects cycles", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "odom", transform: Transform2D.identity(), isStatic: true });
+    try {
+      tree.setTransform({ parent: "odom", child: "map", transform: Transform2D.identity(), isStatic: true });
+      throw new Error("expected cycle rejection");
+    } catch (error) {
+      if (error.code !== "CYCLE") throw error;
+    }
+  });
+
+  test("tree reports unknown frames", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "odom", transform: Transform2D.identity(), isStatic: true });
+    try {
+      tree.lookup("map", "missing");
+      throw new Error("expected unknown frame rejection");
+    } catch (error) {
+      if (error.code !== "UNKNOWN_FRAME") throw error;
+    }
+  });
+
+  test("tree reports disconnected roots", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "robot", transform: Transform2D.identity(), isStatic: true });
+    tree.setTransform({ parent: "world", child: "camera", transform: Transform2D.identity(), isStatic: true });
+    try {
+      tree.lookup("robot", "camera");
+      throw new Error("expected disconnected rejection");
+    } catch (error) {
+      if (error.code !== "DISCONNECTED") throw error;
+    }
   });
 
   function runAllTests() {
