@@ -158,6 +158,17 @@
     checkStageRange(1, 11);
   });
 
+  test("catalog stages 3 and 4 contain the tree and lookup components", () => {
+    same(idsInRange(12, 19), [
+      "store-edge", "ancestor-chain", "common-ancestor", "directed-path", "validate-tree",
+      "lookup-transform", "laser-point-to-map", "correction-from-pose",
+    ]);
+  });
+
+  test("catalog stages 3 and 4 references pass their cases and diagnoses differ", () => {
+    checkStageRange(12, 19);
+  });
+
   async function runAllTests() {
     let passed = 0;
     const failures = [];

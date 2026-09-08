@@ -357,7 +357,261 @@
     }),
   ];
 
-  const PUZZLES = Object.freeze(STAGE_1_2);
+  const ROBOT_TREE_CASE = {
+    odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } },
+    base_link: { parent: "odom", transform: { x: 2, y: 0, yaw: PI / 2 } },
+    laser: { parent: "base_link", transform: { x: 1, y: 0, yaw: 0 } },
+  };
+
+  const STAGE_3_4 = [
+    puzzle({
+      number: 12, id: "store-edge", title: "Store One TF Edge",
+      goal: "Store parentFromChild under the child name without mutating the current tree.",
+      concept: "Every non-root frame has exactly one parent, so the child name is the key.",
+      functionName: "storeEdge", signature: "storeEdge(tree, edge) → newTree",
+      starterSource: starter("storeEdge", "tree, edge"),
+      referenceSource: lines(
+        "function storeEdge(tree, edge) {",
+        "  var next = Object.assign({}, tree);",
+        "  next[edge.child] = { parent: edge.parent, transform: edge.transform };",
+        "  return next;",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "tree",
+      scene: { kind: "tree", view: "tree-result", handles: [
+        { id: "edge", type: "selector", label: "edge to add", value: "base_link", options: ["odom", "base_link", "laser", "camera"] },
+      ], args: [{ fixture: "treeWithoutEdge" }, { fixture: "selectedEdge" }] },
+      hints: ["The child uniquely identifies its incoming edge.", "Copy the tree, then assign next[edge.child].", "Store both parent and parentFromChild transform under the child key."],
+      cases: [
+        example([{}, { parent: "map", child: "odom", transform: { x: 1, y: 0, yaw: 0 } }], { odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } } }, "first edge"),
+        example([{ odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } } }, { parent: "odom", child: "base_link", transform: { x: 2, y: 0, yaw: 0 } }], { odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } }, base_link: { parent: "odom", transform: { x: 2, y: 0, yaw: 0 } } }, "second edge"),
+        example([{ odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } } }, { parent: "base_link", child: "laser", transform: { x: 0.5, y: 0, yaw: 0 } }], { odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } }, laser: { parent: "base_link", transform: { x: 0.5, y: 0, yaw: 0 } } }, "detached edge"),
+      ],
+    }),
+    puzzle({
+      number: 13, id: "ancestor-chain", title: "Climb to the Root",
+      goal: "List a frame and every ancestor until the root frame.",
+      concept: "Each child record points one step upward; the root has no incoming edge.",
+      functionName: "ancestorChain", signature: "ancestorChain(tree, frame) → frame[]",
+      starterSource: starter("ancestorChain", "tree, frame"),
+      referenceSource: lines(
+        "function ancestorChain(tree, frame) {",
+        "  var chain = [frame];",
+        "  var current = frame;",
+        "  while (tree[current]) { current = tree[current].parent; chain.push(current); }",
+        "  return chain;",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "tree",
+      scene: { kind: "tree", view: "node-list", handles: [
+        { id: "frame", type: "selector", label: "frame", value: "laser", options: FRAME_OPTIONS },
+      ], args: [{ fixture: "tree" }, { handle: "frame" }] },
+      hints: ["Each child record points one step upward.", "Repeat while tree[current] exists.", "Push the parent, make it current, and stop at a name with no incoming edge."],
+      cases: [
+        example([{ odom: { parent: "map" }, base_link: { parent: "odom" }, laser: { parent: "base_link" } }, "laser"], ["laser", "base_link", "odom", "map"], "sensor chain"),
+        example([{ child: { parent: "root" } }, "root"], ["root"], "already root"),
+        example([{ odom: { parent: "map" }, base_link: { parent: "odom" }, camera: { parent: "base_link" } }, "base_link"], ["base_link", "odom", "map"], "middle of the chain"),
+      ],
+    }),
+    puzzle({
+      number: 14, id: "common-ancestor", title: "Find the Join",
+      goal: "Find the nearest frame shared by two ancestor chains.",
+      concept: "Every lookup passes through exactly one nearest common ancestor.",
+      functionName: "commonAncestor", signature: "commonAncestor(tree, a, b) → frame | null",
+      starterSource: starter("commonAncestor", "tree, a, b"),
+      referenceSource: lines(
+        "function commonAncestor(tree, a, b) {",
+        "  var aChain = ancestorChain(tree, a);",
+        "  var bSet = new Set(ancestorChain(tree, b));",
+        "  for (var i = 0; i < aChain.length; i += 1) { if (bSet.has(aChain[i])) return aChain[i]; }",
+        "  return null;",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "tree",
+      dependencies: ["ancestor-chain"],
+      scene: { kind: "tree", view: "single-node", handles: [
+        { id: "a", type: "selector", label: "a", value: "laser", options: FRAME_OPTIONS },
+        { id: "b", type: "selector", label: "b", value: "camera", options: FRAME_OPTIONS },
+      ], args: [{ fixture: "tree" }, { handle: "a" }, { handle: "b" }] },
+      hints: ["Start from one frame so the first match is the nearest.", "Put one chain in a Set, then scan the other from its frame upward.", "Return null when the roots are disconnected."],
+      cases: [
+        example([{ left: { parent: "base" }, right: { parent: "base" }, base: { parent: "map" } }, "left", "right"], "base", "sibling join"),
+        example([{ a: { parent: "rootA" }, b: { parent: "rootB" } }, "a", "b"], null, "disconnected roots"),
+        example([{ odom: { parent: "map" }, base_link: { parent: "odom" }, laser: { parent: "base_link" } }, "laser", "odom"], "odom", "ancestor is the join"),
+      ],
+    }),
+    puzzle({
+      number: 15, id: "directed-path", title: "Mark the Traversal",
+      goal: "Build source-to-target steps and mark when an edge must be inverted.",
+      concept: "Child-to-parent uses the stored edge; parent-to-child needs its inverse.",
+      functionName: "directedPath", signature: "directedPath(tree, target, source) → step[] | null",
+      starterSource: starter("directedPath", "tree, target, source"),
+      referenceSource: lines(
+        "function directedPath(tree, target, source) {",
+        "  var join = commonAncestor(tree, target, source);",
+        "  if (join === null) return null;",
+        "  var steps = [];",
+        "  var current = source;",
+        "  while (current !== join) { var up = tree[current]; steps.push({ from: current, to: up.parent, child: current, inverse: false }); current = up.parent; }",
+        "  var targetChain = ancestorChain(tree, target);",
+        "  var down = targetChain.slice(0, targetChain.indexOf(join)).reverse();",
+        "  for (var i = 0; i < down.length; i += 1) { steps.push({ from: tree[down[i]].parent, to: down[i], child: down[i], inverse: true }); }",
+        "  return steps;",
+        "}"
+      ),
+      comparator: "path", walkthroughChapter: "lookup",
+      dependencies: ["ancestor-chain", "common-ancestor"],
+      scene: { kind: "tree", view: "steps", handles: [
+        { id: "target", type: "selector", label: "target", value: "map", options: FRAME_OPTIONS },
+        { id: "source", type: "selector", label: "source", value: "laser", options: FRAME_OPTIONS },
+      ], args: [{ fixture: "tree" }, { handle: "target" }, { handle: "source" }] },
+      hints: ["Walk source upward normally, then walk from the join down toward target.", "Child-to-parent uses stored parentFromChild; parent-to-child needs its inverse.", "Build the upward steps first, then reverse target's pre-join ancestor slice for downward steps."],
+      cases: [
+        example([{ odom: { parent: "map" }, base_link: { parent: "odom" }, laser: { parent: "base_link" } }, "map", "laser"], [{ from: "laser", to: "base_link", child: "laser", inverse: false }, { from: "base_link", to: "odom", child: "base_link", inverse: false }, { from: "odom", to: "map", child: "odom", inverse: false }], "upward lookup"),
+        example([{ odom: { parent: "map" }, base_link: { parent: "odom" } }, "base_link", "map"], [{ from: "map", to: "odom", child: "odom", inverse: true }, { from: "odom", to: "base_link", child: "base_link", inverse: true }], "downward lookup"),
+        example([{ odom: { parent: "map" }, base_link: { parent: "odom" }, laser: { parent: "base_link" }, camera: { parent: "base_link" } }, "camera", "laser"], [{ from: "laser", to: "base_link", child: "laser", inverse: false }, { from: "base_link", to: "camera", child: "camera", inverse: true }], "sibling lookup"),
+      ],
+    }),
+    puzzle({
+      number: 16, id: "validate-tree", title: "Protect the Tree",
+      goal: "Reject duplicate parents and cycles before accepting TF edges.",
+      concept: "TF allows one parent per child and no frame may be its own ancestor.",
+      functionName: "validateTree", signature: "validateTree(edges) → { valid, code? }",
+      starterSource: starter("validateTree", "edges"),
+      referenceSource: lines(
+        "function validateTree(edges) {",
+        "  var parents = {};",
+        "  for (var i = 0; i < edges.length; i += 1) { if (parents[edges[i].child] && parents[edges[i].child] !== edges[i].parent) return { valid: false, code: \"DUPLICATE_PARENT\" }; parents[edges[i].child] = edges[i].parent; }",
+        "  var children = Object.keys(parents);",
+        "  for (var j = 0; j < children.length; j += 1) { var seen = new Set(); var current = children[j]; while (parents[current]) { if (seen.has(current)) return { valid: false, code: \"CYCLE\" }; seen.add(current); current = parents[current]; } }",
+        "  return { valid: true };",
+        "}"
+      ),
+      comparator: "error", walkthroughChapter: "tree",
+      scene: { kind: "tree", view: "validation", handles: [
+        { id: "edgeSet", type: "selector", label: "edge set", value: "duplicate-parent", options: ["valid-chain", "duplicate-parent", "cycle"] },
+      ], args: [{ fixture: "edgeSet" }] },
+      hints: ["TF allows only one parent for each child.", "After recording parents, walk upward from every child and watch for repeats.", "Return DUPLICATE_PARENT first; otherwise return CYCLE when an ancestor repeats."],
+      cases: [
+        example([[{ parent: "map", child: "base" }, { parent: "odom", child: "base" }]], { valid: false, code: "DUPLICATE_PARENT" }, "duplicate parent"),
+        example([[{ parent: "a", child: "b" }, { parent: "b", child: "a" }]], { valid: false, code: "CYCLE" }, "cycle"),
+        example([[{ parent: "map", child: "odom" }, { parent: "odom", child: "base" }]], { valid: true }, "valid chain"),
+      ],
+    }),
+    puzzle({
+      number: 17, id: "lookup-transform", title: "Resolve T_target_source",
+      goal: "Compose each directed path step to answer a transform lookup.",
+      concept: "Start with identity at the source; every step goes on the left, inverted when it walks downward.",
+      functionName: "lookupTransform", signature: "lookupTransform(tree, target, source) → transform | null",
+      starterSource: starter("lookupTransform", "tree, target, source"),
+      referenceSource: lines(
+        "function lookupTransform(tree, target, source) {",
+        "  var steps = directedPath(tree, target, source);",
+        "  if (steps === null) return null;",
+        "  var result = { x: 0, y: 0, yaw: 0 };",
+        "  for (var i = 0; i < steps.length; i += 1) {",
+        "    var edge = tree[steps[i].child].transform;",
+        "    var step = steps[i].inverse ? invert(edge) : edge;",
+        "    result = compose(step, result);",
+        "  }",
+        "  return result;",
+        "}"
+      ),
+      comparator: "se2", walkthroughChapter: "lookup",
+      dependencies: ["compose", "invert", "directed-path"],
+      scene: { kind: "robot-chain", view: "lookup", handles: [
+        { id: "odom", type: "frame", label: "odom", value: { x: 1, y: 0.5, yaw: 0.2 } },
+        { id: "base_link", type: "frame", label: "base_link", value: { x: 2, y: 0, yaw: PI / 2 }, in: "odom" },
+        { id: "target", type: "selector", label: "target", value: "map", options: CHAIN_OPTIONS },
+        { id: "source", type: "selector", label: "source", value: "laser", options: CHAIN_OPTIONS },
+      ], args: [{ fixture: "chainTree" }, { handle: "target" }, { handle: "source" }] },
+      diagnoses: [
+        diagnosis("inverse-flags-ignored", "Inverse flags ignored: a step that walks parent → child must use invert(edge).", lines(
+          "function lookupTransform(tree, target, source) {",
+          "  var steps = directedPath(tree, target, source);",
+          "  if (steps === null) return null;",
+          "  var result = { x: 0, y: 0, yaw: 0 };",
+          "  for (var i = 0; i < steps.length; i += 1) { result = compose(tree[steps[i].child].transform, result); }",
+          "  return result;",
+          "}"
+        )),
+        diagnosis("reversed-composition", "Composed in the wrong order: each new step goes on the left, compose(step, result).", lines(
+          "function lookupTransform(tree, target, source) {",
+          "  var steps = directedPath(tree, target, source);",
+          "  if (steps === null) return null;",
+          "  var result = { x: 0, y: 0, yaw: 0 };",
+          "  for (var i = 0; i < steps.length; i += 1) { var edge = tree[steps[i].child].transform; var step = steps[i].inverse ? invert(edge) : edge; result = compose(result, step); }",
+          "  return result;",
+          "}"
+        )),
+      ],
+      hints: ["Start with identity at the source frame.", "For every step, invert only the downward traversal and left-compose it.", "result = compose(stepTransform, result)."],
+      cases: [
+        example([ROBOT_TREE_CASE, "map", "laser"], { x: 3, y: 1, yaw: PI / 2 }, "map from laser"),
+        example([ROBOT_TREE_CASE, "laser", "map"], { x: -1, y: 3, yaw: -PI / 2 }, "laser from map"),
+        example([ROBOT_TREE_CASE, "odom", "laser"], { x: 2, y: 1, yaw: PI / 2 }, "odom from laser"),
+        example([{ a: { parent: "rootA", transform: { x: 0, y: 0, yaw: 0 } }, b: { parent: "rootB", transform: { x: 1, y: 0, yaw: 0 } } }, "a", "b"], null, "disconnected"),
+      ],
+    }),
+    puzzle({
+      number: 18, id: "laser-point-to-map", title: "Project a Laser Point",
+      goal: "Transform a measurement from laser coordinates into map coordinates.",
+      concept: "If the math is right, the projected hit stays glued to the landmark while the robot moves.",
+      functionName: "laserPointToMap", signature: "laserPointToMap(tree, pointInLaser) → pointInMap",
+      starterSource: starter("laserPointToMap", "tree, pointInLaser"),
+      referenceSource: lines(
+        "function laserPointToMap(tree, pointInLaser) {",
+        "  var mapFromLaser = lookupTransform(tree, \"map\", \"laser\");",
+        "  return transformPoint(mapFromLaser, pointInLaser);",
+        "}"
+      ),
+      comparator: "vector2", walkthroughChapter: "sensor-scenario",
+      dependencies: ["lookup-transform", "transform-point"],
+      scene: { kind: "robot-chain", view: "landmark", handles: [
+        { id: "odom", type: "frame", label: "odom", value: { x: 1, y: 0.5, yaw: 0.2 } },
+        { id: "base_link", type: "frame", label: "base_link", value: { x: 1.5, y: 0, yaw: 0.6 }, in: "odom" },
+      ], args: [{ fixture: "chainTree" }, { fixture: "laserHit" }] },
+      diagnoses: [diagnosis("wrong-direction", "Wrong direction: you applied laserFromMap. The point starts in laser, so you need mapFromLaser (target first).", lines(
+        "function laserPointToMap(tree, pointInLaser) {",
+        "  var laserFromMap = lookupTransform(tree, \"laser\", \"map\");",
+        "  return transformPoint(laserFromMap, pointInLaser);",
+        "}"
+      ))],
+      hints: ["The point starts in laser and must end in map.", "Ask for mapFromLaser; the target name comes first.", "transformPoint(lookupTransform(tree, \"map\", \"laser\"), pointInLaser)."],
+      cases: [
+        example([{ odom: { parent: "map", transform: { x: 1, y: 0, yaw: 0 } }, base_link: { parent: "odom", transform: { x: 2, y: 0, yaw: 0 } }, laser: { parent: "base_link", transform: { x: 0.5, y: 0, yaw: 0 } } }, { x: 1, y: 0 }], { x: 4.5, y: 0 }, "forward laser hit"),
+        example([{ odom: { parent: "map", transform: { x: 0, y: 0, yaw: PI / 2 } }, base_link: { parent: "odom", transform: { x: 1, y: 0, yaw: 0 } }, laser: { parent: "base_link", transform: { x: 0, y: 0, yaw: 0 } } }, { x: 2, y: 0 }], { x: 0, y: 3 }, "rotated map frame"),
+        example([ROBOT_TREE_CASE, { x: 0, y: 1 }], { x: 2, y: 1 }, "sideways hit"),
+      ],
+    }),
+    puzzle({
+      number: 19, id: "correction-from-pose", title: "Publish map → odom",
+      goal: "Turn a corrected robot pose into the map → odom transform without touching odom → base_link.",
+      concept: "A localizer or SLAM node never rewrites odometry; it publishes the correction above it.",
+      functionName: "correctionFromPose", signature: "correctionFromPose(mapFromBase, odomFromBase) → mapFromOdom",
+      starterSource: starter("correctionFromPose", "mapFromBase, odomFromBase"),
+      referenceSource: "function correctionFromPose(mapFromBase, odomFromBase) { return compose(mapFromBase, invert(odomFromBase)); }",
+      comparator: "se2", walkthroughChapter: "frame-roles",
+      dependencies: ["compose", "invert"],
+      scene: { kind: "correction", handles: [
+        { id: "odomInMap", type: "frame", label: "odom (drifted)", value: { x: 1.5, y: -0.5, yaw: 0.35 } },
+        { id: "odomFromBase", type: "pose", label: "base_link (odometry)", value: { x: 2, y: 0.5, yaw: 0.2 }, in: "odomInMap" },
+      ], args: [{ fixture: "mapFromBase" }, { handle: "odomFromBase" }] },
+      diagnoses: [
+        diagnosis("reversed", "Reversed: that is odomFromMap. map → odom must satisfy mapFromBase = compose(mapFromOdom, odomFromBase).", "function correctionFromPose(mapFromBase, odomFromBase) { return compose(odomFromBase, invert(mapFromBase)); }"),
+        diagnosis("difference-only", "Subtracted poses component-wise: the odometry translation must be rotated by the yaw correction first.", "function correctionFromPose(mapFromBase, odomFromBase) { return { x: mapFromBase.x - odomFromBase.x, y: mapFromBase.y - odomFromBase.y, yaw: wrapAngle(mapFromBase.yaw - odomFromBase.yaw) }; }"),
+      ],
+      hints: ["mapFromBase = mapFromOdom ∘ odomFromBase; solve for mapFromOdom.", "Right-multiply both sides by invert(odomFromBase).", "Return compose(mapFromBase, invert(odomFromBase))."],
+      cases: [
+        example([{ x: 5, y: 3, yaw: PI / 2 }, { x: 2, y: 0, yaw: 0 }], { x: 5, y: 1, yaw: PI / 2 }, "rotated correction"),
+        example([{ x: 0, y: 2, yaw: PI / 2 }, { x: 2, y: 0, yaw: 0 }], { x: 0, y: 0, yaw: PI / 2 }, "global yaw correction"),
+        example([{ x: 3, y: 3, yaw: 0 }, { x: 3, y: 3, yaw: 0 }], { x: 0, y: 0, yaw: 0 }, "no drift"),
+        example([{ x: 1, y: 1, yaw: PI }, { x: 0, y: 0, yaw: PI / 2 }], { x: 1, y: 1, yaw: PI / 2 }, "pure yaw drift"),
+      ],
+    }),
+  ];
+
+  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4));
   const byId = new Map(PUZZLES.map((entry) => [entry.id, entry]));
 
   function getPuzzle(id) {
