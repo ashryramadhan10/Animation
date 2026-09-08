@@ -16,6 +16,7 @@
 
   const math2d = loadModule("./transform2d.js");
   const tfApi = loadModule("./transform-tree.js");
+  const tf3Api = loadModule("./transform3d.js");
 
   function test(name, run) {
     tests.push({ name, run });
@@ -208,6 +209,47 @@
       throw new Error("expected no common time rejection");
     } catch (error) {
       if (error.code !== "NO_COMMON_TIME") throw error;
+    }
+  });
+
+  test("quaternion rotates X onto Y around Z", () => {
+    const { Quaternion } = requireApi(tf3Api, "transform3d.js");
+    const q = Quaternion.fromAxisAngle({ x: 0, y: 0, z: 1 }, Math.PI / 2);
+    const result = q.rotateVector({ x: 1, y: 0, z: 0 });
+    near(result.x, 0);
+    near(result.y, 1);
+    near(result.z, 0);
+  });
+
+  test("quaternion inverse reverses rotation", () => {
+    const { Quaternion } = requireApi(tf3Api, "transform3d.js");
+    const q = Quaternion.fromEuler(0.3, -0.2, 0.7);
+    const point = { x: 1, y: 2, z: 3 };
+    const result = q.inverse().rotateVector(q.rotateVector(point));
+    near(result.x, point.x);
+    near(result.y, point.y);
+    near(result.z, point.z);
+  });
+
+  test("SE3 composition applies the child transform first", () => {
+    const { Quaternion, Transform3D } = requireApi(tf3Api, "transform3d.js");
+    const parentFromChild = new Transform3D({ x: 1, y: 0, z: 0 }, Quaternion.identity());
+    const childFromSensor = new Transform3D({ x: 0, y: 2, z: 0 }, Quaternion.identity());
+    const result = parentFromChild.compose(childFromSensor).applyPoint({ x: 0, y: 0, z: 3 });
+    near(result.x, 1);
+    near(result.y, 2);
+    near(result.z, 3);
+  });
+
+  test("quaternion constructor normalizes finite input", () => {
+    const { Quaternion } = requireApi(tf3Api, "transform3d.js");
+    const q = new Quaternion(0, 0, 0, 2);
+    near(q.w, 1);
+    try {
+      new Quaternion(0, 0, 0, 0);
+      throw new Error("expected zero quaternion rejection");
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
     }
   });
 
