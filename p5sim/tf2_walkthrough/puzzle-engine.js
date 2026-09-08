@@ -275,8 +275,9 @@
   }
 
   function createLiveSession(options) {
-    const settings = { workerUrl: "puzzle-worker.js", liveTimeoutMs: 250, checkTimeoutMs: 750, createWorker: (url) => new Worker(url), ...(options || {}) };
+    const settings = { workerUrl: "puzzle-worker.js", liveTimeoutMs: 250, checkTimeoutMs: 750, warmupTimeoutMs: 1500, createWorker: (url) => new Worker(url), ...(options || {}) };
     let worker = null;
+    let cold = true;
     let inflight = null;
     let queuedLive = null;
     const queuedChecks = [];
@@ -293,8 +294,10 @@
     function ensureWorker() {
       if (worker) return worker;
       worker = settings.createWorker(settings.workerUrl);
+      cold = true;
       worker.addEventListener("message", (event) => {
         const data = event.data;
+        cold = false;
         if (!data || !inflight || data.requestId !== inflight.requestId) return;
         finishInflight(null, data);
       });
@@ -315,14 +318,17 @@
       if (!next) return;
       if (next === queuedLive) queuedLive = null;
       const requestId = "puzzle-" + (++sequence);
+      // The first request after a worker (re)start also pays for script loading and compilation,
+      // so it gets the warm-up budget; later requests keep the strict live/check timeouts.
+      const timeoutMs = cold ? Math.max(next.timeoutMs, settings.warmupTimeoutMs) : next.timeoutMs;
       const timer = setTimeout(() => {
         if (!inflight || inflight.requestId !== requestId) return;
         const current = inflight;
         inflight = null;
         restartWorker();
-        current.reject({ kind: "timeout", message: "Your function did not finish in " + next.timeoutMs + " ms. The runner was restarted." });
+        current.reject({ kind: "timeout", message: "Your function did not finish in " + timeoutMs + " ms. The runner was restarted." });
         pump();
-      }, next.timeoutMs);
+      }, timeoutMs);
       inflight = { requestId, resolve: next.resolve, reject: next.reject, timer };
       try {
         ensureWorker().postMessage({ ...next.payload, requestId });

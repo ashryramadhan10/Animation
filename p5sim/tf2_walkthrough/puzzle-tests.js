@@ -351,7 +351,7 @@
   test("engine live session resolves, supersedes queued requests, drops stale replies, and restarts on timeout", async () => {
     const api = engineApi();
     const factory = fakeWorkerFactory();
-    const session = api.createLiveSession({ workerUrl: "fake.js", liveTimeoutMs: 40, checkTimeoutMs: 40, createWorker: factory });
+    const session = api.createLiveSession({ workerUrl: "fake.js", liveTimeoutMs: 40, checkTimeoutMs: 40, warmupTimeoutMs: 120, createWorker: factory });
     const first = session.evaluate(LIVE_PROGRAM, [1]);
     const worker = factory.created[0];
     same(worker.posted.length, 1);
@@ -380,6 +380,21 @@
     assert(worker.terminated, "hung worker should be terminated");
     session.evaluate(LIVE_PROGRAM, [6]).catch(() => {});
     same(factory.created.length, 2);
+    session.dispose();
+  });
+
+  test("engine live session gives the first request after a worker start the warm-up budget", async () => {
+    const api = engineApi();
+    const factory = fakeWorkerFactory();
+    const session = api.createLiveSession({ workerUrl: "fake.js", liveTimeoutMs: 40, checkTimeoutMs: 40, warmupTimeoutMs: 120, createWorker: factory });
+    let settled = null;
+    session.evaluate(LIVE_PROGRAM, [1]).catch((error) => { settled = error.kind; });
+    await wait(70);
+    same(settled, null, "cold request must not time out at the live budget");
+    await wait(90);
+    same(settled, "timeout");
+    const worker = factory.created[0];
+    assert(worker.terminated, "cold worker should still be restarted after the warm-up budget");
     session.dispose();
   });
 
