@@ -611,7 +611,325 @@
     }),
   ];
 
-  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4));
+  const SAMPLE_HISTORY = [
+    { time: 0, transform: { x: 0, y: 0, yaw: 0 } },
+    { time: 2, transform: { x: 2, y: 0, yaw: 0 } },
+    { time: 5, transform: { x: 5, y: 0, yaw: 0 } },
+    { time: 9, transform: { x: 9, y: 0, yaw: 0 } },
+  ];
+  const DYNAMIC_EDGE_CASE = {
+    parent: "map", child: "odom",
+    samples: [
+      { time: 0, transform: { x: 0, y: 0, yaw: 0 } },
+      { time: 4, transform: { x: 4, y: 0, yaw: PI / 2 } },
+      { time: 10, transform: { x: 4, y: 6, yaw: PI / 2 } },
+    ],
+  };
+  const STAMPED_EDGES_CASE = [
+    { parent: "map", child: "odom", samples: [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 10, transform: { x: 10, y: 0, yaw: 0 } }] },
+    { parent: "odom", child: "base_link", samples: [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 6, transform: { x: 6, y: 0, yaw: 0 } }] },
+    { parent: "base_link", child: "laser", isStatic: true, transform: { x: 1, y: 0, yaw: 0 } },
+  ];
+  const HALF = Math.SQRT1_2;
+  const Z90 = { x: 0, y: 0, z: HALF, w: HALF };
+  const Y90 = { x: 0, y: HALF, z: 0, w: HALF };
+  const IDENTITY_Q = { x: 0, y: 0, z: 0, w: 1 };
+
+  const STAGE_5_7 = [
+    puzzle({
+      number: 20, id: "interpolate-transform", title: "Blend Two Poses",
+      goal: "Interpolate translation linearly and yaw along the shortest turn.",
+      concept: "TF2 blends between the two samples that surround a query time.",
+      functionName: "interpolateTransform", signature: "interpolateTransform(a, b, amount) → transform",
+      starterSource: starter("interpolateTransform", "a, b, amount"),
+      referenceSource: lines(
+        "function interpolateTransform(a, b, amount) {",
+        "  return { x: a.x + (b.x - a.x) * amount, y: a.y + (b.y - a.y) * amount, yaw: wrapAngle(a.yaw + yawDelta(a.yaw, b.yaw) * amount) };",
+        "}"
+      ),
+      comparator: "se2", walkthroughChapter: "time-buffer",
+      dependencies: ["yaw-delta", "wrap-angle"],
+      scene: { kind: "pose-lerp", handles: [
+        { id: "a", type: "pose", label: "a", value: { x: -3, y: -1, yaw: 2.9 } },
+        { id: "b", type: "pose", label: "b", value: { x: 2.5, y: 1.5, yaw: -2.7 } },
+        { id: "amount", type: "slider", label: "amount", value: 0.5, min: 0, max: 1 },
+      ] },
+      diagnoses: [
+        diagnosis("yaw-long-way", "Yaw went the long way around: use yawDelta so the turn crosses ±π on the short side.", "function interpolateTransform(a, b, amount) { return { x: a.x + (b.x - a.x) * amount, y: a.y + (b.y - a.y) * amount, yaw: wrapAngle(a.yaw + (b.yaw - a.yaw) * amount) }; }"),
+        diagnosis("amount-inverted", "Amount inverted: amount 0 must return a and amount 1 must return b.", "function interpolateTransform(a, b, amount) { return { x: b.x + (a.x - b.x) * amount, y: b.y + (a.y - b.y) * amount, yaw: wrapAngle(b.yaw + yawDelta(b.yaw, a.yaw) * amount) }; }"),
+      ],
+      hints: ["amount 0 selects a; amount 1 selects b.", "Blend x and y linearly; blend yaw along yawDelta(a.yaw, b.yaw).", "yaw = wrapAngle(a.yaw + yawDelta(a.yaw, b.yaw) * amount)."],
+      cases: [
+        example([{ x: 0, y: 0, yaw: 0 }, { x: 4, y: 2, yaw: PI / 2 }, 0.5], { x: 2, y: 1, yaw: PI / 4 }, "midpoint"),
+        example([{ x: 0, y: 2, yaw: 170 * PI / 180 }, { x: 10, y: 6, yaw: -170 * PI / 180 }, 0.5], { x: 5, y: 4, yaw: PI }, "across the wrap"),
+        example([{ x: -4, y: 8, yaw: 0.5 }, { x: 2, y: -4, yaw: 0.5 }, 0.5], { x: -1, y: 2, yaw: 0.5 }, "constant yaw"),
+        example([{ x: 1, y: 1, yaw: 1 }, { x: 2, y: 2, yaw: 2 }, 0], { x: 1, y: 1, yaw: 1 }, "amount zero"),
+      ],
+    }),
+    puzzle({
+      number: 21, id: "bracket-samples", title: "Find the Surrounding Samples",
+      goal: "Locate the two samples around a time and the fraction between them.",
+      concept: "A buffer answers a time by bracketing it, then interpolating.",
+      functionName: "bracketSamples", signature: "bracketSamples(samples, time) → { beforeIndex, afterIndex, amount }",
+      starterSource: starter("bracketSamples", "samples, time"),
+      referenceSource: lines(
+        "function bracketSamples(samples, time) {",
+        "  var last = samples.length - 1;",
+        "  if (time < samples[0].time) return { beforeIndex: 0, afterIndex: 0, amount: 0 };",
+        "  if (time >= samples[last].time) return { beforeIndex: last, afterIndex: last, amount: 0 };",
+        "  var i = 0;",
+        "  while (samples[i + 1].time <= time) i += 1;",
+        "  return { beforeIndex: i, afterIndex: i + 1, amount: (time - samples[i].time) / (samples[i + 1].time - samples[i].time) };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "time-buffer",
+      scene: { kind: "timeline", handles: [
+        { id: "time", type: "timeline", label: "time", value: 3.4, start: -1, end: 11 },
+      ], args: [{ fixture: "samples" }, { handle: "time" }] },
+      diagnoses: [diagnosis("amount-unnormalized", "Amount is not normalized: divide by the gap between the two samples so it runs from 0 to 1.", lines(
+        "function bracketSamples(samples, time) {",
+        "  var last = samples.length - 1;",
+        "  if (time < samples[0].time) return { beforeIndex: 0, afterIndex: 0, amount: 0 };",
+        "  if (time >= samples[last].time) return { beforeIndex: last, afterIndex: last, amount: 0 };",
+        "  var i = 0;",
+        "  while (samples[i + 1].time <= time) i += 1;",
+        "  return { beforeIndex: i, afterIndex: i + 1, amount: time - samples[i].time };",
+        "}"
+      ))],
+      hints: ["Find the two samples that surround the time.", "amount = (time − before.time) / (after.time − before.time); clamp outside the history.", "Walk the samples while the next one is still at or before time."],
+      cases: [
+        example([SAMPLE_HISTORY, 3], { beforeIndex: 1, afterIndex: 2, amount: 1 / 3 }, "between samples"),
+        example([SAMPLE_HISTORY, 2], { beforeIndex: 1, afterIndex: 2, amount: 0 }, "exactly on a sample"),
+        example([SAMPLE_HISTORY, -1], { beforeIndex: 0, afterIndex: 0, amount: 0 }, "before the history"),
+        example([SAMPLE_HISTORY, 12], { beforeIndex: 3, afterIndex: 3, amount: 0 }, "after the history"),
+        example([SAMPLE_HISTORY, 0], { beforeIndex: 0, afterIndex: 1, amount: 0 }, "on the first sample"),
+      ],
+    }),
+    puzzle({
+      number: 22, id: "latest-common-time", title: "Find a Valid Query Time",
+      goal: "Intersect dynamic buffer ranges and classify past or future extrapolation.",
+      concept: "TimePointZero means the latest time every edge on the path can answer.",
+      functionName: "latestCommonTime", signature: "latestCommonTime(ranges, requestedTime) → availability",
+      starterSource: starter("latestCommonTime", "ranges, requestedTime"),
+      referenceSource: lines(
+        "function latestCommonTime(ranges, requestedTime) {",
+        "  var start = Math.max.apply(null, ranges.map(function (range) { return range.start; }));",
+        "  var end = Math.min.apply(null, ranges.map(function (range) { return range.end; }));",
+        "  if (start > end) return { ok: false, code: \"NO_COMMON_TIME\", bounds: { start: start, end: end } };",
+        "  var time = requestedTime === null ? end : requestedTime;",
+        "  if (time < start) return { ok: false, code: \"PAST_EXTRAPOLATION\", bounds: { start: start, end: end } };",
+        "  if (time > end) return { ok: false, code: \"FUTURE_EXTRAPOLATION\", bounds: { start: start, end: end } };",
+        "  return { ok: true, time: time, bounds: { start: start, end: end } };",
+        "}"
+      ),
+      comparator: "error", walkthroughChapter: "time-buffer",
+      scene: { kind: "timeline-ranges", handles: [
+        { id: "requested", type: "timeline", label: "requested time", value: 5, start: 0, end: 10 },
+        { id: "mode", type: "selector", label: "time", value: "requested", options: ["requested", "latest"] },
+      ], args: [{ fixture: "ranges" }, { fixture: "requestedOrNull" }] },
+      hints: ["The common start is the maximum start; the common end is the minimum end.", "No overlap occurs when the common start exceeds the common end.", "Use the common end for latest; classify requests below start as past and above end as future."],
+      cases: [
+        example([[{ start: 0, end: 8 }, { start: 2, end: 6 }], null], { ok: true, time: 6, bounds: { start: 2, end: 6 } }, "latest overlap"),
+        example([[{ start: 2, end: 4 }], 1], { ok: false, code: "PAST_EXTRAPOLATION", bounds: { start: 2, end: 4 } }, "past request"),
+        example([[{ start: 0, end: 1 }, { start: 2, end: 3 }], null], { ok: false, code: "NO_COMMON_TIME", bounds: { start: 2, end: 1 } }, "no overlap"),
+        example([[{ start: 0, end: 5 }], 8], { ok: false, code: "FUTURE_EXTRAPOLATION", bounds: { start: 0, end: 5 } }, "future request"),
+      ],
+    }),
+    puzzle({
+      number: 23, id: "sample-edge", title: "Sample an Edge at a Time",
+      goal: "Return the transform an edge reports at a time: static passthrough or bracketed interpolation.",
+      concept: "Static edges are valid at every time; dynamic edges interpolate their history.",
+      functionName: "sampleEdge", signature: "sampleEdge(edge, time) → transform",
+      starterSource: starter("sampleEdge", "edge, time"),
+      referenceSource: lines(
+        "function sampleEdge(edge, time) {",
+        "  if (edge.isStatic) return { x: edge.transform.x, y: edge.transform.y, yaw: edge.transform.yaw };",
+        "  var bracket = bracketSamples(edge.samples, time);",
+        "  return interpolateTransform(edge.samples[bracket.beforeIndex].transform, edge.samples[bracket.afterIndex].transform, bracket.amount);",
+        "}"
+      ),
+      comparator: "se2", walkthroughChapter: "broadcasters",
+      dependencies: ["bracket-samples", "interpolate-transform"],
+      scene: { kind: "timeline-frame", handles: [
+        { id: "time", type: "timeline", label: "time", value: 2.5, start: -1, end: 11 },
+        { id: "edgeKind", type: "selector", label: "edge", value: "dynamic", options: ["dynamic", "static"] },
+      ], args: [{ fixture: "edge" }, { handle: "time" }] },
+      diagnoses: [diagnosis("nearest-sample", "Snapped to the nearest sample: TF2 interpolates between the surrounding samples.", lines(
+        "function sampleEdge(edge, time) {",
+        "  if (edge.isStatic) return { x: edge.transform.x, y: edge.transform.y, yaw: edge.transform.yaw };",
+        "  var bracket = bracketSamples(edge.samples, time);",
+        "  var index = bracket.amount < 0.5 ? bracket.beforeIndex : bracket.afterIndex;",
+        "  var t = edge.samples[index].transform;",
+        "  return { x: t.x, y: t.y, yaw: t.yaw };",
+        "}"
+      ))],
+      hints: ["A static edge ignores time.", "Bracket the samples, then interpolate between the two transforms.", "interpolateTransform(before.transform, after.transform, bracket.amount)."],
+      cases: [
+        example([DYNAMIC_EDGE_CASE, 2], { x: 2, y: 0, yaw: PI / 4 }, "halfway through the first segment"),
+        example([DYNAMIC_EDGE_CASE, 7], { x: 4, y: 3, yaw: PI / 2 }, "second segment"),
+        example([DYNAMIC_EDGE_CASE, 12], { x: 4, y: 6, yaw: PI / 2 }, "clamped after the history"),
+        example([{ parent: "base_link", child: "laser", isStatic: true, transform: { x: 1, y: 0, yaw: 0 } }, 99], { x: 1, y: 0, yaw: 0 }, "static edge"),
+      ],
+    }),
+    puzzle({
+      number: 24, id: "quaternion-multiply", title: "Multiply Quaternions",
+      goal: "Compute the Hamilton product a × b.",
+      concept: "Rotations compose by quaternion multiplication, and the order matters.",
+      functionName: "quaternionMultiply", signature: "quaternionMultiply(a, b) → quaternion",
+      starterSource: starter("quaternionMultiply", "a, b"),
+      referenceSource: lines(
+        "function quaternionMultiply(a, b) {",
+        "  return {",
+        "    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,",
+        "    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,",
+        "    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,",
+        "    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,",
+        "  };",
+        "}"
+      ),
+      comparator: "quaternion", walkthroughChapter: "se3",
+      scene: { kind: "se3", view: "multiply", handles: [
+        { id: "yawA", type: "slider", label: "a: yaw about Z", value: PI / 2, min: -PI, max: PI },
+        { id: "pitchB", type: "slider", label: "b: pitch about Y", value: PI / 4, min: -PI / 2, max: PI / 2 },
+      ], args: [{ fixture: "quatA" }, { fixture: "quatB" }] },
+      diagnoses: [
+        diagnosis("reversed-order", "Multiplied in the wrong order: quaternion products do not commute; compute a × b with a on the left.", lines(
+          "function quaternionMultiply(b, a) {",
+          "  return { x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z };",
+          "}"
+        )),
+        diagnosis("component-sum", "Added components: rotations compose by the Hamilton product, not by adding quaternions.", "function quaternionMultiply(a, b) { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z, w: a.w + b.w }; }"),
+      ],
+      hints: ["A quaternion is a scalar w plus a vector (x, y, z).", "w′ = w₁w₂ − v₁·v₂; v′ = w₁v₂ + w₂v₁ + v₁×v₂.", "Write the four component formulas of the Hamilton product with a on the left."],
+      cases: [
+        example([Z90, Z90], { x: 0, y: 0, z: 1, w: 0 }, "two quarter turns"),
+        example([IDENTITY_Q, Z90], Z90, "identity on the left"),
+        example([Z90, Y90], { x: -0.5, y: 0.5, z: 0.5, w: 0.5 }, "Z then Y"),
+        example([{ x: 0, y: 0, z: 0, w: 2 }, { x: 0, y: 0, z: 0, w: 3 }], { x: 0, y: 0, z: 0, w: 6 }, "scalars multiply"),
+      ],
+    }),
+    puzzle({
+      number: 25, id: "rotate-by-quaternion", title: "Rotate with a Quaternion",
+      goal: "Normalize a quaternion and rotate a 3D vector with it.",
+      concept: "q v q⁻¹ rotates the pure quaternion v; the conjugate of a unit quaternion is its inverse.",
+      functionName: "rotateByQuaternion", signature: "rotateByQuaternion(q, v) → vector3",
+      starterSource: starter("rotateByQuaternion", "q, v"),
+      referenceSource: lines(
+        "function rotateByQuaternion(q, v) {",
+        "  var length = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+        "  var unit = { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length };",
+        "  var conjugate = { x: -unit.x, y: -unit.y, z: -unit.z, w: unit.w };",
+        "  var rotated = quaternionMultiply(quaternionMultiply(unit, { x: v.x, y: v.y, z: v.z, w: 0 }), conjugate);",
+        "  return { x: rotated.x, y: rotated.y, z: rotated.z };",
+        "}"
+      ),
+      comparator: "vector3", walkthroughChapter: "se3",
+      dependencies: ["quaternion-multiply"],
+      scene: { kind: "se3", view: "rotate", handles: [
+        { id: "yaw", type: "slider", label: "q: yaw about Z", value: PI / 2, min: -PI, max: PI },
+      ], args: [{ fixture: "quat" }, { fixture: "vector" }] },
+      diagnoses: [
+        diagnosis("inverse-rotation", "Rotated the wrong way: q⁻¹ v q is the inverse rotation. Use q v q⁻¹.", lines(
+          "function rotateByQuaternion(q, v) {",
+          "  var length = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+          "  var unit = { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length };",
+          "  var conjugate = { x: -unit.x, y: -unit.y, z: -unit.z, w: unit.w };",
+          "  var rotated = quaternionMultiply(quaternionMultiply(conjugate, { x: v.x, y: v.y, z: v.z, w: 0 }), unit);",
+          "  return { x: rotated.x, y: rotated.y, z: rotated.z };",
+          "}"
+        )),
+        diagnosis("not-normalized", "The quaternion was not normalized first, so the vector length was scaled.", lines(
+          "function rotateByQuaternion(q, v) {",
+          "  var conjugate = { x: -q.x, y: -q.y, z: -q.z, w: q.w };",
+          "  var rotated = quaternionMultiply(quaternionMultiply(q, { x: v.x, y: v.y, z: v.z, w: 0 }), conjugate);",
+          "  return { x: rotated.x, y: rotated.y, z: rotated.z };",
+          "}"
+        )),
+      ],
+      hints: ["A valid rotation quaternion has unit length.", "Treat v as a pure quaternion with w = 0 and compute q v q⁻¹.", "For a unit q, q⁻¹ is the conjugate (−x, −y, −z, w)."],
+      cases: [
+        example([Z90, { x: 1, y: 0, z: 0 }], { x: 0, y: 1, z: 0 }, "Z quarter turn"),
+        example([{ x: 0, y: 0, z: 0, w: 2 }, { x: 1, y: -2, z: 3 }], { x: 1, y: -2, z: 3 }, "non-unit identity"),
+        example([Y90, { x: 0, y: 0, z: 1 }], { x: 1, y: 0, z: 0 }, "Y quarter turn"),
+      ],
+    }),
+    puzzle({
+      number: 26, id: "compose-se3", title: "Compose SE(3)",
+      goal: "Rotate the child translation, add it to the parent translation, and multiply rotations.",
+      concept: "SE(3) composition has the same rotate-then-translate structure as SE(2).",
+      functionName: "composeSE3", signature: "composeSE3(aFromB, bFromC) → aFromC",
+      starterSource: starter("composeSE3", "aFromB, bFromC"),
+      referenceSource: lines(
+        "function composeSE3(aFromB, bFromC) {",
+        "  var shifted = rotateByQuaternion(aFromB.rotation, bFromC.translation);",
+        "  var q = quaternionMultiply(aFromB.rotation, bFromC.rotation);",
+        "  var length = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+        "  return {",
+        "    translation: { x: aFromB.translation.x + shifted.x, y: aFromB.translation.y + shifted.y, z: aFromB.translation.z + shifted.z },",
+        "    rotation: { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length },",
+        "  };",
+        "}"
+      ),
+      comparator: "se3", walkthroughChapter: "se3",
+      dependencies: ["rotate-by-quaternion", "quaternion-multiply"],
+      scene: { kind: "se3", view: "compose", handles: [
+        { id: "yawA", type: "slider", label: "a→b: yaw about Z", value: PI / 2, min: -PI, max: PI },
+        { id: "pitchB", type: "slider", label: "b→c: pitch about Y", value: PI / 4, min: -PI / 2, max: PI / 2 },
+      ], args: [{ fixture: "aFromB" }, { fixture: "bFromC" }] },
+      diagnoses: [diagnosis("translation-unrotated", "Child translation was not rotated by the parent rotation before adding.", lines(
+        "function composeSE3(aFromB, bFromC) {",
+        "  var q = quaternionMultiply(aFromB.rotation, bFromC.rotation);",
+        "  var length = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+        "  return { translation: { x: aFromB.translation.x + bFromC.translation.x, y: aFromB.translation.y + bFromC.translation.y, z: aFromB.translation.z + bFromC.translation.z }, rotation: { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length } };",
+        "}"
+      ))],
+      hints: ["SE(3) composition has the same rotate-then-translate structure as SE(2).", "Rotate bFromC.translation by aFromB.rotation before adding.", "Multiply quaternions parent × child and normalize the result."],
+      cases: [
+        example([{ translation: { x: 1, y: 0, z: 0 }, rotation: IDENTITY_Q }, { translation: { x: 0, y: 2, z: 0 }, rotation: IDENTITY_Q }], { translation: { x: 1, y: 2, z: 0 }, rotation: IDENTITY_Q }, "translation chain"),
+        example([{ translation: { x: 1, y: 0, z: 0 }, rotation: Z90 }, { translation: { x: 1, y: 0, z: 0 }, rotation: IDENTITY_Q }], { translation: { x: 1, y: 1, z: 0 }, rotation: Z90 }, "rotated child translation"),
+        example([{ translation: { x: 0, y: 0, z: 1 }, rotation: Y90 }, { translation: { x: 1, y: 0, z: 0 }, rotation: IDENTITY_Q }], { translation: { x: 0, y: 0, z: 0 }, rotation: Y90 }, "pitch pushes X down"),
+      ],
+    }),
+    puzzle({
+      number: 27, id: "stamped-lookup", title: "Answer a Stamped Lookup",
+      goal: "Resolve a source-to-target transform at a requested or latest common time.",
+      concept: "A lookup is a pipeline: choose the time, sample every edge, build the tree, traverse.",
+      functionName: "lookupStampedTransform", signature: "lookupStampedTransform(edges, target, source, requestedTime) → result",
+      starterSource: starter("lookupStampedTransform", "edges, target, source, requestedTime"),
+      referenceSource: lines(
+        "function lookupStampedTransform(edges, target, source, requestedTime) {",
+        "  var ranges = [];",
+        "  for (var i = 0; i < edges.length; i += 1) {",
+        "    if (!edges[i].isStatic) ranges.push({ start: edges[i].samples[0].time, end: edges[i].samples[edges[i].samples.length - 1].time });",
+        "  }",
+        "  var availability = ranges.length ? latestCommonTime(ranges, requestedTime) : { ok: true, time: requestedTime === null ? 0 : requestedTime };",
+        "  if (!availability.ok) return availability;",
+        "  var tree = {};",
+        "  for (var j = 0; j < edges.length; j += 1) {",
+        "    tree = storeEdge(tree, { parent: edges[j].parent, child: edges[j].child, transform: sampleEdge(edges[j], availability.time) });",
+        "  }",
+        "  return { ok: true, time: availability.time, transform: lookupTransform(tree, target, source) };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sandbox",
+      dependencies: ["sample-edge", "latest-common-time", "store-edge", "lookup-transform"],
+      scene: { kind: "robot-chain-time", handles: [
+        { id: "time", type: "timeline", label: "requested time", value: 4, start: 0, end: 10 },
+        { id: "mode", type: "selector", label: "time", value: "requested", options: ["requested", "latest"] },
+        { id: "target", type: "selector", label: "target", value: "map", options: CHAIN_OPTIONS },
+        { id: "source", type: "selector", label: "source", value: "laser", options: CHAIN_OPTIONS },
+      ], args: [{ fixture: "stampedEdges" }, { handle: "target" }, { handle: "source" }, { fixture: "requestedOrNull" }] },
+      hints: ["A lookup is a pipeline: choose time, sample edges, build the tree, traverse.", "Use the intersection of all dynamic histories; static edges are valid at every time.", "sampleEdge every edge at the resolved time, storeEdge each one, then lookupTransform on the sampled tree."],
+      cases: [
+        example([STAMPED_EDGES_CASE, "map", "laser", null], { ok: true, time: 6, transform: { x: 13, y: 0, yaw: 0 } }, "latest stamped lookup"),
+        example([[{ parent: "map", child: "odom", samples: [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 5, transform: { x: 5, y: 0, yaw: 0 } }] }], "map", "odom", 8], { ok: false, code: "FUTURE_EXTRAPOLATION", bounds: { start: 0, end: 5 } }, "future request"),
+        example([STAMPED_EDGES_CASE, "map", "base_link", 3], { ok: true, time: 3, transform: { x: 6, y: 0, yaw: 0 } }, "interpolated request"),
+        example([STAMPED_EDGES_CASE, "laser", "map", null], { ok: true, time: 6, transform: { x: -13, y: 0, yaw: 0 } }, "inverse direction"),
+      ],
+    }),
+  ];
+
+  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7));
   const byId = new Map(PUZZLES.map((entry) => [entry.id, entry]));
 
   function getPuzzle(id) {

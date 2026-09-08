@@ -169,6 +169,309 @@
     checkStageRange(12, 19);
   });
 
+  test("catalog stages 5 to 7 contain time, SE(3), and the capstone", () => {
+    same(idsInRange(20, 27), [
+      "interpolate-transform", "bracket-samples", "latest-common-time", "sample-edge",
+      "quaternion-multiply", "rotate-by-quaternion", "compose-se3", "stamped-lookup",
+    ]);
+  });
+
+  test("catalog stages 5 to 7 references pass their cases and diagnoses differ", () => {
+    checkStageRange(20, 27);
+  });
+
+  test("catalog has exactly 27 sequential puzzles with backward-only dependencies", () => {
+    const api = puzzlesApi();
+    const list = api.TF2_PUZZLES;
+    assert(list.length === 27, "expected 27 puzzles, found " + list.length);
+    const seen = new Set();
+    list.forEach((puzzle, index) => {
+      assert(puzzle.number === index + 1, puzzle.id + " has number " + puzzle.number);
+      assert(!seen.has(puzzle.id), "duplicate id " + puzzle.id);
+      assert(puzzle.track === "tf2", puzzle.id + " must belong to the tf2 track");
+      puzzle.dependencies.forEach((dependency) => assert(seen.has(dependency), puzzle.id + " depends on unknown or later puzzle " + dependency));
+      seen.add(puzzle.id);
+      assert(api.getPuzzle(puzzle.id) === puzzle, "getPuzzle should resolve " + puzzle.id);
+    });
+    const stageIds = api.TF2_PUZZLE_STAGES.map((stage) => stage.id);
+    list.forEach((puzzle) => assert(stageIds.includes(puzzle.stage), puzzle.id + " has unknown stage " + puzzle.stage));
+    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "pose-correction"]);
+    assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
+    assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 4, "track 2 lists four placeholder stages");
+  });
+
+  // ---------------------------------------------------------------- worker
+  function workerApi() { return requireApi(workerModule, "puzzle-worker.js"); }
+  const LIVE_PROGRAM = {
+    learner: { functionName: "double", source: "function double(n) { return n * 2; }", dependencySources: [] },
+    reference: { functionName: "double", source: "function double(n) { return n + n; }", dependencySources: [] },
+    variants: [{ id: "half", source: "function double(n) { return n / 2; }" }],
+  };
+
+  test("worker live mode returns learner, reference, and variant values", () => {
+    const response = workerApi().handlePuzzleMessage({ requestId: "r1", mode: "live", program: LIVE_PROGRAM, cases: [{ args: [3] }] });
+    assert(response.ok && response.requestId === "r1", "live response should succeed");
+    same(response.results[0].learner.value, 6);
+    same(response.results[0].reference.value, 6);
+    same(response.results[0].variants, { half: 1.5 });
+  });
+
+  test("worker check mode returns one result per case and reports runtime errors inside results", () => {
+    const program = { ...LIVE_PROGRAM, learner: { functionName: "double", source: "function double(n) { if (n > 5) throw new Error('too big'); return n * 2; }", dependencySources: [] } };
+    const response = workerApi().handlePuzzleMessage({ requestId: "r2", mode: "check", program, cases: [{ args: [1] }, { args: [9] }] });
+    assert(response.ok, "check response should succeed at the top level");
+    same(response.results.length, 2);
+    same(response.results[0].learner.value, 2);
+    assert(!response.results[1].learner.ok && response.results[1].learner.error.kind === "runtime", "second case should carry the runtime error");
+  });
+
+  test("worker reports compile failures at the top level", () => {
+    const program = { ...LIVE_PROGRAM, learner: { functionName: "double", source: "function double(n) { return n * ; }", dependencySources: [] } };
+    const response = workerApi().handlePuzzleMessage({ requestId: "r3", mode: "live", program, cases: [{ args: [1] }] });
+    assert(!response.ok && response.error.kind === "syntax" && response.requestId === "r3", "syntax error expected");
+  });
+
+  // ---------------------------------------------------------------- engine
+  function engineApi() { return requireApi(engine, "puzzle-engine.js"); }
+  function fakeWorkerFactory() {
+    const created = [];
+    const factory = () => {
+      const listeners = { message: [], error: [] };
+      const worker = {
+        posted: [],
+        terminated: false,
+        addEventListener(type, fn) { listeners[type].push(fn); },
+        postMessage(payload) { worker.posted.push(payload); },
+        terminate() { worker.terminated = true; },
+        reply(data) { listeners.message.forEach((fn) => fn({ data })); },
+      };
+      created.push(worker);
+      return worker;
+    };
+    factory.created = created;
+    return factory;
+  }
+  function fakeStorage(initial) {
+    const store = { ...(initial || {}) };
+    return { getItem(key) { return key in store ? store[key] : null; }, setItem(key, value) { store[key] = value; }, removeItem(key) { delete store[key]; } };
+  }
+
+  test("engine scalar comparator rejects unwrapped angles that the angle comparator accepts", () => {
+    const api = engineApi();
+    assert(api.compareOutput("angle", 4, 4 - 2 * Math.PI, 1e-6).pass, "angle comparator accepts modulo 2π");
+    assert(!api.compareOutput("scalar", 4, 4 - 2 * Math.PI, 1e-6).pass, "scalar comparator rejects modulo 2π");
+    assert(api.compareOutput("quaternion", { x: 0, y: 0, z: -1, w: 0 }, { x: 0, y: 0, z: 1, w: 0 }, 1e-6).pass, "q and -q are the same rotation");
+    assert(api.compareOutput("se2", { x: 1, y: 2, yaw: Math.PI }, { x: 1, y: 2, yaw: -Math.PI }, 1e-6).pass, "se2 yaw wraps");
+    assert(!api.compareOutput("path", [{ from: "a", to: "b", child: "a", inverse: false }], [{ from: "a", to: "b", child: "a", inverse: true }], 1e-6).pass, "path flags matter");
+  });
+
+  test("engine diagnose names the matching variant only", () => {
+    const api = engineApi();
+    const puzzle = puzzlesApi().getPuzzle("rotate-vector");
+    const variants = { "negated-yaw": { x: 0, y: -1 }, "swapped-rows": { x: 1, y: 0 } };
+    same(api.diagnose(puzzle, { x: 0, y: -1 }, variants).id, "negated-yaw");
+    same(api.diagnose(puzzle, { x: 0.3, y: 0.3 }, variants), null);
+  });
+
+  test("engine evaluateLive produces match, diagnosed mismatch, and error states", () => {
+    const api = engineApi();
+    const puzzle = puzzlesApi().getPuzzle("rotate-vector");
+    const match = api.evaluateLive(puzzle, { ok: true, results: [{ learner: { ok: true, value: { x: 0, y: 1 }, inputMutated: false }, reference: { ok: true, value: { x: 0, y: 1 } }, variants: {} }] });
+    same(match.kind, "live-match");
+    const mismatch = api.evaluateLive(puzzle, { ok: true, results: [{ learner: { ok: true, value: { x: 0, y: -1 }, inputMutated: false }, reference: { ok: true, value: { x: 0, y: 1 } }, variants: { "negated-yaw": { x: 0, y: -1 } } }] });
+    same(mismatch.kind, "live-mismatch");
+    same(mismatch.diagnosis.id, "negated-yaw");
+    same(mismatch.expected, { x: 0, y: 1 });
+    const failed = api.evaluateLive(puzzle, { ok: true, results: [{ learner: { ok: false, error: { kind: "runtime", message: "boom" } }, reference: { ok: true, value: { x: 0, y: 1 } }, variants: {} }] });
+    same(failed.kind, "runtime");
+    same(failed.expected, { x: 0, y: 1 });
+    const compileError = api.evaluateLive(puzzle, { ok: false, error: { kind: "syntax", message: "Unexpected token" } });
+    same(compileError.kind, "syntax");
+  });
+
+  test("engine evaluateCheck reports the first failing case with its label", () => {
+    const api = engineApi();
+    const puzzle = puzzlesApi().getPuzzle("heading-vector");
+    const goodResult = (value) => ({ learner: { ok: true, value, inputMutated: false }, reference: null, variants: {} });
+    const pass = api.evaluateCheck(puzzle, { ok: true, results: [goodResult({ x: 0, y: 1 }), goodResult({ x: 1, y: 0 }), goodResult({ x: -1, y: 0 }), goodResult({ x: Math.SQRT1_2, y: -Math.SQRT1_2 })] });
+    assert(pass.pass, "all cases should pass");
+    const fail = api.evaluateCheck(puzzle, { ok: true, results: [goodResult({ x: 0, y: 1 }), goodResult({ x: 0, y: 1 }), goodResult({ x: -1, y: 0 }), goodResult({ x: 1, y: 0 })] });
+    assert(!fail.pass && fail.caseIndex === 1 && fail.message.includes("zero yaw"), "second case should fail with its label");
+    const mutated = api.evaluateCheck(puzzle, { ok: true, results: [{ learner: { ok: true, value: { x: 0, y: 1 }, inputMutated: true }, reference: null, variants: {} }] });
+    same(mutated.kind, "mutation");
+  });
+
+  test("engine buildProgram wires learner and reference dependency chains", () => {
+    const api = engineApi();
+    const list = puzzleList();
+    const puzzle = puzzlesApi().getPuzzle("transform-pose");
+    const progress = api.createProgress();
+    progress.sources["rotate-vector"] = "function rotateVector(v, yaw) { return v; }";
+    progress.sources["wrap-angle"] = "function wrapAngle(a) { return a; }";
+    progress.sources["transform-point"] = "function transformPoint(t, p) { return p; }";
+    const program = api.buildProgram(list, progress, puzzle, "function transformPose(t, p) { return p; }");
+    same(program.learner.dependencySources, [progress.sources["wrap-angle"], progress.sources["rotate-vector"], progress.sources["transform-point"]]);
+    same(program.reference.dependencySources, ["wrap-angle", "rotate-vector", "transform-point"].map((id) => puzzlesApi().getPuzzle(id).referenceSource));
+    same(program.variants.map((entry) => entry.id), ["yaw-not-composed"]);
+    delete progress.sources["transform-point"];
+    let thrown = null;
+    try { api.buildProgram(list, progress, puzzle, ""); } catch (error) { thrown = error; }
+    assert(thrown && thrown.kind === "missing-dependency" && thrown.dependencyId === "transform-point", "missing dependency should be reported");
+  });
+
+  test("engine progress uses the v2 key, rejects v1 records, and unlocks tracks", () => {
+    const api = engineApi();
+    same(api.STORAGE_KEY, "tf2-puzzle-lab:v2");
+    const fresh = api.loadProgress(fakeStorage({ "tf2-puzzle-lab:v1": JSON.stringify({ schemaVersion: 1 }) }));
+    same(fresh.currentPuzzleId, "heading-vector");
+    const stale = api.loadProgress(fakeStorage({ "tf2-puzzle-lab:v2": JSON.stringify({ schemaVersion: 1, currentPuzzleId: "x", highestUnlocked: 3, sources: {}, solved: {}, hints: {}, display: {} }) }));
+    same(stale.highestUnlocked, 0);
+    const list = puzzleList();
+    const tracks = puzzlesApi().TF2_PUZZLE_TRACKS;
+    let progress = api.createProgress();
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked"]);
+    progress = api.completePuzzle(progress, list[0], "function headingVector(yaw) { return null; }", "2026-09-08T00:00:00Z", list);
+    same(progress.highestUnlocked, 1);
+    same(progress.currentPuzzleId, "heading-of");
+    progress = api.completePuzzle(progress, list[26], "source", "2026-09-08T00:00:00Z", list);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available"]);
+    const reset = api.resetPuzzle(progress, list, "heading-vector");
+    assert(!reset.progress.solved["heading-vector"] && reset.invalidated.includes("heading-vector"), "reset clears the puzzle");
+  });
+
+  test("engine validateCatalog accepts the real catalog and rejects a bad scene kind", () => {
+    const api = engineApi();
+    const list = puzzleList();
+    const kinds = ["dial", "vector", "vector-dial", "two-dials", "frame-point", "frame-vector", "frame-pose", "frame-chain", "frame-inverse", "two-frames", "tree", "robot-chain", "correction", "pose-lerp", "timeline", "timeline-ranges", "timeline-frame", "se3", "robot-chain-time"];
+    assert(api.validateCatalog(list, kinds).valid, "real catalog should validate: " + api.validateCatalog(list, kinds).message);
+    const broken = list.map((puzzle, index) => (index === 0 ? { ...puzzle, scene: { ...puzzle.scene, kind: "nope" } } : puzzle));
+    assert(!api.validateCatalog(broken, kinds).valid, "unknown scene kind should be rejected");
+  });
+
+  test("engine live session resolves, supersedes queued requests, drops stale replies, and restarts on timeout", async () => {
+    const api = engineApi();
+    const factory = fakeWorkerFactory();
+    const session = api.createLiveSession({ workerUrl: "fake.js", liveTimeoutMs: 40, checkTimeoutMs: 40, createWorker: factory });
+    const first = session.evaluate(LIVE_PROGRAM, [1]);
+    const worker = factory.created[0];
+    same(worker.posted.length, 1);
+    worker.reply({ requestId: "wrong-id", ok: true, results: [] });
+    worker.reply({ requestId: worker.posted[0].requestId, ok: true, results: [{ learner: { ok: true, value: 2 } }] });
+    const firstResponse = await first;
+    same(firstResponse.results[0].learner.value, 2);
+
+    const blocked = session.evaluate(LIVE_PROGRAM, [2]);
+    const queuedA = session.evaluate(LIVE_PROGRAM, [3]);
+    const queuedB = session.evaluate(LIVE_PROGRAM, [4]);
+    let supersededKind = null;
+    await queuedA.catch((error) => { supersededKind = error.kind; });
+    same(supersededKind, "superseded");
+    worker.reply({ requestId: worker.posted[1].requestId, ok: true, results: [{ learner: { ok: true, value: 4 } }] });
+    await blocked;
+    same(worker.posted.length, 3);
+    same(worker.posted[2].cases[0].args, [4]);
+    worker.reply({ requestId: worker.posted[2].requestId, ok: true, results: [{ learner: { ok: true, value: 8 } }] });
+    same((await queuedB).results[0].learner.value, 8);
+
+    const hanging = session.evaluate(LIVE_PROGRAM, [5]);
+    let timeoutKind = null;
+    await hanging.catch((error) => { timeoutKind = error.kind; });
+    same(timeoutKind, "timeout");
+    assert(worker.terminated, "hung worker should be terminated");
+    session.evaluate(LIVE_PROGRAM, [6]).catch(() => {});
+    same(factory.created.length, 2);
+    session.dispose();
+  });
+
+  // ---------------------------------------------------------------- scenes
+  function scenesApi() { return requireApi(scenes, "PuzzleScenes"); }
+  function allFinite(value, path) {
+    if (typeof value === "number") { if (!Number.isFinite(value)) throw new Error("non-finite number at " + path); return; }
+    if (!value || typeof value !== "object") return;
+    Object.keys(value).forEach((key) => allFinite(value[key], path + "." + key));
+  }
+  function referenceOutput(puzzle, args) {
+    const api = requireApi(runtime, "puzzle-runtime.js");
+    const compiled = api.compileProgram(referenceProgram(puzzle));
+    const result = api.evaluateCompiled(compiled, args);
+    assert(result.learner.ok, puzzle.id + " reference rejected scene args: " + JSON.stringify(args) + " " + (result.learner.ok ? "" : result.learner.error.message));
+    return result.learner.value;
+  }
+  function checkSceneKinds(kinds) {
+    const api = scenesApi();
+    puzzleList().filter((puzzle) => kinds.includes(puzzle.scene.kind)).forEach((puzzle) => {
+      const values = api.initialValues(puzzle);
+      const args = api.toArgs(puzzle, values);
+      const expected = referenceOutput(puzzle, args);
+      const contexts = [
+        { puzzle, values, args, expected, actual: expected, comparison: { pass: true }, diagnosis: null, error: null },
+        { puzzle, values, args, expected, actual: expected, comparison: { pass: false, message: "off" }, diagnosis: { id: "x", message: "why" }, error: null },
+        { puzzle, values, args, expected: null, actual: null, comparison: null, diagnosis: null, error: { kind: "runtime", message: "boom" } },
+      ];
+      contexts.forEach((context, index) => {
+        const layers = api.layers(context);
+        assert(Array.isArray(layers) && layers.length > 0, puzzle.id + " context " + index + " produced no layers");
+        layers.forEach((layer) => { assert(typeof layer.kind === "string", puzzle.id + " layer without kind"); allFinite(layer, puzzle.id + "." + layer.kind); });
+      });
+      const grips = api.grips(puzzle, values);
+      puzzle.scene.handles.filter((handle) => handle.type !== "selector").forEach((handle) => {
+        assert(grips.some((grip) => grip.handleId === handle.id), puzzle.id + " has no grip for " + handle.id);
+      });
+      grips.forEach((grip) => allFinite(grip, puzzle.id + ".grip"));
+    });
+  }
+
+  test("scenes: 2D kinds build arguments the reference accepts and finite layers", () => {
+    checkSceneKinds(["dial", "vector", "vector-dial", "two-dials", "frame-point", "frame-vector", "frame-pose", "frame-chain", "frame-inverse", "two-frames", "pose-lerp", "correction"]);
+  });
+
+  test("scenes: dragging updates frames, nested points, dials, and lanes", () => {
+    const api = scenesApi();
+    const framePoint = puzzlesApi().getPuzzle("transform-point");
+    let values = api.initialValues(framePoint);
+    const originGrip = api.grips(framePoint, values).find((grip) => grip.handleId === "transform" && grip.grip === "origin");
+    values = api.dragHandle(framePoint, values, originGrip, { x: 1, y: 2 });
+    near(values.transform.x, 1); near(values.transform.y, 2); near(values.transform.yaw, Math.PI / 2);
+    const headingGrip = api.grips(framePoint, values).find((grip) => grip.handleId === "transform" && grip.grip === "heading");
+    values = api.dragHandle(framePoint, values, headingGrip, { x: 3, y: 2 });
+    near(values.transform.yaw, 0);
+    const pointGrip = api.grips(framePoint, values).find((grip) => grip.handleId === "point");
+    values = api.dragHandle(framePoint, values, pointGrip, { x: 4, y: 3 });
+    near(values.point.x, 3); near(values.point.y, 1);
+    near(api.grips(framePoint, values).find((grip) => grip.handleId === "point").at.x, 4);
+
+    const wrap = puzzlesApi().getPuzzle("wrap-angle");
+    let dialValues = api.initialValues(wrap);
+    const knob = api.grips(wrap, dialValues).find((grip) => grip.handleId === "angle");
+    dialValues = api.dragHandle(wrap, dialValues, knob, { x: Math.cos(4.3) * 2, y: Math.sin(4.3) * 2 });
+    near(dialValues.angle, 4.3, 1e-9);
+
+    const lerp = puzzlesApi().getPuzzle("interpolate-transform");
+    let lerpValues = api.initialValues(lerp);
+    const slider = api.grips(lerp, lerpValues).find((grip) => grip.handleId === "amount");
+    lerpValues = api.dragHandle(lerp, lerpValues, slider, { x: 99, y: slider.at.y });
+    near(lerpValues.amount, 1);
+    lerpValues = api.dragHandle(lerp, lerpValues, slider, { x: -99, y: slider.at.y });
+    near(lerpValues.amount, 0);
+  });
+
+  test("scenes: structural, timeline, SE(3), and capstone kinds build valid arguments and layers", () => {
+    checkSceneKinds(["tree", "robot-chain", "timeline", "timeline-ranges", "timeline-frame", "se3", "robot-chain-time"]);
+  });
+
+  test("scenes: every puzzle uses a registered scene kind and the laser hit lands on the landmark", () => {
+    const api = scenesApi();
+    puzzleList().forEach((puzzle) => assert(api.SCENE_KINDS.includes(puzzle.scene.kind), puzzle.id + " uses unregistered scene kind " + puzzle.scene.kind));
+    const laser = puzzlesApi().getPuzzle("laser-point-to-map");
+    const values = api.initialValues(laser);
+    const args = api.toArgs(laser, values);
+    const projected = referenceOutput(laser, args);
+    near(projected.x, 3.5); near(projected.y, 2.5);
+    const latest = puzzlesApi().getPuzzle("latest-common-time");
+    const latestValues = { ...api.initialValues(latest), mode: "latest" };
+    same(api.toArgs(latest, latestValues)[1], null);
+  });
+
   async function runAllTests() {
     let passed = 0;
     const failures = [];
