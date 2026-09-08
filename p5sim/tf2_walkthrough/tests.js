@@ -17,6 +17,7 @@
   const math2d = loadModule("./transform2d.js");
   const tfApi = loadModule("./transform-tree.js");
   const tf3Api = loadModule("./transform3d.js");
+  const chapterApi = loadModule("./chapters.js");
 
   function test(name, run) {
     tests.push({ name, run });
@@ -250,6 +251,37 @@
       throw new Error("expected zero quaternion rejection");
     } catch (error) {
       if (!(error instanceof TypeError)) throw error;
+    }
+  });
+
+  test("chapter catalog contains the full guided sequence", () => {
+    const { TF2_CHAPTERS } = requireApi(chapterApi, "chapters.js");
+    const expected = [
+      "matrix-stack",
+      "data-types",
+      "composition",
+      "tree",
+      "mobile-chain",
+      "frame-roles",
+      "broadcasters",
+      "lookup",
+      "stamped-data",
+      "time-buffer",
+      "sensor-scenario",
+      "se3",
+      "sandbox",
+    ];
+    const actual = TF2_CHAPTERS.map((chapter) => chapter.id);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error(`unexpected chapter order: ${actual.join(", ")}`);
+    }
+    for (const chapter of TF2_CHAPTERS) {
+      for (const key of ["title", "eyebrow", "summary", "details", "rosCode", "scene", "hint"]) {
+        const value = chapter[key];
+        if (!value || (Array.isArray(value) && value.length === 0)) {
+          throw new Error(`${chapter.id} is missing ${key}`);
+        }
+      }
     }
   });
 
