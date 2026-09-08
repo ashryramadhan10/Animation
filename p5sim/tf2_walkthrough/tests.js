@@ -148,6 +148,69 @@
     }
   });
 
+  test("dynamic edges interpolate at the requested time", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "odom", child: "base_link", transform: new Transform2D(0, 0, 0), time: 0 });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: new Transform2D(10, 0, Math.PI), time: 10 });
+    const result = tree.lookup("odom", "base_link", 5);
+    near(result.transform.x, 5);
+    near(Math.abs(result.transform.yaw), Math.PI / 2);
+  });
+
+  test("static edges are valid at arbitrary times", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "base_link", child: "laser", transform: new Transform2D(0.4, 0, 0), isStatic: true });
+    near(tree.lookup("base_link", "laser", 5000).transform.x, 0.4);
+  });
+
+  test("latest lookup uses the latest common dynamic time", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "odom", transform: new Transform2D(1, 0, 0), time: 0 });
+    tree.setTransform({ parent: "map", child: "odom", transform: new Transform2D(2, 0, 0), time: 8 });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: new Transform2D(3, 0, 0), time: 0 });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: new Transform2D(4, 0, 0), time: 6 });
+    const result = tree.lookup("map", "base_link");
+    near(result.time, 6);
+  });
+
+  test("lookup reports past and future extrapolation", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "odom", child: "base_link", transform: Transform2D.identity(), time: 2 });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: Transform2D.identity(), time: 4 });
+    for (const [time, code] of [[1, "PAST_EXTRAPOLATION"], [5, "FUTURE_EXTRAPOLATION"]]) {
+      try {
+        tree.lookup("odom", "base_link", time);
+        throw new Error(`expected ${code}`);
+      } catch (error) {
+        if (error.code !== code) throw error;
+      }
+    }
+  });
+
+  test("latest lookup rejects dynamic histories without overlap", () => {
+    const { Transform2D } = requireApi(math2d, "transform2d.js");
+    const { TransformTree } = requireApi(tfApi, "transform-tree.js");
+    const tree = new TransformTree();
+    tree.setTransform({ parent: "map", child: "odom", transform: Transform2D.identity(), time: 0 });
+    tree.setTransform({ parent: "map", child: "odom", transform: Transform2D.identity(), time: 1 });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: Transform2D.identity(), time: 2 });
+    tree.setTransform({ parent: "odom", child: "base_link", transform: Transform2D.identity(), time: 3 });
+    try {
+      tree.lookup("map", "base_link");
+      throw new Error("expected no common time rejection");
+    } catch (error) {
+      if (error.code !== "NO_COMMON_TIME") throw error;
+    }
+  });
+
   function runAllTests() {
     let passed = 0;
     const failures = [];

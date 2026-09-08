@@ -115,18 +115,45 @@
     latestCommonTime(edges) {
       const dynamicEdges = edges.filter((edge) => !edge.isStatic);
       if (!dynamicEdges.length) return 0;
-      return Math.min(...dynamicEdges.map((edge) => edge.samples[edge.samples.length - 1].time));
+      const earliest = Math.max(...dynamicEdges.map((edge) => edge.samples[0].time));
+      const latest = Math.min(
+        ...dynamicEdges.map((edge) => edge.samples[edge.samples.length - 1].time)
+      );
+      if (earliest > latest) {
+        throw new TFError(
+          "NO_COMMON_TIME",
+          `Dynamic histories do not overlap: earliest common start ${earliest}, latest common end ${latest}`,
+          { earliest, latest }
+        );
+      }
+      return latest;
     }
 
     sampleEdge(edge, time) {
       if (edge.isStatic) return edge.samples[0].transform;
+      const earliest = edge.samples[0].time;
+      const latest = edge.samples[edge.samples.length - 1].time;
+      if (time < earliest) {
+        throw new TFError(
+          "PAST_EXTRAPOLATION",
+          `Requested ${time} before earliest sample ${earliest}`,
+          { parent: edge.parent, child: edge.child, requested: time, earliest, latest }
+        );
+      }
+      if (time > latest) {
+        throw new TFError(
+          "FUTURE_EXTRAPOLATION",
+          `Requested ${time} after latest sample ${latest}`,
+          { parent: edge.parent, child: edge.child, requested: time, earliest, latest }
+        );
+      }
       const exact = edge.samples.find((sample) => sample.time === time);
       if (exact) return exact.transform;
-      throw new TFError("MISSING_SAMPLE", `No sample for ${edge.parent} -> ${edge.child} at ${time}`, {
-        parent: edge.parent,
-        child: edge.child,
-        requested: time,
-      });
+      const upperIndex = edge.samples.findIndex((sample) => sample.time > time);
+      const lower = edge.samples[upperIndex - 1];
+      const upper = edge.samples[upperIndex];
+      const amount = (time - lower.time) / (upper.time - lower.time);
+      return Transform2D.interpolate(lower.transform, upper.transform, amount);
     }
 
     rootFromFrame(frame, time) {
