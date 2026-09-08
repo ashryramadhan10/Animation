@@ -61,7 +61,10 @@ Create `p5sim/tf2_walkthrough/puzzle-tests.js`:
 
   function load(path, globalName) {
     if (runningInNode) {
-      try { return require(path); } catch (error) { if (error && error.code === "MODULE_NOT_FOUND") return null; throw error; }
+      // A module that is missing or cannot load under Node (for example the browser-only worker
+      // that Task 5 replaces) counts as "not implemented" so its tests fail visibly instead of
+      // crashing the runner.
+      try { return require(path); } catch (error) { return null; }
     }
     return globalName ? root[globalName] || null : root;
   }
