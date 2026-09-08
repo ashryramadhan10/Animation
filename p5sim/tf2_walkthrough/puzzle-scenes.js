@@ -88,7 +88,10 @@
   }
   function notes(context, expectedText, actualText, extra) {
     const rows = [label("expected: " + expectedText, "expected", { row: 0 }), label("yours: " + actualText, context.error ? "actual" : resultStyle(context), { row: 1 })];
-    if (context.error) rows.push(label("⚠ " + context.error.kind + ": your function did not produce a value", "actual", { row: 2 }));
+    if (context.error) {
+      const detail = typeof context.error.message === "string" && context.error.message ? context.error.message : "your function did not produce a value";
+      rows.push(label("⚠ " + context.error.kind + ": " + (detail.length > 70 ? detail.slice(0, 67) + "…" : detail), "actual", { row: 2 }));
+    }
     else if (context.diagnosis) rows.push(label("⚠ " + context.diagnosis.id, "actual", { row: 2 }));
     (extra || []).forEach((text, index) => rows.push(label(text, "muted", { row: 3 + index })));
     return rows;
