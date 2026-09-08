@@ -39,7 +39,6 @@
 .visualizer-card,
 .component-card,
 .editor-card,
-.pieces-card,
 .feedback-card,
 .lab-footer {
   border: 1px solid var(--border);
@@ -285,7 +284,6 @@
 
 .visualizer-card,
 .component-card,
-.pieces-card,
 .feedback-card {
   padding: 15px;
 }
@@ -331,8 +329,7 @@
 .actual-swatch { background: var(--danger); }
 .match-swatch { background: var(--success); }
 
-.component-shelf,
-.code-pieces {
+.component-shelf {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -341,7 +338,6 @@
 }
 
 .component-chip,
-.piece-button,
 .empty-shelf {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -433,21 +429,6 @@
 
 .compact-heading {
   align-items: flex-end;
-}
-
-.drag-copy {
-  color: var(--faint);
-  font-size: 0.68rem;
-}
-
-.piece-button {
-  min-height: 34px;
-  cursor: pointer;
-}
-
-.piece-button:hover {
-  border-color: var(--accent);
-  color: var(--text);
 }
 
 .feedback-panel {
@@ -566,6 +547,87 @@
 
 [hidden] {
   display: none !important;
+}
+
+.puzzle-concept {
+  max-width: 72ch;
+  margin: 0 0 12px;
+  color: #bdd3ff;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.input-swatch {
+  width: 15px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.selector-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.selector-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font: 650 0.7rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.selector-field select {
+  min-height: 30px;
+  border: 1px solid var(--border-bright);
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.track-block + .track-block {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-bright);
+}
+
+.track-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--text);
+  font: 800 0.74rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.04em;
+}
+
+.track-name span:last-child {
+  color: var(--accent);
+}
+
+.track-block.is-locked .track-name span:last-child {
+  color: var(--faint);
+}
+
+.track-note {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.stage-placeholder {
+  margin: 0;
+  padding: 5px 7px;
+  color: #525d6e;
+  font-size: 0.72rem;
+}
+
+.track-block.is-locked .stage-placeholder {
+  color: #3f4856;
 }
 
 @media (max-width: 1260px) {
