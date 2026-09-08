@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TF2 Walkthrough Tests</title>
+    <style>
+      body { margin: 0; padding: 32px; background: #07090e; color: #edf2f7; font-family: ui-monospace, Consolas, monospace; }
+      main { width: min(760px, 100%); margin: auto; }
+      h1 { font: 700 1.3rem/1.2 system-ui, sans-serif; }
+      .summary { border: 1px solid #35445f; border-radius: 10px; padding: 14px; color: #61dda1; background: #0d1119; }
+      .failure { margin-top: 10px; border-left: 3px solid #ff7c8b; padding: 9px 12px; color: #ffc4ca; background: #171015; }
+    </style>
+  </head>
+  <body>
+    <main id="results">
+      <h1>TF2 walkthrough model tests</h1>
+      <p>Running tests…</p>
+    </main>
+    <script>
+      window.renderTestResults = function renderTestResults(result) {
+        const host = document.querySelector("#results");
+        host.innerHTML = "<h1>TF2 walkthrough model tests</h1>";
+        const summary = document.createElement("p");
+        summary.className = "summary";
+        summary.textContent = `${result.passed}/${result.total} tests passed`;
+        host.append(summary);
+        result.failures.forEach(({ name, error }) => {
+          const item = document.createElement("div");
+          item.className = "failure";
+          item.textContent = `${name}: ${error.message}`;
+          host.append(item);
+        });
+      };
+    </script>
+    <script src="transform2d.js"></script>
+    <script src="transform-tree.js"></script>
+    <script src="transform3d.js"></script>
+    <script src="tests.js"></script>
+  </body>
+</html>

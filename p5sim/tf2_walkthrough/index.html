@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="An interactive p5.js walkthrough of the ROS 2 TF2 transform tree." />
+    <title>TF2, Drawn as a Tree</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">TF</span>
+          <div>
+            <p class="overline">ROS 2 concepts through p5.js</p>
+            <h1>TF2, drawn as a tree</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span id="modeBadge" class="mode-badge">SE(2)</span>
+          <button id="pauseButton" class="button button-secondary" type="button">Pause</button>
+          <button id="resetButton" class="button button-secondary" type="button">Reset</button>
+        </div>
+      </header>
+
+      <nav class="chapter-nav" aria-label="Tutorial chapters">
+        <div class="progress-copy">
+          <span id="chapterCounter">01 / 13</span>
+          <span id="chapterDuration">~3 min</span>
+        </div>
+        <div id="chapterRail" class="chapter-rail"></div>
+      </nav>
+
+      <div class="workspace">
+        <section class="scene-card" aria-labelledby="sceneHeading">
+          <div class="card-heading">
+            <div>
+              <p class="card-kicker">Live transform view</p>
+              <h2 id="sceneHeading">World and local frames</h2>
+            </div>
+            <div class="axis-legend" aria-label="Axis colors">
+              <span><i class="axis-x"></i> +X</span>
+              <span><i class="axis-y"></i> +Y</span>
+              <span id="zLegend"><i class="axis-z"></i> +Z</span>
+            </div>
+          </div>
+          <div id="canvasHost" class="canvas-host" aria-label="Interactive TF2 scene"></div>
+          <div class="scene-footer">
+            <code id="compositionReadout">T_map_laser = T_map_odom × T_odom_base × T_base_laser</code>
+            <span id="interactionHint">Drag the child frame to change its transform.</span>
+          </div>
+        </section>
+
+        <aside class="lesson-column">
+          <section class="lesson-card" aria-labelledby="chapterTitle">
+            <p id="chapterEyebrow" class="card-kicker">01 · Familiar ground</p>
+            <h2 id="chapterTitle">A matrix stack is already a frame tree</h2>
+            <p id="chapterSummary" class="chapter-summary"></p>
+            <ul id="chapterDetails" class="lesson-points"></ul>
+            <p id="chapterHint" class="hint-box"></p>
+          </section>
+
+          <section class="controls-card" aria-labelledby="controlsHeading">
+            <div class="section-title-row">
+              <div>
+                <p class="card-kicker">Ask the buffer</p>
+                <h2 id="controlsHeading">Transform lookup</h2>
+              </div>
+              <span id="lookupTimeBadge" class="time-badge">latest</span>
+            </div>
+            <div class="control-grid">
+              <label>
+                Target frame
+                <select id="targetFrame"></select>
+              </label>
+              <label>
+                Source frame
+                <select id="sourceFrame"></select>
+              </label>
+              <label id="timeControl" class="range-control control-wide">
+                <span>Query time <output id="queryTimeValue">latest</output></span>
+                <input id="queryTime" type="range" min="0" max="12" value="8" step="0.1" />
+              </label>
+              <label class="check-control control-wide">
+                <input id="showGhosts" type="checkbox" checked />
+                <span>Show pose history and intermediate frames</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="tree-card" aria-labelledby="treeHeading">
+            <div class="section-title-row">
+              <div>
+                <p class="card-kicker">One parent per child</p>
+                <h2 id="treeHeading">TF tree</h2>
+              </div>
+              <div class="edge-legend">
+                <span><i class="edge-dynamic"></i> dynamic</span>
+                <span><i class="edge-static"></i> static</span>
+              </div>
+            </div>
+            <div id="tfTreeHost" class="tf-tree" aria-label="Current transform tree"></div>
+          </section>
+
+          <section class="result-card" aria-labelledby="resultHeading" aria-live="polite">
+            <div class="section-title-row">
+              <div>
+                <p class="card-kicker">Resolved result</p>
+                <h2 id="resultHeading">T_target_source</h2>
+              </div>
+              <span id="lookupStatus" class="status-pill status-ok">available</span>
+            </div>
+            <div id="transformResult" class="transform-result"></div>
+            <div id="lookupTrace" class="lookup-trace"></div>
+            <div id="errorPanel" class="error-panel" hidden></div>
+          </section>
+
+          <section class="code-card" aria-labelledby="codeHeading">
+            <p class="card-kicker">ROS 2 equivalent</p>
+            <h2 id="codeHeading">What the real API call looks like</h2>
+            <pre><code id="rosCode"></code></pre>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="walkthrough-nav">
+        <button id="previousButton" class="button button-secondary nav-button" type="button">
+          <span aria-hidden="true">←</span>
+          <span><small>Previous</small><strong id="previousLabel">Introduction</strong></span>
+        </button>
+        <div class="keyboard-hint">Keyboard: <kbd>←</kbd> <kbd>→</kbd> chapters · <kbd>Space</kbd> pause · <kbd>R</kbd> reset</div>
+        <button id="nextButton" class="button button-primary nav-button nav-button-next" type="button">
+          <span><small>Next</small><strong id="nextLabel">Data types</strong></span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </footer>
+    </main>
+
+    <script src="../libraries/p5.min.js"></script>
+    <script src="transform2d.js"></script>
+    <script src="transform-tree.js"></script>
+    <script src="transform3d.js"></script>
+    <script src="chapters.js"></script>
+    <script src="sketch.js"></script>
+  </body>
+</html>
