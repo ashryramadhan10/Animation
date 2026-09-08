@@ -76,6 +76,88 @@
     same(api.callSafely(scope.fn, [1]).value, 3);
   });
 
+  // ---------------------------------------------------------------- catalog helpers
+  function puzzlesApi() { return requireApi(catalog, "puzzles.js"); }
+  function puzzleList() { return puzzlesApi().TF2_PUZZLES; }
+  function referenceDependencies(puzzle) {
+    const api = puzzlesApi();
+    const collected = new Set();
+    (function visit(id) {
+      if (collected.has(id)) return;
+      const entry = api.getPuzzle(id);
+      if (!entry) throw new Error("unknown dependency " + id);
+      entry.dependencies.forEach(visit);
+      collected.add(id);
+    })(puzzle.id);
+    collected.delete(puzzle.id);
+    return api.TF2_PUZZLES.filter((entry) => collected.has(entry.id)).map((entry) => entry.referenceSource);
+  }
+  function referenceProgram(puzzle) {
+    return {
+      learner: { functionName: puzzle.functionName, source: puzzle.referenceSource, dependencySources: referenceDependencies(puzzle) },
+      reference: { functionName: puzzle.functionName, source: puzzle.referenceSource, dependencySources: referenceDependencies(puzzle) },
+      variants: puzzle.diagnoses.map((entry) => ({ id: entry.id, source: entry.source })),
+    };
+  }
+  function idsInRange(from, to) {
+    return puzzleList().filter((puzzle) => puzzle.number >= from && puzzle.number <= to).map((puzzle) => puzzle.id);
+  }
+  function angleClose(a, b) { const d = Math.atan2(Math.sin(a - b), Math.cos(a - b)); return Math.abs(d) <= 1e-6; }
+  function valuesMatch(comparator, actual, expected) {
+    if (comparator === "angle") return typeof actual === "number" && angleClose(actual, expected);
+    if (comparator === "quaternion") {
+      if (!actual || !expected) return false;
+      const keys = ["x", "y", "z", "w"];
+      const direct = Math.max(...keys.map((key) => Math.abs(actual[key] - expected[key])));
+      const negated = Math.max(...keys.map((key) => Math.abs(actual[key] + expected[key])));
+      return Math.min(direct, negated) <= 1e-6;
+    }
+    if (typeof expected === "number") return typeof actual === "number" && Math.abs(actual - expected) <= 1e-6;
+    if (expected === null || typeof expected !== "object") return Object.is(actual, expected);
+    if (!actual || typeof actual !== "object" || Array.isArray(actual) !== Array.isArray(expected)) return false;
+    const keys = Object.keys(expected);
+    if (keys.length !== Object.keys(actual).length) return false;
+    return keys.every((key) => {
+      if (key === "yaw" && typeof expected[key] === "number") return typeof actual[key] === "number" && angleClose(actual[key], expected[key]);
+      if (comparator === "se3" && key === "rotation") return valuesMatch("quaternion", actual[key], expected[key]);
+      return valuesMatch(comparator, actual[key], expected[key]);
+    });
+  }
+  function checkStageRange(from, to) {
+    const api = requireApi(runtime, "puzzle-runtime.js");
+    puzzleList().filter((puzzle) => puzzle.number >= from && puzzle.number <= to).forEach((puzzle) => {
+      assert(puzzle.hints.length === 3, puzzle.id + " needs three hints");
+      assert(puzzle.publicCases.length === 1 && puzzle.checkCases.length >= 2, puzzle.id + " needs one public and at least two check cases");
+      assert(puzzle.scene && puzzle.scene.kind && Array.isArray(puzzle.scene.handles), puzzle.id + " needs a scene");
+      const compiled = api.compileProgram(referenceProgram(puzzle));
+      assert(compiled.learner.ok, puzzle.id + " reference failed to compile: " + (compiled.learner.ok ? "" : compiled.learner.error.message));
+      compiled.variants.forEach((variant) => assert(variant.compiled.ok, puzzle.id + " variant " + variant.id + " failed to compile"));
+      const cases = puzzle.publicCases.concat(puzzle.checkCases);
+      const variantDiffers = {};
+      cases.forEach((testCase) => {
+        const result = api.evaluateCompiled(compiled, testCase.args);
+        assert(result.learner.ok, puzzle.id + " reference threw on " + testCase.label + ": " + (result.learner.ok ? "" : result.learner.error.message));
+        assert(!result.learner.inputMutated, puzzle.id + " reference mutated input on " + testCase.label);
+        assert(valuesMatch(puzzle.comparator, result.learner.value, testCase.expected), puzzle.id + " reference mismatch on " + testCase.label + ": " + JSON.stringify(result.learner.value));
+        puzzle.diagnoses.forEach((entry) => {
+          if (!valuesMatch(puzzle.comparator, result.variants[entry.id], testCase.expected)) variantDiffers[entry.id] = true;
+        });
+      });
+      puzzle.diagnoses.forEach((entry) => assert(variantDiffers[entry.id], puzzle.id + " diagnosis " + entry.id + " never differs from the reference"));
+    });
+  }
+
+  test("catalog stages 1 and 2 contain the rotation and frame bricks", () => {
+    same(idsInRange(1, 11), [
+      "heading-vector", "heading-of", "wrap-angle", "rotate-vector", "yaw-delta",
+      "transform-point", "transform-vector", "transform-pose", "compose", "invert", "relative-transform",
+    ]);
+  });
+
+  test("catalog stages 1 and 2 references pass their cases and diagnoses differ", () => {
+    checkStageRange(1, 11);
+  });
+
   async function runAllTests() {
     let passed = 0;
     const failures = [];
