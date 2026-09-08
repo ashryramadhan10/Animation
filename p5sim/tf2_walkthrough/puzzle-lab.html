@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="A p5.js coding puzzle lab for learning TF2 geometry from vectors to a time-aware transform buffer." />
+    <title>TF2 Puzzle Lab</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="puzzle-lab.css" />
+  </head>
+  <body class="lab-body">
+    <main class="app-shell puzzle-shell">
+      <header class="topbar lab-topbar">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">TF</span>
+          <div>
+            <p class="overline">Build geometry from tiny parts</p>
+            <h1>TF2 Puzzle Lab</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span id="saveStatus" class="save-status" aria-live="polite">Saved locally</span>
+          <a class="button button-secondary" href="index.html">Walkthrough</a>
+        </div>
+      </header>
+
+      <div class="lab-layout">
+        <aside class="curriculum-card" aria-labelledby="curriculumHeading">
+          <div class="lab-card-heading">
+            <div>
+              <p class="card-kicker">Dependency ladder</p>
+              <h2 id="curriculumHeading">30 small builds</h2>
+            </div>
+            <span id="puzzleCounter" class="counter-pill">01 / 30</span>
+          </div>
+          <div class="map-legend" aria-label="Puzzle state legend">
+            <span><i class="state-dot state-solved"></i>Solved</span>
+            <span><i class="state-dot state-current"></i>Current</span>
+            <span><i class="state-dot state-locked"></i>Locked</span>
+          </div>
+          <nav id="stageMap" class="stage-map" aria-label="Puzzle curriculum"></nav>
+          <button id="resetProgress" class="button danger-button" type="button">Reset all progress</button>
+        </aside>
+
+        <section class="visual-column">
+          <article class="puzzle-brief">
+            <div class="puzzle-number" id="puzzleNumber">01</div>
+            <div class="puzzle-copy">
+              <p id="puzzleStage" class="card-kicker">Coordinate Bricks</p>
+              <h2 id="puzzleTitle">Place a Point</h2>
+              <p id="puzzleGoal" class="puzzle-goal"></p>
+              <div class="brief-links">
+                <code id="puzzleSignature" class="signature"></code>
+                <a id="walkthroughLink" class="concept-link" href="index.html">Review concept ↗</a>
+              </div>
+            </div>
+          </article>
+
+          <section class="visualizer-card" aria-labelledby="visualizerHeading">
+            <div class="lab-card-heading">
+              <div>
+                <p class="card-kicker">Geometric debugger</p>
+                <h2 id="visualizerHeading">What your code means</h2>
+              </div>
+              <span id="runState" class="run-state">Ready</span>
+            </div>
+            <div id="canvasHost" class="puzzle-canvas-host" aria-label="p5.js visualization of the current puzzle"></div>
+            <div class="visual-legend">
+              <span><i class="expected-swatch"></i>Expected</span>
+              <span><i class="actual-swatch"></i>Your result</span>
+              <span><i class="match-swatch"></i>Match</span>
+            </div>
+          </section>
+
+          <section class="component-card" aria-labelledby="componentHeading">
+            <div class="lab-card-heading">
+              <div>
+                <p class="card-kicker">Solved building blocks</p>
+                <h2 id="componentHeading">Component shelf</h2>
+              </div>
+              <span id="componentCount" class="counter-pill">0 ready</span>
+            </div>
+            <div id="componentShelf" class="component-shelf"></div>
+          </section>
+        </section>
+
+        <section class="code-column" aria-labelledby="workspaceHeading">
+          <div class="editor-card">
+            <div class="editor-heading">
+              <div>
+                <p class="card-kicker">JavaScript workbench</p>
+                <h2 id="workspaceHeading">Build the function</h2>
+              </div>
+              <div class="editor-actions">
+                <button id="runButton" class="button button-secondary" type="button">Run</button>
+                <button id="checkButton" class="button button-primary" type="button">Check</button>
+              </div>
+            </div>
+            <div class="editor-toolbar">
+              <span class="file-tab">solution.js</span>
+              <span class="shortcut-hint">Ctrl+Enter run · Ctrl+Shift+Enter check</span>
+            </div>
+            <label class="sr-only" for="codeEditor">JavaScript solution</label>
+            <textarea id="codeEditor" class="code-editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            <div class="code-footer">
+              <button id="resetCodeButton" class="text-button" type="button">Reset code</button>
+              <span id="lineStatus">Line 1, column 1</span>
+            </div>
+          </div>
+
+          <section id="piecesCard" class="pieces-card" aria-labelledby="piecesHeading">
+            <div class="lab-card-heading compact-heading">
+              <div>
+                <p class="card-kicker">Early-stage assistance</p>
+                <h2 id="piecesHeading">Code pieces</h2>
+              </div>
+              <span class="drag-copy">Click to insert</span>
+            </div>
+            <div id="codePieces" class="code-pieces"></div>
+          </section>
+
+          <section class="feedback-card" aria-labelledby="feedbackHeading">
+            <div class="lab-card-heading compact-heading">
+              <div>
+                <p class="card-kicker">Behavior check</p>
+                <h2 id="feedbackHeading">Result</h2>
+              </div>
+              <button id="hintButton" class="button hint-button" type="button">Hint 1 / 3</button>
+            </div>
+            <div id="feedbackPanel" class="feedback-panel" aria-live="polite">
+              Run the visible example whenever you want. Check when the geometry looks right.
+            </div>
+            <div id="caseComparison" class="case-comparison" hidden></div>
+            <div id="hintPanel" class="hint-panel" hidden></div>
+          </section>
+        </section>
+      </div>
+
+      <footer class="lab-footer">
+        <button id="previousPuzzle" class="button button-secondary nav-button" type="button">
+          <span aria-hidden="true">←</span>
+          <span><small>Previous build</small><strong id="previousPuzzleLabel">Start</strong></span>
+        </button>
+        <div class="footer-progress">
+          <span id="solvedCount">0 solved</span>
+          <div class="progress-track" aria-hidden="true"><i id="progressFill"></i></div>
+        </div>
+        <button id="nextPuzzle" class="button button-primary nav-button nav-button-next" type="button">
+          <span><small>Next build</small><strong id="nextPuzzleLabel">Build a Vector</strong></span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </footer>
+    </main>
+
+    <script src="../libraries/p5.min.js"></script>
+    <script src="puzzles.js"></script>
+    <script src="puzzle-engine.js"></script>
+    <script src="puzzle-sketch.js"></script>
+    <script src="puzzle-lab.js"></script>
+  </body>
+</html>

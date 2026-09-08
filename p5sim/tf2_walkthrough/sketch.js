@@ -55,7 +55,7 @@
       "sourceFrame", "targetFrame", "queryTime", "queryTimeValue", "timeControl",
       "showGhosts", "lookupTimeBadge", "tfTreeHost", "lookupStatus",
       "transformResult", "lookupTrace", "errorPanel", "compositionReadout",
-      "interactionHint",
+      "interactionHint", "practiceLink",
     ].forEach((id) => { dom[id] = byId(id); });
   }
 
@@ -142,6 +142,22 @@
     dom.pauseButton.textContent = tutorial.paused ? "Play" : "Pause";
   }
 
+  const PRACTICE_PUZZLE_BY_CHAPTER = {
+    "matrix-stack": "make-point",
+    "data-types": "point-vs-vector",
+    composition: "compose-se2",
+    tree: "store-edge",
+    "mobile-chain": "robot-frame-chain",
+    "frame-roles": "map-odom-correction",
+    broadcasters: "store-edge",
+    lookup: "lookup-transform",
+    "stamped-data": "laser-to-map",
+    "time-buffer": "interpolate-translation",
+    "sensor-scenario": "latest-common-time",
+    se3: "rotate-quaternion",
+    sandbox: "tf-buffer-capstone",
+  };
+
   function renderChapterUi() {
     const current = chapter();
     dom.chapterCounter.textContent = `${current.number} / ${String(root.TF2_CHAPTERS.length).padStart(2, "0")}`;
@@ -156,6 +172,7 @@
       dom.chapterDetails.append(item);
     });
     dom.chapterHint.textContent = current.hint;
+    dom.practiceLink.href = "puzzle-lab.html#" + PRACTICE_PUZZLE_BY_CHAPTER[current.id];
     dom.rosCode.textContent = current.rosCode;
     dom.modeBadge.textContent = current.scene === "se3" ? "SE(3)" : "SE(2)";
     dom.zLegend.hidden = current.scene !== "se3";

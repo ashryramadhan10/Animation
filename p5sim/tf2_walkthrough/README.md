@@ -4,19 +4,44 @@ An interactive p5.js walkthrough of the ROS 2 TF2 mental model. It starts with t
 
 ## Run
 
-Serve the repository root so the local p5 library can load:
+Serve the `p5sim` folder so the local p5 library and Puzzle Lab worker can load:
 
 ```powershell
-npx http-server . -p 4173
+cd p5sim
+python -m http.server 4173 --bind 127.0.0.1
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:4173/p5sim/tf2_walkthrough/
+http://127.0.0.1:4173/tf2_walkthrough/
 ```
 
-Opening `index.html` directly also works in most browsers because the walkthrough has no network requests or JavaScript modules.
+The walkthrough can be opened directly in most browsers. The Puzzle Lab should use the Python server because learner code runs in a Web Worker.
+
+## Puzzle Lab
+
+Open `puzzle-lab.html` from the walkthrough header. The lab contains 30 sequential coding puzzles across eight stages:
+
+1. Coordinate points and vectors.
+2. Local rotation and translation.
+3. SE(2) application, composition, and inverse.
+4. Transform-tree storage, ancestry, paths, and validation.
+5. TF lookup and the `map -> odom -> base_link -> laser` chain.
+6. Timestamp interpolation and extrapolation.
+7. Quaternion rotation and SE(3).
+8. A time-aware stamped TF buffer capstone.
+
+The first ten puzzles include click-to-insert code pieces. Later puzzles progressively remove scaffolding and expose the solved functions you need on the component shelf. `Run` checks the visible example; `Check` evaluates the whole behavioral contract.
+
+Progress, drafts, hints, and solved component source are stored only in the browser under `tf2-puzzle-lab:v1`. Reset Code shows which dependent components would be invalidated. Reset all progress removes only this Puzzle Lab record.
+
+Puzzle Lab keyboard controls:
+
+- Ctrl+Enter: run the visible example.
+- Ctrl+Shift+Enter: check the full behavior.
+- Alt+Left / Alt+Right: move between unlocked puzzles.
+- Escape: dismiss transient detail.
 
 ## Learning Route
 

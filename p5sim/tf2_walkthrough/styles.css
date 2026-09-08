@@ -46,6 +46,10 @@ input {
   font: inherit;
 }
 
+.top-actions a {
+  text-decoration: none;
+}
+
 button,
 select {
   min-height: 40px;
@@ -179,6 +183,19 @@ select {
 .button-primary:hover:not(:disabled) {
   border-color: #f8d678;
   background: #ffd66d;
+}
+
+.practice-link {
+  display: inline-flex;
+  margin-top: 12px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.practice-link:hover {
+  text-decoration: underline;
 }
 
 .mode-badge,
