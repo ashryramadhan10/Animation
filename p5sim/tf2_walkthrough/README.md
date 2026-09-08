@@ -21,24 +21,29 @@ The walkthrough can be opened directly in most browsers. The Puzzle Lab should u
 
 ## Puzzle Lab
 
-Open `puzzle-lab.html` from the walkthrough header. The lab contains 30 sequential coding puzzles across eight stages:
+Open `puzzle-lab.html` from the walkthrough header. The lab is NANDgame-style: every puzzle is one small JavaScript function, and later puzzles reuse the functions you already solved.
 
-1. Coordinate points and vectors.
-2. Local rotation and translation.
-3. SE(2) application, composition, and inverse.
-4. Transform-tree storage, ancestry, paths, and validation.
-5. TF lookup and the `map -> odom -> base_link -> laser` chain.
-6. Timestamp interpolation and extrapolation.
-7. Quaternion rotation and SE(3).
-8. A time-aware stamped TF buffer capstone.
+Track 1 (TF2) contains 27 puzzles in seven stages:
 
-The first ten puzzles include click-to-insert code pieces. Later puzzles progressively remove scaffolding and expose the solved functions you need on the component shelf. `Run` checks the visible example; `Check` evaluates the whole behavioral contract.
+1. Rotation bricks: headingVector, headingOf, wrapAngle, rotateVector, yawDelta.
+2. Frames (SE(2)): transformPoint, transformVector, transformPose, compose, invert, relativeTransform.
+3. Tree: storeEdge, ancestorChain, commonAncestor, directedPath, validateTree.
+4. Lookup and robot frames: lookupTransform, laserPointToMap, correctionFromPose (the `map -> odom` hand-off).
+5. Time: interpolateTransform, bracketSamples, latestCommonTime, sampleEdge.
+6. SE(3): quaternionMultiply, rotateByQuaternion, composeSE3.
+7. Capstone: lookupStampedTransform.
 
-Progress, drafts, hints, and solved component source are stored only in the browser under `tf2-puzzle-lab:v1`. Reset Code shows which dependent components would be invalidated. Reset all progress removes only this Puzzle Lab record.
+Track 2 (Pose Correction) is listed in the map and unlocks after the capstone. Its puzzles, built from the warehouse rack pipeline in `p5sim/navigation`, arrive with the next track.
+
+Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
+
+Learner code runs in a persistent Web Worker. A function that does not finish within 250 ms (750 ms for Check) is stopped and the worker restarts; the page never freezes. This is a reliability boundary, not a security sandbox.
+
+Progress, drafts, hints, and solved component source are stored only in the browser under `tf2-puzzle-lab:v2`. Reset Code shows which dependent components would be invalidated. Reset all progress removes only this record.
 
 Puzzle Lab keyboard controls:
 
-- Ctrl+Enter: run the visible example.
+- Ctrl+Enter: run now on the current inputs.
 - Ctrl+Shift+Enter: check the full behavior.
 - Alt+Left / Alt+Right: move between unlocked puzzles.
 - Escape: dismiss transient detail.
@@ -89,6 +94,7 @@ Run the dependency-free checks with:
 
 ```powershell
 node p5sim/tf2_walkthrough/tests.js
+node p5sim/tf2_walkthrough/puzzle-tests.js
 ```
 
 The same checks can be viewed in a browser at `tests.html`.

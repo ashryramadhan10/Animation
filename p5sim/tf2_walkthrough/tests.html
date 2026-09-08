@@ -13,9 +13,15 @@
     </style>
   </head>
   <body>
-    <main id="results">
-      <h1>TF2 walkthrough model tests</h1>
-      <p>Running tests…</p>
+    <main>
+      <section id="results">
+        <h1>TF2 walkthrough model tests</h1>
+        <p>Running tests…</p>
+      </section>
+      <section id="puzzleResults">
+        <h1>TF2 puzzle lab tests</h1>
+        <p>Running tests…</p>
+      </section>
     </main>
     <script>
       window.renderTestResults = function renderTestResults(result) {
@@ -32,11 +38,31 @@
           host.append(item);
         });
       };
+      window.renderPuzzleTestResults = function renderPuzzleTestResults(result) {
+        const host = document.querySelector("#puzzleResults");
+        host.innerHTML = "<h1>TF2 puzzle lab tests</h1>";
+        const summary = document.createElement("p");
+        summary.className = "summary";
+        summary.textContent = `${result.passed}/${result.total} puzzle tests passed`;
+        host.append(summary);
+        result.failures.forEach(({ name, error }) => {
+          const item = document.createElement("div");
+          item.className = "failure";
+          item.textContent = `${name}: ${error.message}`;
+          host.append(item);
+        });
+      };
     </script>
     <script src="transform2d.js"></script>
     <script src="transform-tree.js"></script>
     <script src="transform3d.js"></script>
     <script src="chapters.js"></script>
     <script src="tests.js"></script>
+    <script src="puzzles.js"></script>
+    <script src="puzzle-runtime.js"></script>
+    <script src="puzzle-worker.js"></script>
+    <script src="puzzle-engine.js"></script>
+    <script src="puzzle-scenes.js"></script>
+    <script src="puzzle-tests.js"></script>
   </body>
 </html>

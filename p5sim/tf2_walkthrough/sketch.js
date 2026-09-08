@@ -143,19 +143,19 @@
   }
 
   const PRACTICE_PUZZLE_BY_CHAPTER = {
-    "matrix-stack": "make-point",
-    "data-types": "point-vs-vector",
-    composition: "compose-se2",
+    "matrix-stack": "transform-point",
+    "data-types": "transform-vector",
+    composition: "compose",
     tree: "store-edge",
-    "mobile-chain": "robot-frame-chain",
-    "frame-roles": "map-odom-correction",
-    broadcasters: "store-edge",
+    "mobile-chain": "lookup-transform",
+    "frame-roles": "correction-from-pose",
+    broadcasters: "sample-edge",
     lookup: "lookup-transform",
-    "stamped-data": "laser-to-map",
-    "time-buffer": "interpolate-translation",
-    "sensor-scenario": "latest-common-time",
-    se3: "rotate-quaternion",
-    sandbox: "tf-buffer-capstone",
+    "stamped-data": "transform-pose",
+    "time-buffer": "interpolate-transform",
+    "sensor-scenario": "laser-point-to-map",
+    se3: "rotate-by-quaternion",
+    sandbox: "stamped-lookup",
   };
 
   function renderChapterUi() {
