@@ -147,7 +147,7 @@
       number: 3, id: "wrap-angle", title: "Wrap an Angle",
       goal: "Bring any angle into the range [-π, π) without changing its direction.",
       concept: "Angles repeat every full turn; TF2 compares and interpolates yaw only after wrapping.",
-      functionName: "wrapAngle", signature: "wrapAngle(angle) → radians in [-π, π)",
+      functionName: "wrapAngle", signature: "wrapAngle(angle) → radians in [-π, π]",
       starterSource: starter("wrapAngle", "angle", "Shift by π, reduce modulo 2π, fix a negative remainder, shift back."),
       referenceSource: lines(
         "function wrapAngle(angle) {",
@@ -156,16 +156,16 @@
         "  return wrapped - Math.PI;",
         "}"
       ),
-      comparator: "scalar", walkthroughChapter: "data-types",
+      comparator: "wrapped", walkthroughChapter: "data-types",
       scene: { kind: "dial", handles: [{ id: "angle", type: "dial", label: "angle", value: 4.0, accumulate: true }] },
-      diagnoses: [diagnosis("unwrapped", "Same direction, but not wrapped: the value must land inside [-π, π).", "function wrapAngle(angle) { return angle; }")],
+      diagnoses: [diagnosis("unwrapped", "Same direction, but not wrapped: the value must land inside [-π, π].", "function wrapAngle(angle) { return angle; }")],
       hints: ["Angles repeat every full turn; two values can mean the same direction.", "Shift by π, take the remainder modulo 2π, fix a negative remainder, then shift back.", "wrapped = (angle + π) mod 2π; add 2π if negative; return wrapped − π."],
       cases: [
         example([4], 4 - 2 * PI, "past π"),
         example([0.5], 0.5, "already inside"),
         example([-4], -4 + 2 * PI, "below −π"),
         example([7], 7 - 2 * PI, "more than a turn"),
-        example([PI], -PI, "exactly π maps to −π"),
+        example([PI], -PI, "exactly π (either sign is accepted)"),
       ],
     }),
     puzzle({
@@ -202,10 +202,10 @@
       number: 5, id: "yaw-delta", title: "Shortest Turn",
       goal: "Return the shortest signed turn from one heading to another.",
       concept: "Interpolation, correction, and comparison all need the short way around the circle.",
-      functionName: "yawDelta", signature: "yawDelta(from, to) → radians in [-π, π)",
+      functionName: "yawDelta", signature: "yawDelta(from, to) → radians in [-π, π]",
       starterSource: starter("yawDelta", "from, to", "Subtract, then wrap with your wrapAngle."),
       referenceSource: "function yawDelta(from, to) { return wrapAngle(to - from); }",
-      comparator: "scalar", walkthroughChapter: "time-buffer",
+      comparator: "wrapped", walkthroughChapter: "time-buffer",
       dependencies: ["wrap-angle"],
       scene: { kind: "two-dials", handles: [
         { id: "from", type: "dial", label: "from", value: 2.8, radius: 1.6 },

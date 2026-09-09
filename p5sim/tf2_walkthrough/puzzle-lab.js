@@ -174,8 +174,10 @@
     const next = puzzles[currentIndex + 1];
     dom.previousPuzzle.disabled = !previous;
     dom.previousPuzzleLabel.textContent = previous ? previous.title : "Start";
-    dom.nextPuzzle.disabled = !next || currentIndex + 1 > progress.highestUnlocked;
-    dom.nextPuzzleLabel.textContent = next ? next.title : "Track complete";
+    const nextLocked = Boolean(next) && currentIndex + 1 > progress.highestUnlocked;
+    dom.nextPuzzle.disabled = !next || nextLocked;
+    dom.nextPuzzle.title = nextLocked ? "Press Check (Ctrl+Shift+Enter) on this puzzle to unlock the next one." : "";
+    dom.nextPuzzleLabel.textContent = next ? (nextLocked ? "Check to unlock · " + next.title : next.title) : "Track complete";
     dom.solvedCount.textContent = solved + " solved";
     dom.progressFill.style.width = (solved / puzzles.length * 100) + "%";
   }

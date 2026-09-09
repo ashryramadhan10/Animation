@@ -127,6 +127,7 @@
   function angleClose(a, b) { const d = Math.atan2(Math.sin(a - b), Math.cos(a - b)); return Math.abs(d) <= 1e-6; }
   function valuesMatch(comparator, actual, expected) {
     if (comparator === "angle") return typeof actual === "number" && angleClose(actual, expected);
+    if (comparator === "wrapped") return typeof actual === "number" && angleClose(actual, expected) && Math.abs(actual) <= Math.PI + 1e-6;
     if (comparator === "quaternion") {
       if (!actual || !expected) return false;
       const keys = ["x", "y", "z", "w"];
@@ -284,6 +285,10 @@
     const api = engineApi();
     assert(api.compareOutput("angle", 4, 4 - 2 * Math.PI, 1e-6).pass, "angle comparator accepts modulo 2π");
     assert(!api.compareOutput("scalar", 4, 4 - 2 * Math.PI, 1e-6).pass, "scalar comparator rejects modulo 2π");
+    assert(api.compareOutput("wrapped", Math.PI, -Math.PI, 1e-6).pass, "wrapped accepts either endpoint");
+    assert(api.compareOutput("wrapped", -Math.PI / 2, -Math.PI / 2, 1e-6).pass, "wrapped accepts an inside value");
+    assert(!api.compareOutput("wrapped", 4, 4 - 2 * Math.PI, 1e-6).pass, "wrapped rejects an unwrapped value");
+    assert(!api.compareOutput("wrapped", 1, 2, 1e-6).pass, "wrapped rejects a different angle");
     assert(api.compareOutput("quaternion", { x: 0, y: 0, z: -1, w: 0 }, { x: 0, y: 0, z: 1, w: 0 }, 1e-6).pass, "q and -q are the same rotation");
     assert(api.compareOutput("se2", { x: 1, y: 2, yaw: Math.PI }, { x: 1, y: 2, yaw: -Math.PI }, 1e-6).pass, "se2 yaw wraps");
     assert(!api.compareOutput("path", [{ from: "a", to: "b", child: "a", inverse: false }], [{ from: "a", to: "b", child: "a", inverse: true }], 1e-6).pass, "path flags matter");

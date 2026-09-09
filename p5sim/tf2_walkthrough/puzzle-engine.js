@@ -4,7 +4,7 @@
   const STORAGE_KEY = "tf2-puzzle-lab:v2";
   const SCHEMA_VERSION = 2;
   const FIRST_PUZZLE_ID = "heading-vector";
-  const COMPARATORS = Object.freeze(["scalar", "angle", "angles", "vector2", "vector3", "quaternion", "se2", "se3", "deep", "path", "error"]);
+  const COMPARATORS = Object.freeze(["scalar", "angle", "angles", "wrapped", "vector2", "vector3", "quaternion", "se2", "se3", "deep", "path", "error"]);
   const MUTATION_MESSAGE = "Your function changed one of its inputs. Return a new value instead.";
   const LIVE_MATCH_MESSAGE = "Matches the reference for this input. Check to verify every case.";
 
@@ -85,6 +85,16 @@
       }
       const error = Math.abs(angleDelta(actual, expected));
       return { pass: error <= epsilon, message: error <= epsilon ? "Angles match." : "Yaw differs by " + error.toPrecision(4) + " rad.", delta: { path: "result", error, actual, expected } };
+    }
+    if (comparator === "wrapped") {
+      if (typeof actual !== "number" || typeof expected !== "number") {
+        return { pass: false, message: "Return one angle in radians.", delta: { actual, expected } };
+      }
+      const error = Math.abs(angleDelta(actual, expected));
+      const inside = Math.abs(actual) <= Math.PI + epsilon;
+      const pass = error <= epsilon && inside;
+      const message = pass ? "Angles match." : (error > epsilon ? "Yaw differs by " + error.toPrecision(4) + " rad." : "Same direction, but " + actual.toFixed(3) + " lies outside [-π, π]; wrap it.");
+      return { pass, message, delta: { path: "result", error, actual, expected } };
     }
     if (comparator === "quaternion") return compareQuaternion(actual, expected, epsilon, "result");
     if (comparator === "se3" && actual && expected) {
