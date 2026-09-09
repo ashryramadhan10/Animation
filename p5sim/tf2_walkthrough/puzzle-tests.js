@@ -69,6 +69,28 @@
     assert(mutated.ok && mutated.inputMutated === true, "mutation should be detected");
   });
 
+  test("runtime exposes p5-style math helpers and lets learners shadow them", () => {
+    const api = requireApi(runtime, "puzzle-runtime.js");
+    const scope = api.compileScope("f", "function f(yaw) { return { x: cos(yaw) * PI, y: dist(0, 0, 3, 4), d: degrees(HALF_PI), m: map(5, 0, 10, 0, 1), r: radians(180) }; }", []);
+    assert(scope.ok, "prelude should compile: " + (scope.ok ? "" : scope.error.message));
+    same(api.callSafely(scope.fn, [0]).value, { x: Math.PI, y: 5, d: 90, m: 0.5, r: Math.PI });
+    const shadow = api.compileScope("g", "const PI = 3; function g() { return PI; }", []);
+    assert(shadow.ok, "shadowing a prelude name must not be a syntax error");
+    same(api.callSafely(shadow.fn, []).value, 3);
+    const sketchOnly = api.compileScope("h", "function h() { return createVector(1, 2); }", []);
+    const outcome = api.callSafely(sketchOnly.fn, []);
+    assert(!outcome.ok && outcome.error.kind === "runtime" && /createVector is not defined/.test(outcome.error.message), "sketch helpers stay undefined");
+  });
+
+  test("editor highlighter tags keywords, builtins, strings, and comments and escapes HTML", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    const html = api.highlight("function f(v) { return Math.cos(PI) < \"a\"; } // note");
+    ["tok-keyword\">function", "tok-builtin\">Math", "tok-property\">cos", "tok-builtin\">PI", "tok-string\">\"a\"", "tok-comment\">// note", "&lt;"].forEach((needle) => {
+      assert(html.includes(needle), "highlight output should contain " + needle + "\n" + html);
+    });
+    assert(!html.includes("<\""), "raw < must be escaped");
+  });
+
   test("runtime makes dependency sources visible to the compiled function", () => {
     const api = requireApi(runtime, "puzzle-runtime.js");
     const scope = api.compileScope("twice", "function twice(n) { return addOne(addOne(n)); }", [ADD_SOURCE]);

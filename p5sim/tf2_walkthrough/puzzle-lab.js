@@ -13,6 +13,7 @@
   let currentIndex = 0;
   let busy = false;
   let sketch = null;
+  let editor = null;
   let session = null;
   let values = {};
   let live = null;
@@ -244,6 +245,7 @@
       dom.codeEditor.value = progress.drafts[puzzle.id] || progress.sources[puzzle.id] || puzzle.starterSource;
       const placeholderStart = dom.codeEditor.value.indexOf("return null;");
       if (placeholderStart >= 0) dom.codeEditor.setSelectionRange(placeholderStart, placeholderStart + "return null;".length);
+      if (editor) editor.refresh();
     }
     document.title = twoDigits(puzzle.number) + " · " + puzzle.title + " — TF2 Puzzle Lab";
     values = scenes.initialValues(puzzle);
@@ -286,13 +288,14 @@
     dom.lineStatus.textContent = "Line " + lines.length + ", column " + (lines[lines.length - 1].length + 1);
   }
 
-  function insertText(text) {
-    const editor = dom.codeEditor;
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    editor.value = editor.value.slice(0, start) + text + editor.value.slice(end);
-    editor.setSelectionRange(start + text.length, start + text.length);
-    scheduleLiveFromEdit();
+  const P5_SKETCH_ONLY = ["createVector", "push", "pop", "translate", "rotate", "scale", "random", "noise", "line", "point", "ellipse", "circle", "rect", "vertex", "beginShape", "endShape", "frameCount", "mouseX", "mouseY", "width", "height", "millis"];
+  function undefinedHint(message) {
+    const match = /^(\w+) is not defined$/.exec(message || "");
+    if (!match) return "";
+    if (P5_SKETCH_ONLY.includes(match[1])) {
+      return " " + match[1] + " is a p5 sketch helper and is not available inside puzzles. Puzzle code is plain JavaScript: return plain { x, y } objects, and use PI, cos, sin, atan2, sqrt, dist, radians, degrees, or Math.* for the math.";
+    }
+    return " Puzzle code runs as plain JavaScript in a worker: PI, cos, sin, atan2, sqrt, dist, radians, degrees, lerp, and map are available, but p5 drawing and vector functions are not.";
   }
 
   function errorResult(error) {
@@ -308,7 +311,7 @@
     else if (result.kind === "missing-dependency") setFeedback(result.message + " Open it from the map and Check it again.", "error");
     else if (result.kind === "timeout") setFeedback(result.message + " Look for a loop that never ends.", "error");
     else if (result.kind === "syntax") setFeedback("Syntax error: " + result.message, "error");
-    else if (result.kind === "runtime") setFeedback("Your function threw: " + result.message, "error");
+    else if (result.kind === "runtime") setFeedback("Your function threw: " + result.message + undefinedHint(result.message), "error");
     else setFeedback(result.message, "error");
     renderScene();
   }
@@ -424,9 +427,6 @@
     dom.codeEditor.addEventListener("input", scheduleLiveFromEdit);
     dom.codeEditor.addEventListener("click", updateCursorStatus);
     dom.codeEditor.addEventListener("keyup", updateCursorStatus);
-    dom.codeEditor.addEventListener("keydown", (event) => {
-      if (event.key === "Tab") { event.preventDefault(); insertText("  "); }
-    });
     dom.runButton.addEventListener("click", () => { clearTimeout(editTimer); requestLive(); });
     dom.checkButton.addEventListener("click", check);
     dom.hintButton.addEventListener("click", revealHint);
@@ -466,6 +466,7 @@
     }
     session = root.createLiveSession({ workerUrl: "puzzle-worker.js" });
     dom.curriculumHeading.textContent = puzzles.length + " geometry builds";
+    if (typeof root.createCodeEditor === "function") editor = root.createCodeEditor(dom.codeEditor);
     currentIndex = initialIndex();
     sketch = root.createPuzzleSketch(dom.canvasHost, {
       onDrag(grip, worldPoint) {

@@ -22,6 +22,24 @@
     return String(error);
   }
 
+  // p5-style math helpers, so learners can write PI, cos(yaw), dist(...) the way a sketch would.
+  // They live in an outer scope, so learner code may freely declare its own PI, map, or dist.
+  const MATH_PRELUDE = [
+    "var PI = Math.PI, TWO_PI = Math.PI * 2, TAU = Math.PI * 2, HALF_PI = Math.PI / 2, QUARTER_PI = Math.PI / 4;",
+    "var sin = Math.sin, cos = Math.cos, tan = Math.tan, asin = Math.asin, acos = Math.acos, atan = Math.atan, atan2 = Math.atan2;",
+    "var sqrt = Math.sqrt, pow = Math.pow, abs = Math.abs, floor = Math.floor, ceil = Math.ceil, round = Math.round;",
+    "var exp = Math.exp, log = Math.log, min = Math.min, max = Math.max;",
+    "var sq = function (n) { return n * n; };",
+    "var radians = function (d) { return d * Math.PI / 180; };",
+    "var degrees = function (r) { return r * 180 / Math.PI; };",
+    "var constrain = function (n, low, high) { return Math.max(low, Math.min(high, n)); };",
+    "var lerp = function (start, stop, amount) { return start + (stop - start) * amount; };",
+    "var norm = function (n, start, stop) { return (n - start) / (stop - start); };",
+    "var map = function (n, start1, stop1, start2, stop2) { return start2 + (stop2 - start2) * ((n - start1) / (stop1 - start1)); };",
+    "var dist = function () { var a = arguments; return a.length >= 6 ? Math.hypot(a[3] - a[0], a[4] - a[1], a[5] - a[2]) : Math.hypot(a[2] - a[0], a[3] - a[1]); };",
+    "var mag = function (x, y, z) { return Math.hypot(x, y, z || 0); };",
+  ].join("\n");
+
   function compileScope(functionName, source, dependencySources) {
     try {
       const body = [
@@ -30,7 +48,7 @@
         source || "",
         "return typeof " + functionName + " === \"function\" ? " + functionName + " : null;",
       ].join("\n");
-      const fn = new Function(body)();
+      const fn = new Function(MATH_PRELUDE + "\nreturn (function () {\n" + body + "\n})();")();
       if (typeof fn !== "function") {
         return { ok: false, error: { kind: "missing-function", message: "Define " + functionName + " with the shown signature." } };
       }

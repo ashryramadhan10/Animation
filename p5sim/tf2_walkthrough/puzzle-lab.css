@@ -409,6 +409,65 @@
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--focus) 45%, transparent);
 }
 
+.code-editor-shell {
+  position: relative;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px) 0 0 / 3ch 100%,
+    #070b11;
+}
+
+.code-highlight,
+.code-editor-input {
+  margin: 0;
+  padding: 16px;
+  font: 500 0.83rem/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+.code-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #dbe7f8;
+  background: transparent;
+  scrollbar-width: none;
+}
+
+.code-highlight::-webkit-scrollbar {
+  display: none;
+}
+
+.code-highlight code {
+  font: inherit;
+  white-space: inherit;
+}
+
+.code-editor-input {
+  position: relative;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: transparent;
+  caret-color: var(--accent);
+}
+
+.code-editor-input::selection {
+  background: rgba(95, 177, 213, 0.35);
+  -webkit-text-fill-color: transparent;
+}
+
+.tok-keyword { color: #c792ea; }
+.tok-builtin { color: #82aaff; }
+.tok-string { color: #c3e88d; }
+.tok-number { color: #f78c6c; }
+.tok-comment { color: #6c7a89; font-style: italic; }
+.tok-call { color: #ffcb6b; }
+.tok-property { color: #b2ccd6; }
+.tok-punct { color: #89ddff; }
+.tok-ident { color: #dbe7f8; }
+
 .code-footer {
   border-bottom: 0;
 }

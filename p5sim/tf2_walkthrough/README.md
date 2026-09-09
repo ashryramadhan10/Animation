@@ -47,6 +47,8 @@ Track 3 (Pose Correction) is listed in the map and unlocks after the ICP finale.
 
 Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
 
+Puzzle code is plain JavaScript, but the p5 math vocabulary is available: `PI`, `TWO_PI`, `HALF_PI`, `sin`, `cos`, `atan2`, `sqrt`, `dist`, `radians`, `degrees`, `lerp`, `map`, `constrain`, and friends. Drawing and vector helpers such as `createVector` or `push` are not, because results must be plain `{ x, y }` objects. The editor colours syntax, indents on Enter, and handles Tab and Shift+Tab.
+
 Learner code runs in a persistent Web Worker. A function that does not finish within 250 ms (750 ms for Check) is stopped and the worker restarts; the page never freezes. This is a reliability boundary, not a security sandbox.
 
 Progress, drafts, hints, and solved component source are stored only in the browser under `tf2-puzzle-lab:v2`. Reset Code shows which dependent components would be invalidated. Reset all progress removes only this record.
