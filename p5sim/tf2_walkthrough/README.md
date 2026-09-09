@@ -33,7 +33,17 @@ Track 1 (TF2) contains 27 puzzles in seven stages:
 6. SE(3): quaternionMultiply, rotateByQuaternion, composeSE3.
 7. Capstone: lookupStampedTransform.
 
-Track 2 (Pose Correction) is listed in the map and unlocks after the capstone. Its puzzles, built from the warehouse rack pipeline in `p5sim/navigation`, arrive with the next track.
+Track 2 (Transform Toolkit) adds puzzles 28 to 51, unlocked by the capstone, and is the transformation math around TF2 that Track 1 leaves out:
+
+8. Matrix form: rotMat2d, homogeneousFromPose, matMul3, applyHomogeneous, poseFromHomogeneous, invertHomogeneous.
+9. 3D orientation: quaternionFromRPY, yawFromQuaternion, rpyFromQuaternion, slerpQuaternion, transformPoint3D, invertSE3, opticalToBody.
+10. Motion and uncertainty: integrateMotion, deadReckon, rotateCovariance.
+11. Time travel: lookupAcrossTime.
+12. Rigid alignment: centroid, crossCovariance, alignmentYaw, rigidTransformFromPairs, nearestNeighbors, icpStep, icpMatch.
+
+Every toolkit puzzle links the PythonRobotics file and function it mirrors (a local copy lives under `references/PythonRobotics`) or the ROS REP / tf2 document for tf2-only material. Two deliberate differences from PythonRobotics: nearestNeighbors sums nearest distances rather than index-order residuals, and icpMatch accumulates by left-multiplication.
+
+Track 3 (Pose Correction) is listed in the map and unlocks after the ICP finale. Its puzzles, built from the warehouse rack pipeline in `p5sim/navigation`, arrive with the next track.
 
 Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
 

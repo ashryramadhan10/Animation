@@ -21,7 +21,7 @@
   const dom = {};
   const ids = [
     "saveStatus", "stageMap", "puzzleCounter", "puzzleNumber", "puzzleStage", "puzzleTitle",
-    "puzzleGoal", "puzzleConcept", "puzzleSignature", "walkthroughLink", "canvasHost", "selectorStrip", "runState",
+    "puzzleGoal", "puzzleConcept", "puzzleSignature", "walkthroughLink", "referenceLink", "curriculumHeading", "canvasHost", "selectorStrip", "runState",
     "componentShelf", "componentCount", "codeEditor", "runButton", "checkButton", "resetCodeButton",
     "hintButton", "hintPanel", "feedbackPanel", "caseComparison", "previousPuzzle", "previousPuzzleLabel",
     "nextPuzzle", "nextPuzzleLabel", "resetProgress", "solvedCount", "progressFill", "lineStatus",
@@ -87,7 +87,7 @@
       heading.className = "track-name";
       heading.innerHTML = "<span>" + escapeHtml(track.title) + "</span><span>" + (members.length ? solved + "/" + members.length : state) + "</span>";
       block.append(heading);
-      if (track.note) {
+      if (track.note && (state === "locked" || members.length === 0)) {
         const note = document.createElement("p");
         note.className = "track-note";
         note.textContent = state === "locked" ? track.note : "Available. Puzzles arrive with the next track.";
@@ -233,6 +233,13 @@
     dom.puzzleSignature.textContent = puzzle.signature;
     dom.walkthroughLink.href = "index.html#" + puzzle.walkthroughChapter;
     dom.walkthroughLink.textContent = "Review " + puzzle.walkthroughChapter.replaceAll("-", " ") + " ↗";
+    if (puzzle.reference) {
+      dom.referenceLink.href = puzzle.reference.url;
+      dom.referenceLink.textContent = puzzle.reference.label + " ↗";
+      dom.referenceLink.hidden = false;
+    } else {
+      dom.referenceLink.hidden = true;
+    }
     if (!settings.keepEditor) {
       dom.codeEditor.value = progress.drafts[puzzle.id] || progress.sources[puzzle.id] || puzzle.starterSource;
       const placeholderStart = dom.codeEditor.value.indexOf("return null;");
@@ -366,16 +373,16 @@
     setFeedback(result.message, result.pass ? "success" : "error");
     renderComparison(result);
     if (result.pass) {
-      const unlockedTrack2Before = root.trackStates(tracks, progress)[1].state;
+      const before = root.trackStates(tracks, progress);
       progress = root.completePuzzle(progress, puzzle, dom.codeEditor.value, new Date().toISOString(), puzzles);
       save();
       sketch.celebrate();
       renderMap();
       renderComponents();
       renderFooter();
-      if (unlockedTrack2Before === "locked" && root.trackStates(tracks, progress)[1].state === "available") {
-        setFeedback(result.message + " Track 2 · Pose Correction is now available; its puzzles arrive with the next track.", "success");
-      }
+      const after = root.trackStates(tracks, progress);
+      const unlocked = tracks.filter((track, index) => before[index].state === "locked" && after[index].state === "available");
+      if (unlocked.length) setFeedback(result.message + " " + unlocked.map((track) => track.title).join(" and ") + " is now available.", "success");
     }
     requestLive();
   }
@@ -447,8 +454,8 @@
   function initialize() {
     ids.forEach((id) => { dom[id] = document.getElementById(id); });
     const catalogStatus = root.validateCatalog(puzzles, scenes ? scenes.SCENE_KINDS : null);
-    if (!catalogStatus.valid || puzzles.length !== 27) {
-      dom.feedbackPanel.textContent = catalogStatus.valid ? "The lab expected 27 puzzles." : catalogStatus.message;
+    if (!catalogStatus.valid || puzzles.length === 0) {
+      dom.feedbackPanel.textContent = catalogStatus.valid ? "The catalog is empty." : catalogStatus.message;
       dom.feedbackPanel.classList.add("is-error");
       return;
     }
@@ -458,6 +465,7 @@
       return;
     }
     session = root.createLiveSession({ workerUrl: "puzzle-worker.js" });
+    dom.curriculumHeading.textContent = puzzles.length + " geometry builds";
     currentIndex = initialIndex();
     sketch = root.createPuzzleSketch(dom.canvasHost, {
       onDrag(grip, worldPoint) {

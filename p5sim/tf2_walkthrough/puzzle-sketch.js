@@ -348,6 +348,59 @@
         if (primitive.label) drawText(primitive.label, end.x + 8, end.y - 8, primitive.style);
       }
 
+      function drawPoints(primitive) {
+        const size = primitive.size || 5;
+        p.push();
+        p.noStroke();
+        p.fill.apply(p, color(primitive.style, primitive.alpha === undefined ? 230 : primitive.alpha));
+        (primitive.points || []).forEach((item) => {
+          if (!item || !Number.isFinite(item.x) || !Number.isFinite(item.y)) return;
+          const at = toScreen(item);
+          p.circle(at.x, at.y, size);
+        });
+        p.pop();
+        if (primitive.label && primitive.points && primitive.points.length) {
+          const at = toScreen(primitive.points[0]);
+          drawText(primitive.label, at.x + 8, at.y - 8, primitive.style, 10);
+        }
+      }
+
+      function drawSegments(primitive) {
+        (primitive.pairs || []).forEach((pair) => {
+          if (!pair || !pair[0] || !pair[1]) return;
+          strokeLine(pair[0], pair[1], primitive.style, { weight: primitive.weight || 1, dashed: primitive.dashed, alpha: primitive.alpha });
+        });
+      }
+
+      function drawEllipse(primitive) {
+        const cov = primitive.covariance;
+        if (!cov || !cov[0] || !cov[1] || ![cov[0][0], cov[0][1], cov[1][0], cov[1][1]].every(Number.isFinite)) return;
+        const a = cov[0][0];
+        const b = (cov[0][1] + cov[1][0]) / 2;
+        const d = cov[1][1];
+        const mean = (a + d) / 2;
+        const spread = Math.sqrt(Math.max(0, ((a - d) / 2) * ((a - d) / 2) + b * b));
+        const major = Math.sqrt(Math.max(0, mean + spread));
+        const minor = Math.sqrt(Math.max(0, mean - spread));
+        const angle = 0.5 * Math.atan2(2 * b, a - d);
+        const k = primitive.scale || 2;
+        const center = toScreen(primitive.center);
+        p.push();
+        p.translate(center.x, center.y);
+        p.rotate(-angle);
+        p.noFill();
+        p.stroke.apply(p, color(primitive.style));
+        p.strokeWeight(2);
+        setDash(Boolean(primitive.dashed));
+        p.ellipse(0, 0, 2 * k * major * unit(), 2 * k * minor * unit());
+        setDash(false);
+        p.pop();
+        if (primitive.label) {
+          const tip = { x: center.x + k * major * unit() * Math.cos(angle) + 8, y: center.y - k * major * unit() * Math.sin(angle) - 6 };
+          drawText(primitive.label, tip.x, tip.y, primitive.style, 10);
+        }
+      }
+
       function drawPrimitive(primitive) {
         switch (primitive.kind) {
           case "frame": return drawFrame(primitive);
@@ -362,6 +415,9 @@
           case "tree": return drawTree(primitive);
           case "axes3d": return drawAxes3d(primitive);
           case "arrow3d": return drawArrow3d(primitive);
+          case "points": return drawPoints(primitive);
+          case "segments": return drawSegments(primitive);
+          case "ellipse": return drawEllipse(primitive);
           default: return undefined;
         }
       }

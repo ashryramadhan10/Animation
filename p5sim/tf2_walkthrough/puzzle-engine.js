@@ -4,7 +4,7 @@
   const STORAGE_KEY = "tf2-puzzle-lab:v2";
   const SCHEMA_VERSION = 2;
   const FIRST_PUZZLE_ID = "heading-vector";
-  const COMPARATORS = Object.freeze(["scalar", "angle", "vector2", "vector3", "quaternion", "se2", "se3", "deep", "path", "error"]);
+  const COMPARATORS = Object.freeze(["scalar", "angle", "angles", "vector2", "vector3", "quaternion", "se2", "se3", "deep", "path", "error"]);
   const MUTATION_MESSAGE = "Your function changed one of its inputs. Return a new value instead.";
   const LIVE_MATCH_MESSAGE = "Matches the reference for this input. Check to verify every case.";
 
@@ -46,7 +46,8 @@
         return { pass: false, message: path + " must be a finite number", delta: { path, actual, expected } };
       }
       const lastKey = path.split(".").pop();
-      const error = angleFields.has(lastKey) ? Math.abs(angleDelta(actual, expected)) : Math.abs(actual - expected);
+      const wraps = angleFields === null || angleFields.has(lastKey);
+      const error = wraps ? Math.abs(angleDelta(actual, expected)) : Math.abs(actual - expected);
       return {
         pass: error <= tolerance,
         message: error <= tolerance ? "Values match." : path + " differs by " + error.toPrecision(4),
@@ -91,6 +92,7 @@
       if (!translation.pass) return translation;
       return compareQuaternion(actual.rotation, expected.rotation, epsilon, "result.rotation");
     }
+    if (comparator === "angles") return compareValue(actual, expected, epsilon, "result", null);
     const angleFields = new Set(comparator === "se2" || comparator === "deep" ? ["yaw"] : []);
     return compareValue(actual, expected, epsilon, "result", angleFields);
   }
@@ -374,6 +376,7 @@
       if (!COMPARATORS.includes(puzzle.comparator)) return { valid: false, message: puzzle.id + " uses unknown comparator " + puzzle.comparator };
       if (!puzzle.scene.kind || !Array.isArray(puzzle.scene.handles)) return { valid: false, message: puzzle.id + " has an invalid scene." };
       if (Array.isArray(sceneKinds) && !sceneKinds.includes(puzzle.scene.kind)) return { valid: false, message: puzzle.id + " uses unknown scene kind " + puzzle.scene.kind };
+      if (puzzle.track === "toolkit" && !(puzzle.reference && typeof puzzle.reference.url === "string")) return { valid: false, message: puzzle.id + " needs a reference link." };
       const invalidDependency = puzzle.dependencies.find((id) => !seen.has(id));
       if (invalidDependency) return { valid: false, message: puzzle.id + " has an unknown or forward dependency: " + invalidDependency };
       seen.add(puzzle.id);

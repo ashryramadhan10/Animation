@@ -180,24 +180,26 @@
     checkStageRange(20, 27);
   });
 
-  test("catalog has exactly 27 sequential puzzles with backward-only dependencies", () => {
+  test("catalog track 1 has 27 puzzles and the whole catalog is sequential", () => {
     const api = puzzlesApi();
     const list = api.TF2_PUZZLES;
-    assert(list.length === 27, "expected 27 puzzles, found " + list.length);
+    assert(list.filter((puzzle) => puzzle.track === "tf2").length === 27, "expected 27 tf2 puzzles");
     const seen = new Set();
     list.forEach((puzzle, index) => {
       assert(puzzle.number === index + 1, puzzle.id + " has number " + puzzle.number);
       assert(!seen.has(puzzle.id), "duplicate id " + puzzle.id);
-      assert(puzzle.track === "tf2", puzzle.id + " must belong to the tf2 track");
+      assert(["tf2", "toolkit"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
       puzzle.dependencies.forEach((dependency) => assert(seen.has(dependency), puzzle.id + " depends on unknown or later puzzle " + dependency));
       seen.add(puzzle.id);
       assert(api.getPuzzle(puzzle.id) === puzzle, "getPuzzle should resolve " + puzzle.id);
     });
-    const stageIds = api.TF2_PUZZLE_STAGES.map((stage) => stage.id);
+    const stageIds = api.TF2_PUZZLE_TRACKS.flatMap((track) => track.stages.map((stage) => stage.id));
     list.forEach((puzzle) => assert(stageIds.includes(puzzle.stage), puzzle.id + " has unknown stage " + puzzle.stage));
-    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "pose-correction"]);
+    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "pose-correction"]);
     assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
-    assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 4, "track 2 lists four placeholder stages");
+    assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 5, "track 2 lists five stages");
+    assert(api.TF2_PUZZLE_TRACKS[2].unlockAfter === "icp-match", "track 3 unlocks after the ICP finale");
+    assert(api.TF2_PUZZLE_TRACKS[2].stages.length === 4, "track 3 lists four placeholder stages");
   });
 
   // ---------------------------------------------------------------- worker
@@ -329,12 +331,12 @@
     const list = puzzleList();
     const tracks = puzzlesApi().TF2_PUZZLE_TRACKS;
     let progress = api.createProgress();
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked"]);
     progress = api.completePuzzle(progress, list[0], "function headingVector(yaw) { return null; }", "2026-09-08T00:00:00Z", list);
     same(progress.highestUnlocked, 1);
     same(progress.currentPuzzleId, "heading-of");
     progress = api.completePuzzle(progress, list[26], "source", "2026-09-08T00:00:00Z", list);
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked"]);
     const reset = api.resetPuzzle(progress, list, "heading-vector");
     assert(!reset.progress.solved["heading-vector"] && reset.invalidated.includes("heading-vector"), "reset clears the puzzle");
   });
@@ -342,7 +344,7 @@
   test("engine validateCatalog accepts the real catalog and rejects a bad scene kind", () => {
     const api = engineApi();
     const list = puzzleList();
-    const kinds = ["dial", "vector", "vector-dial", "two-dials", "frame-point", "frame-vector", "frame-pose", "frame-chain", "frame-inverse", "two-frames", "tree", "robot-chain", "correction", "pose-lerp", "timeline", "timeline-ranges", "timeline-frame", "se3", "robot-chain-time"];
+    const kinds = scenesApi().SCENE_KINDS;
     assert(api.validateCatalog(list, kinds).valid, "real catalog should validate: " + api.validateCatalog(list, kinds).message);
     const broken = list.map((puzzle, index) => (index === 0 ? { ...puzzle, scene: { ...puzzle.scene, kind: "nope" } } : puzzle));
     assert(!api.validateCatalog(broken, kinds).valid, "unknown scene kind should be rejected");
@@ -485,6 +487,106 @@
     const latest = puzzlesApi().getPuzzle("latest-common-time");
     const latestValues = { ...api.initialValues(latest), mode: "latest" };
     same(api.toArgs(latest, latestValues)[1], null);
+  });
+
+  // ---------------------------------------------------------------- toolkit track
+  function toolkitPuzzles() { return puzzleList().filter((puzzle) => puzzle.track === "toolkit"); }
+
+  test("catalog track 2 stage 8 contains the matrix bricks and every toolkit puzzle links a reference", () => {
+    same(idsInRange(28, 33), ["rot-mat-2d", "homogeneous-from-pose", "mat-mul-3", "apply-homogeneous", "pose-from-homogeneous", "invert-homogeneous"]);
+    toolkitPuzzles().forEach((puzzle) => {
+      assert(puzzle.reference && typeof puzzle.reference.label === "string" && /^https:\/\//.test(puzzle.reference.url), puzzle.id + " needs a reference link");
+    });
+  });
+
+  test("catalog stage 8 references pass their cases and diagnoses differ", () => {
+    checkStageRange(28, 33);
+  });
+
+  test("scenes: matrix kind builds valid arguments and finite layers", () => {
+    checkSceneKinds(["matrix"]);
+  });
+
+  test("catalog track 2 stage 9 contains the 3D orientation bricks", () => {
+    same(idsInRange(34, 40), ["quaternion-from-rpy", "yaw-from-quaternion", "rpy-from-quaternion", "slerp-quaternion", "transform-point-3d", "invert-se3", "optical-to-body"]);
+  });
+
+  test("catalog stage 9 references pass their cases and diagnoses differ", () => {
+    checkStageRange(34, 40);
+  });
+
+  test("engine angles comparator wraps every numeric field", () => {
+    const api = engineApi();
+    const twoPi = 2 * Math.PI;
+    assert(api.compareOutput("angles", { roll: 4, pitch: 0, yaw: -1 }, { roll: 4 - twoPi, pitch: twoPi, yaw: -1 + twoPi }, 1e-6).pass, "angles should wrap");
+    assert(!api.compareOutput("angles", { roll: 4, pitch: 0.5, yaw: -1 }, { roll: 4, pitch: 0, yaw: -1 }, 1e-6).pass, "angles should still detect differences");
+    assert(!api.compareOutput("deep", { roll: 4, pitch: 0, yaw: -1 }, { roll: 4 - twoPi, pitch: 0, yaw: -1 }, 1e-6).pass, "deep wraps only yaw");
+  });
+
+  test("scenes: se3 views for rpy, slerp, point3d, inverse, and optical build valid arguments", () => {
+    checkSceneKinds(["se3"]);
+    const api = scenesApi();
+    const optical = puzzlesApi().getPuzzle("optical-to-body");
+    const values = api.initialValues(optical);
+    const body = referenceOutput(optical, api.toArgs(optical, values));
+    near(Math.hypot(body.x, body.y, body.z), 1);
+    near(body.z, Math.sin(values.pitch));
+  });
+
+  test("catalog track 2 stage 10 contains motion and covariance bricks", () => {
+    same(idsInRange(41, 43), ["integrate-motion", "dead-reckon", "rotate-covariance"]);
+  });
+
+  test("catalog stage 10 references pass their cases and diagnoses differ", () => {
+    checkStageRange(41, 43);
+  });
+
+  test("scenes: motion, motion-trail, and covariance kinds build valid arguments and finite layers", () => {
+    checkSceneKinds(["motion", "motion-trail", "covariance"]);
+    const api = scenesApi();
+    const trail = puzzlesApi().getPuzzle("dead-reckon");
+    const args = api.toArgs(trail, api.initialValues(trail));
+    assert(Array.isArray(args[1]) && args[1].length === 20, "dead-reckon scene supplies 20 commands");
+  });
+
+  test("catalog track 2 stage 11 contains the time-travel lookup", () => {
+    same(idsInRange(44, 44), ["lookup-across-time"]);
+  });
+
+  test("catalog stage 11 references pass their cases and diagnoses differ", () => {
+    checkStageRange(44, 44);
+  });
+
+  test("scenes: the across-time view builds valid arguments and finite layers", () => {
+    checkSceneKinds(["robot-chain-time"]);
+    const api = scenesApi();
+    const puzzle = puzzlesApi().getPuzzle("lookup-across-time");
+    const args = api.toArgs(puzzle, api.initialValues(puzzle));
+    same(args.slice(1), ["base_link", 3, "laser", 7, "map"]);
+    const result = referenceOutput(puzzle, args);
+    assert(result.ok && result.targetTime === 3 && result.sourceTime === 7, "reference should answer the default scene lookup");
+  });
+
+  test("catalog track 2 stage 12 contains the rigid alignment ladder", () => {
+    same(idsInRange(45, 51), ["centroid", "cross-covariance", "alignment-yaw", "rigid-transform-from-pairs", "nearest-neighbors", "icp-step", "icp-match"]);
+  });
+
+  test("catalog stage 12 references pass their cases and diagnoses differ", () => {
+    checkStageRange(45, 51);
+  });
+
+  test("scenes: cloud-align recovers the dragged motion through rigid pairs and ICP", () => {
+    checkSceneKinds(["cloud-align"]);
+    const api = scenesApi();
+    const rigid = puzzlesApi().getPuzzle("rigid-transform-from-pairs");
+    const rigidValues = api.initialValues(rigid);
+    const recovered = referenceOutput(rigid, api.toArgs(rigid, rigidValues));
+    near(recovered.x, rigidValues.motion.x); near(recovered.y, rigidValues.motion.y); near(recovered.yaw, rigidValues.motion.yaw);
+    const icp = puzzlesApi().getPuzzle("icp-match");
+    const icpValues = api.initialValues(icp);
+    const matched = referenceOutput(icp, api.toArgs(icp, icpValues));
+    near(matched.transform.x, icpValues.motion.x, 1e-3); near(matched.transform.y, icpValues.motion.y, 1e-3); near(matched.transform.yaw, icpValues.motion.yaw, 1e-3);
+    assert(matched.error < 1e-3, "ICP should converge on the clean cloud");
   });
 
   async function runAllTests() {

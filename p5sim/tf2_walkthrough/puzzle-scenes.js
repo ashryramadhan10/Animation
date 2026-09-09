@@ -48,15 +48,25 @@
     if (typeof value === "number") return fmt(value) + " rad (" + degrees(value) + ")";
     if (value === null || value === undefined) return "—";
     if (typeof value === "string") return value;
+    if (Array.isArray(value) && value.length && value.every((row) => Array.isArray(row) && row.every((item) => typeof item === "number"))) {
+      return "[" + value.map((row) => row.map(fmt).join(" ")).join("; ") + "]";
+    }
     if (Array.isArray(value)) {
       if (value.every((item) => typeof item === "string")) return value.join(" → ");
       if (value.every((item) => item && typeof item === "object" && "from" in item)) return value.map((step) => (step.inverse ? "inv " : "") + step.from + "→" + step.to).join(", ");
       return JSON.stringify(value).slice(0, 64);
     }
     if (typeof value === "object") {
-      if ("ok" in value) return value.ok ? "ok · t=" + fmt(value.time) + (value.transform ? " · " + fmtTransform(value.transform) : "") + (value.bounds ? " · bounds [" + fmt(value.bounds.start) + ", " + fmt(value.bounds.end) + "]" : "") : value.code + (value.bounds ? " · bounds [" + fmt(value.bounds.start) + ", " + fmt(value.bounds.end) + "]" : "");
+      if ("ok" in value) {
+        if (!value.ok) return value.code + (value.bounds ? " · bounds [" + fmt(value.bounds.start) + ", " + fmt(value.bounds.end) + "]" : "");
+        const when = Number.isFinite(value.time) ? " · t=" + fmt(value.time) : (Number.isFinite(value.targetTime) ? " · t₁=" + fmt(value.targetTime) + " t₂=" + fmt(value.sourceTime) : "");
+        return "ok" + when + (value.transform ? " · " + fmtTransform(value.transform) : "") + (value.bounds ? " · bounds [" + fmt(value.bounds.start) + ", " + fmt(value.bounds.end) + "]" : "");
+      }
       if ("valid" in value) return value.valid ? "valid" : String(value.code);
       if ("beforeIndex" in value) return "before " + value.beforeIndex + " · after " + value.afterIndex + " · amount " + fmt(value.amount);
+      if (Array.isArray(value.indexes) && Number.isFinite(value.error)) return "error " + fmt(value.error) + " · " + value.indexes.length + " pairs";
+      if (value.transform && Number.isFinite(value.error)) return fmtTransform(value.transform) + " · error " + fmt(value.error);
+      if ("roll" in value && "pitch" in value && "yaw" in value) return "roll " + degrees(value.roll) + " · pitch " + degrees(value.pitch) + " · yaw " + degrees(value.yaw);
       if (value.translation && value.rotation) return "t=" + fmtVector3(value.translation) + " q=" + fmtQuaternion(value.rotation);
       if (isQuaternion(value)) return fmtQuaternion(value);
       if (isTransform(value)) return fmtTransform(value);
@@ -482,10 +492,11 @@
     if (name === "base_link") return base;
     return compose(base, LASER_MOUNT);
   }
-  function chainLayers(values) {
+  function chainLayers(values, style) {
+    const tone = style || "input";
     const base = chainWorld(values, "base_link");
     const laser = chainWorld(values, "laser");
-    return [frame(identity(), "map", "muted"), frame(values.odom, "odom", "input"), arrow(values.odom, base, "input", { dashed: true, weight: 1 }), glyph(base, "base_link", "input"), frame(laser, "laser", "input", { alpha: 170, size: 0.55 })];
+    return [frame(identity(), "map", "muted"), frame(values.odom, "odom", tone), arrow(values.odom, base, tone, { dashed: true, weight: 1 }), glyph(base, "base_link", tone), frame(laser, "laser", tone, { alpha: 170, size: 0.55 })];
   }
   function lookupLayers(context, worldOf, target, source, expected, actual) {
     const out = [];
@@ -622,9 +633,45 @@
       return out;
     },
   };
+  function sampledChain(time) {
+    const sampled = {};
+    STAMPED_EDGES.forEach((edge) => { sampled[edge.child] = sampleAt(edge, time); });
+    return { odom: sampled.odom, base_link: sampled.base_link };
+  }
+  function acrossTimeLayers(context) {
+    const dynamic = STAMPED_EDGES.filter((edge) => !edge.isStatic);
+    const start = Math.max(...dynamic.map((edge) => edge.samples[0].time));
+    const end = Math.min(...dynamic.map((edge) => edge.samples[edge.samples.length - 1].time));
+    const clamp = (t) => Math.max(start, Math.min(end, t));
+    const targetTime = clamp(context.values.targetTime);
+    const sourceTime = clamp(context.values.sourceTime);
+    const targetChain = sampledChain(targetTime);
+    const sourceChain = sampledChain(sourceTime);
+    const handle = findHandle(context.puzzle, "targetTime");
+    const out = chainLayers(targetChain, "muted").concat(chainLayers(sourceChain, "input"), laneLayers(context.puzzle, context.values));
+    dynamic.forEach((edge, index) => out.push(...rangeLane(handle, { start: edge.samples[0].time, end: edge.samples[edge.samples.length - 1].time }, -1.2 - index * 0.6, edge.parent + " → " + edge.child)));
+    out.push(shade({ x: laneX(handle, start), y: -2.0 }, { x: laneX(handle, end), y: -0.9 }, "expected"));
+    out.push(label("grey chain at t₁ = " + fmt(targetTime) + " · yellow chain at t₂ = " + fmt(sourceTime) + " · fixed frame: map", "muted", { at: { x: LANE_LEFT, y: -0.6 } }));
+    const target = context.values.target;
+    const source = context.values.source;
+    const expectedTransform = context.expected && context.expected.ok ? context.expected.transform : null;
+    const actualTransform = context.actual && context.actual.ok ? context.actual.transform : null;
+    if (isTransform(expectedTransform)) out.push(frame(compose(chainWorld(targetChain, target), expectedTransform), target + "(t₁) ∘ expected", "expected", { dashed: true }));
+    if (isTransform(actualTransform)) {
+      const placed = compose(chainWorld(targetChain, target), actualTransform);
+      out.push(frame(placed, target + "(t₁) ∘ yours", resultStyle(context)));
+      out.push(...errorArrow(context, placed, chainWorld(sourceChain, source)));
+    }
+    out.push(label("drawn from " + target + " at t₁; must land on " + source + " at t₂", "muted", { row: 3 }));
+    if (context.expected && context.expected.ok === false) out.push(label("expected error: " + context.expected.code, "expected", { row: 4 }));
+    if (context.actual && context.actual.ok === false) out.push(label("your error: " + String(context.actual.code), resultStyle(context), { row: 5 }));
+    out.push(...notes(context, describe(context.expected), describe(context.actual)));
+    return out;
+  }
   const robotChainTimeScene = {
     fixtures: { stampedEdges: () => STAMPED_EDGES, requestedOrNull: (values) => (values.mode === "latest" ? null : values.time) },
     layers(context) {
+      if (context.puzzle.scene.view === "across-time") return acrossTimeLayers(context);
       const handle = findHandle(context.puzzle, "time");
       const dynamic = STAMPED_EDGES.filter((edge) => !edge.isStatic);
       const start = Math.max(...dynamic.map((edge) => edge.samples[0].time));
@@ -670,6 +717,21 @@
   function basisOf(q) { return { x: qrot(q, { x: 1, y: 0, z: 0 }), y: qrot(q, { x: 0, y: 1, z: 0 }), z: qrot(q, { x: 0, y: 0, z: 1 }) }; }
   function axes3d(origin, basis, text, style, options) { return { kind: "axes3d", origin, basis, label: text, style, ...(options || {}) }; }
   function arrow3d(from, to, text, style, options) { return { kind: "arrow3d", from, to, label: text, style, ...(options || {}) }; }
+  function qconj(q) { return { x: -q.x, y: -q.y, z: -q.z, w: q.w }; }
+  function qFromRPY(roll, pitch, yaw) {
+    return qmul(qmul(axisAngle(AXIS_Z, yaw), axisAngle(AXIS_Y, pitch)), axisAngle({ x: 1, y: 0, z: 0 }, roll));
+  }
+  function transform3(t, p) {
+    const r = qrot(t.rotation, p);
+    return { x: r.x + t.translation.x, y: r.y + t.translation.y, z: r.z + t.translation.z };
+  }
+  function compose3(a, b) { return { translation: transform3(a, b.translation), rotation: qmul(a.rotation, b.rotation) }; }
+  function direction3(yaw, pitch) { return { x: Math.cos(pitch) * Math.cos(yaw), y: Math.cos(pitch) * Math.sin(yaw), z: Math.sin(pitch) }; }
+  function bodyToOptical(v) { return { x: -v.y, y: -v.z, z: v.x }; }
+  const OPTICAL_BASIS = { x: { x: 0, y: -1, z: 0 }, y: { x: 0, y: 0, z: -1 }, z: { x: 1, y: 0, z: 0 } };
+  const IDENTITY_BASIS = basisOf({ x: 0, y: 0, z: 0, w: 1 });
+  function isSE3(t) { return Boolean(t) && typeof t === "object" && isVector3(t.translation) && isQuaternion(t.rotation); }
+  function isRPY(v) { return Boolean(v) && typeof v === "object" && ["roll", "pitch", "yaw"].every((key) => Number.isFinite(v[key])); }
   const se3Scene = {
     fixtures: {
       quatA: (values) => axisAngle(AXIS_Z, values.yawA),
@@ -678,10 +740,17 @@
       vector: () => ({ x: 1, y: 0.4, z: 0.2 }),
       aFromB: (values) => ({ translation: { x: 1, y: 0, z: 0 }, rotation: axisAngle(AXIS_Z, values.yawA) }),
       bFromC: (values) => ({ translation: { x: 1, y: 0, z: 0.5 }, rotation: axisAngle(AXIS_Y, values.pitchB) }),
+      quatFromRPY: (values) => qFromRPY(values.roll, values.pitch, values.yaw),
+      slerpA: (values) => axisAngle(AXIS_Z, values.yawA),
+      slerpB: (values) => axisAngle(AXIS_Z, values.yawB),
+      aFromBSliders: (values) => ({ translation: { x: 1, y: 0, z: 0.5 }, rotation: qmul(axisAngle(AXIS_Z, values.yaw), axisAngle(AXIS_Y, values.pitch)) }),
+      point3: () => ({ x: 1, y: 0.4, z: 0.2 }),
+      opticalRay: (values) => bodyToOptical(direction3(values.yaw, values.pitch)),
     },
     layers(context) {
       const view = context.puzzle.scene.view;
-      const out = [axes3d(ORIGIN3, basisOf({ x: 0, y: 0, z: 0, w: 1 }), "world", "muted"), ...laneLayers(context.puzzle, context.values)];
+      const out = [axes3d(ORIGIN3, IDENTITY_BASIS, "world", "muted"), ...laneLayers(context.puzzle, context.values)];
+      const drawBasis = (q, text, style, dashed) => out.push(axes3d(ORIGIN3, basisOf(q), text, style, dashed ? { dashed: true } : {}));
       if (view === "rotate") {
         const v = se3Scene.fixtures.vector();
         out.push(arrow3d(ORIGIN3, v, "v", "input"));
@@ -690,17 +759,295 @@
       } else if (view === "compose") {
         const aFromB = se3Scene.fixtures.aFromB(context.values);
         out.push(axes3d(aFromB.translation, basisOf(aFromB.rotation), "b", "input"));
-        if (context.expected && isVector3(context.expected.translation) && isQuaternion(context.expected.rotation)) out.push(axes3d(context.expected.translation, basisOf(context.expected.rotation), "expected c", "expected", { dashed: true }));
-        if (context.actual && isVector3(context.actual.translation) && isQuaternion(context.actual.rotation)) out.push(axes3d(context.actual.translation, basisOf(context.actual.rotation), resultLabel(context), resultStyle(context)));
+        if (isSE3(context.expected)) out.push(axes3d(context.expected.translation, basisOf(context.expected.rotation), "expected c", "expected", { dashed: true }));
+        if (isSE3(context.actual)) out.push(axes3d(context.actual.translation, basisOf(context.actual.rotation), resultLabel(context), resultStyle(context)));
+      } else if (view === "rpy") {
+        const input = se3Scene.fixtures.quatFromRPY(context.values);
+        out.push(axes3d(ORIGIN3, basisOf(input), "input rpy", "input", { size: 0.9 }));
+        if (typeof context.expected === "number") out.push(arrow3d(ORIGIN3, direction3(context.expected, 0), "expected yaw", "expected", { dashed: true }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(arrow3d(ORIGIN3, direction3(context.actual, 0), resultLabel(context), resultStyle(context)));
+        if (isRPY(context.expected)) drawBasis(qFromRPY(context.expected.roll, context.expected.pitch, context.expected.yaw), "expected", "expected", true);
+        if (isRPY(context.actual)) drawBasis(qFromRPY(context.actual.roll, context.actual.pitch, context.actual.yaw), resultLabel(context), resultStyle(context), false);
+        if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
+        if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
+      } else if (view === "slerp") {
+        out.push(axes3d(ORIGIN3, basisOf(se3Scene.fixtures.slerpA(context.values)), "a", "muted", { size: 0.8 }));
+        out.push(axes3d(ORIGIN3, basisOf(se3Scene.fixtures.slerpB(context.values)), "b", "muted", { size: 0.8 }));
+        if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
+        if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
+      } else if (view === "point3d") {
+        const aFromB = se3Scene.fixtures.aFromBSliders(context.values);
+        const p = se3Scene.fixtures.point3();
+        out.push(axes3d(aFromB.translation, basisOf(aFromB.rotation), "b", "input"), arrow3d(aFromB.translation, transform3(aFromB, p), "p in b", "input"));
+        if (isVector3(context.expected)) out.push(arrow3d(ORIGIN3, context.expected, "expected in a", "expected", { dashed: true }));
+        if (isVector3(context.actual)) out.push(arrow3d(ORIGIN3, context.actual, resultLabel(context), resultStyle(context)));
+      } else if (view === "inverse") {
+        const aFromB = se3Scene.fixtures.aFromBSliders(context.values);
+        out.push(axes3d(aFromB.translation, basisOf(aFromB.rotation), "b", "input"), label("aFromB ∘ yours must land on the world axes", "muted", { row: 3 }));
+        if (isSE3(context.expected)) {
+          const placed = compose3(aFromB, context.expected);
+          out.push(axes3d(placed.translation, basisOf(placed.rotation), "aFromB ∘ expected", "expected", { dashed: true }));
+        }
+        if (isSE3(context.actual)) {
+          const placed = compose3(aFromB, context.actual);
+          out.push(axes3d(placed.translation, basisOf(placed.rotation), "aFromB ∘ yours", resultStyle(context)));
+        }
+      } else if (view === "optical") {
+        const body = direction3(context.values.yaw, context.values.pitch);
+        out.push(axes3d(ORIGIN3, OPTICAL_BASIS, "optical: x right, y down, z fwd", "input", { size: 0.8 }), arrow3d(ORIGIN3, body, "ray (given in optical coords)", "input"));
+        if (isVector3(context.expected)) out.push(arrow3d(ORIGIN3, context.expected, "expected in body", "expected", { dashed: true }));
+        if (isVector3(context.actual)) out.push(arrow3d(ORIGIN3, context.actual, resultLabel(context), resultStyle(context)));
       } else {
-        if (isQuaternion(context.expected)) out.push(axes3d(ORIGIN3, basisOf(context.expected), "expected", "expected", { dashed: true }));
-        if (isQuaternion(context.actual)) out.push(axes3d(ORIGIN3, basisOf(context.actual), resultLabel(context), resultStyle(context)));
+        if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
+        if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
       }
       out.push(...notes(context, describe(context.expected), describe(context.actual)));
       return out;
     },
   };
 
+  // ------------------------------------------------------------ matrix form
+  function isMatrix(m, size) {
+    return Array.isArray(m) && m.length === size && m.every((row) => Array.isArray(row) && row.length === size && row.every((item) => Number.isFinite(item)));
+  }
+  function matrixOf(t) {
+    const c = Math.cos(t.yaw);
+    const s = Math.sin(t.yaw);
+    return [[c, -s, t.x], [s, c, t.y], [0, 0, 1]];
+  }
+  function poseFromMatrix(m) {
+    return { x: m[0][2], y: m[1][2], yaw: Math.atan2(m[1][0], m[0][0]) };
+  }
+  function columnLayers(m, origin, text, style, dashed) {
+    const scale = 1.2;
+    const alpha = style === "expected" ? 200 : 255;
+    return [
+      arrow(origin, add(origin, { x: m[0][0] * scale, y: m[1][0] * scale }), "x", { dashed, weight: 2.5, alpha }),
+      arrow(origin, add(origin, { x: m[0][1] * scale, y: m[1][1] * scale }), "y", { dashed, weight: 2.5, alpha }),
+      label(text, style, { at: add(origin, { x: 0.15, y: -0.35 }) }),
+    ];
+  }
+  const matrixScene = {
+    fixtures: {
+      matrixOfTransform: (values) => matrixOf(values.transform),
+      matrixA: (values) => matrixOf(values.aFromB),
+      matrixB: (values) => matrixOf(values.bFromC),
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const out = [];
+      const expectedMatrix = isMatrix(context.expected, 3) ? context.expected : null;
+      const actualMatrix = isMatrix(context.actual, 3) ? context.actual : null;
+      if (view === "rotation") {
+        const handle = handleDefs(context.puzzle)[0];
+        const yaw = context.values[handle.id];
+        out.push(arc({ x: 0, y: 0 }, dialRadius(handle), 0, yaw, "input", { track: true }));
+        out.push(label("yaw = " + degrees(yaw), "input", { at: direction(yaw, dialRadius(handle) + 0.5) }));
+        if (isMatrix(context.expected, 2)) out.push(...columnLayers(context.expected, { x: 0, y: 0 }, "expected columns", "expected", true));
+        if (isMatrix(context.actual, 2)) out.push(...columnLayers(context.actual, { x: 0, y: 0 }, resultLabel(context), resultStyle(context), false));
+      } else if (view === "pose" || view === "readback") {
+        const transform = context.values.transform;
+        out.push(frame(identity(), "world", "muted"), frame(transform, "pose", "input"));
+        if (view === "pose") {
+          if (expectedMatrix) out.push(frame(poseFromMatrix(expectedMatrix), "expected matrix", "expected", { dashed: true }));
+          if (actualMatrix) {
+            const placed = poseFromMatrix(actualMatrix);
+            out.push(frame(placed, resultLabel(context), resultStyle(context)));
+            out.push(...errorArrow(context, placed, transform));
+          }
+        } else {
+          if (isTransform(context.expected)) out.push(glyph(context.expected, "expected pose", "expected", { dashed: true }));
+          if (isTransform(context.actual)) {
+            out.push(glyph(context.actual, resultLabel(context), resultStyle(context)));
+            out.push(...errorArrow(context, context.actual, context.expected));
+          }
+        }
+      } else if (view === "chain") {
+        const aFromB = context.values.aFromB;
+        const aFromC = compose(aFromB, context.values.bFromC);
+        out.push(frame(identity(), "a", "muted"), frame(aFromB, "b", "input"), frame(aFromC, "c", "input", { alpha: 170 }), arrow(aFromB, aFromC, "input", { dashed: true, weight: 1 }));
+        if (expectedMatrix) out.push(frame(poseFromMatrix(expectedMatrix), "expected A·B", "expected", { dashed: true }));
+        if (actualMatrix) {
+          const placed = poseFromMatrix(actualMatrix);
+          out.push(frame(placed, resultLabel(context), resultStyle(context)));
+          out.push(...errorArrow(context, placed, aFromC));
+        }
+      } else if (view === "point") {
+        const transform = context.values.transform;
+        const world = applyPoint(transform, context.values.point);
+        out.push(frame(identity(), "target", "muted"), frame(transform, "source", "input"), arrow(transform, world, "input", { dashed: true, weight: 1 }), point(world, "p = " + fmtPoint(context.values.point) + " in source", "input"));
+        if (isPoint(context.expected)) out.push(point(context.expected, "expected in target", "expected", { dashed: true }));
+        if (isPoint(context.actual)) {
+          out.push(point(context.actual, resultLabel(context), resultStyle(context)));
+          out.push(...errorArrow(context, context.actual, context.expected));
+        }
+      } else if (view === "inverse") {
+        const transform = context.values.transform;
+        out.push(frame(identity(), "a", "muted"), frame(transform, "b", "input"), label("b ∘ yours must land on a", "muted", { row: 3 }));
+        if (expectedMatrix) out.push(frame(compose(transform, poseFromMatrix(expectedMatrix)), "b ∘ expected", "expected", { dashed: true }));
+        if (actualMatrix) {
+          const placed = compose(transform, poseFromMatrix(actualMatrix));
+          out.push(frame(placed, "b ∘ yours", resultStyle(context)));
+          out.push(...errorArrow(context, placed, identity()));
+        }
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
+  // ------------------------------------------------------------ motion and uncertainty
+  function stepMotion(pose, v, omega, dt) {
+    return { x: pose.x + v * dt * Math.cos(pose.yaw), y: pose.y + v * dt * Math.sin(pose.yaw), yaw: wrap(pose.yaw + omega * dt) };
+  }
+  const TRAIL_COMMANDS = (() => {
+    const list = [];
+    for (let i = 0; i < 12; i += 1) list.push({ v: 1.1, omega: 0.45, dt: 0.5 });
+    for (let j = 0; j < 8; j += 1) list.push({ v: 0.9, omega: -0.7, dt: 0.5 });
+    return list;
+  })();
+  function pointsPrimitive(list, style, options) { return { kind: "points", points: list, style, ...(options || {}) }; }
+  function segments(pairs, style, options) { return { kind: "segments", pairs, style, ...(options || {}) }; }
+  function ellipse(center, covariance, style, options) { return { kind: "ellipse", center, covariance, style, ...(options || {}) }; }
+  const motionScene = {
+    fixtures: {},
+    layers(context) {
+      const pose = context.values.pose;
+      const out = [glyph(pose, "pose", "input"), ...laneLayers(context.puzzle, context.values)];
+      if (isTransform(context.expected)) out.push(arrow(pose, context.expected, "muted", { dashed: true, weight: 1 }), glyph(context.expected, "expected", "expected", { dashed: true }));
+      if (isTransform(context.actual)) {
+        out.push(glyph(context.actual, resultLabel(context), resultStyle(context)));
+        out.push(...errorArrow(context, context.actual, context.expected));
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual), ["v = " + fmt(context.values.v) + " m/s · ω = " + fmt(context.values.omega) + " rad/s · dt = " + fmt(context.values.dt) + " s"]));
+      return out;
+    },
+  };
+  const motionTrailScene = {
+    fixtures: { commands: () => TRAIL_COMMANDS },
+    layers(context) {
+      let pose = context.values.start;
+      const trail = [];
+      TRAIL_COMMANDS.forEach((command) => { pose = stepMotion(pose, command.v, command.omega, command.dt); trail.push({ x: pose.x, y: pose.y }); });
+      const out = [glyph(context.values.start, "start", "input"), pointsPrimitive(trail, "muted", { size: 4 }), label(TRAIL_COMMANDS.length + " commands (v, ω, dt) applied in order", "muted", { row: 3 })];
+      if (isTransform(context.expected)) out.push(glyph(context.expected, "expected end", "expected", { dashed: true }));
+      if (isTransform(context.actual)) {
+        out.push(glyph(context.actual, resultLabel(context), resultStyle(context)));
+        out.push(...errorArrow(context, context.actual, context.expected));
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
+  const COVARIANCE_INPUT = [[1.0, 0], [0, 0.16]];
+  const covarianceScene = {
+    fixtures: { covariance: () => COVARIANCE_INPUT },
+    layers(context) {
+      const handle = handleDefs(context.puzzle)[0];
+      const yaw = context.values[handle.id];
+      const out = [
+        arc({ x: 0, y: 0 }, dialRadius(handle), 0, yaw, "input", { track: true }),
+        label("yaw = " + degrees(yaw), "input", { at: direction(yaw, dialRadius(handle) + 0.5) }),
+        ellipse({ x: 0, y: 0 }, COVARIANCE_INPUT, "muted", { label: "Σ (input)" }),
+      ];
+      if (isMatrix(context.expected, 2)) out.push(ellipse({ x: 0, y: 0 }, context.expected, "expected", { dashed: true, label: "expected R Σ Rᵀ" }));
+      if (isMatrix(context.actual, 2)) out.push(ellipse({ x: 0, y: 0 }, context.actual, resultStyle(context), { label: resultLabel(context) }));
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
+  // ------------------------------------------------------------ rigid alignment
+  const CLOUD_PREVIOUS = (() => {
+    const list = [];
+    for (let i = 0; i < 12; i += 1) list.push({ x: -3 + 0.25 * i, y: 1.5 });
+    for (let j = 0; j < 12; j += 1) list.push({ x: 0, y: 1.5 - 0.25 * j });
+    return list;
+  })();
+  const CLOUD_SHUFFLE = [17, 3, 22, 8, 0, 14, 11, 19, 5, 23, 9, 1, 16, 6, 20, 12, 2, 18, 10, 7, 21, 4, 15, 13];
+  function cloudCurrent(values) {
+    const inverse = invert(values.motion);
+    return CLOUD_PREVIOUS.map((p) => applyPoint(inverse, p));
+  }
+  function cloudShuffled(values) {
+    const current = cloudCurrent(values);
+    return CLOUD_SHUFFLE.map((index) => current[index]);
+  }
+  function centroidOf(list) {
+    let sx = 0;
+    let sy = 0;
+    list.forEach((p) => { sx += p.x; sy += p.y; });
+    return list.length ? { x: sx / list.length, y: sy / list.length } : { x: 0, y: 0 };
+  }
+  function crossCovarianceOf(previous, current) {
+    const pm = centroidOf(previous);
+    const cm = centroidOf(current);
+    const w = [[0, 0], [0, 0]];
+    for (let i = 0; i < Math.min(previous.length, current.length); i += 1) {
+      const px = previous[i].x - pm.x;
+      const py = previous[i].y - pm.y;
+      const cx = current[i].x - cm.x;
+      const cy = current[i].y - cm.y;
+      w[0][0] += cx * px; w[0][1] += cx * py; w[1][0] += cy * px; w[1][1] += cy * py;
+    }
+    return w;
+  }
+  function isCloud(list) { return Array.isArray(list) && list.every(isPoint); }
+  const cloudAlignScene = {
+    fixtures: {
+      previous: () => CLOUD_PREVIOUS,
+      current: cloudCurrent,
+      currentShuffled: cloudShuffled,
+      crossCovariance: (values) => crossCovarianceOf(CLOUD_PREVIOUS, cloudCurrent(values)),
+      icpOptions: () => ({ maxIterations: 30, eps: 1e-6 }),
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const motion = context.values.motion;
+      const shuffled = view === "neighbors" || view === "step" || view === "icp";
+      const current = shuffled ? cloudShuffled(context.values) : cloudCurrent(context.values);
+      const out = [
+        pointsPrimitive(CLOUD_PREVIOUS, "muted", { size: 6, label: "previous" }),
+        pointsPrimitive(current, "input", { size: 5, label: "current (as the moved sensor sees it)" }),
+        frame(motion, "true motion", "input"),
+      ];
+      const cm = centroidOf(current);
+      if (view === "centroid") {
+        if (isPoint(context.expected)) out.push(point(context.expected, "expected centroid", "expected", { dashed: true }));
+        if (isPoint(context.actual)) {
+          out.push(point(context.actual, resultLabel(context), resultStyle(context)));
+          out.push(...errorArrow(context, context.actual, context.expected));
+        }
+      } else if (view === "covariance") {
+        out.push(point(centroidOf(CLOUD_PREVIOUS), "previous centroid", "muted"), point(cm, "current centroid", "input"));
+        const normalized = (w) => {
+          const n0 = Math.hypot(w[0][0], w[1][0]) || 1;
+          const n1 = Math.hypot(w[0][1], w[1][1]) || 1;
+          return [[w[0][0] / n0, w[0][1] / n1], [w[1][0] / n0, w[1][1] / n1]];
+        };
+        if (isMatrix(context.expected, 2)) out.push(...columnLayers(normalized(context.expected), cm, "expected W columns", "expected", true));
+        if (isMatrix(context.actual, 2)) out.push(...columnLayers(normalized(context.actual), cm, resultLabel(context), resultStyle(context), false));
+      } else if (view === "yaw") {
+        if (typeof context.expected === "number") out.push(arc(cm, 1.0, 0, context.expected, "expected", { dashed: true, arrowhead: true, track: true }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(arc(cm, 0.8, 0, context.actual, resultStyle(context), { arrowhead: true }));
+      } else if (view === "neighbors") {
+        const pairsOf = (value) => (value && Array.isArray(value.indexes)
+          ? value.indexes.map((index, i) => (current[i] && CLOUD_PREVIOUS[index] ? [current[i], CLOUD_PREVIOUS[index]] : null)).filter(Boolean)
+          : []);
+        out.push(segments(pairsOf(context.expected), "expected", { dashed: true }));
+        out.push(segments(pairsOf(context.actual), resultStyle(context), { weight: 1.5 }));
+      } else {
+        const expectedTransform = view === "rigid" ? context.expected : (context.expected && context.expected.transform);
+        const actualTransform = view === "rigid" ? context.actual : (context.actual && context.actual.transform);
+        if (view === "step" && context.actual && isCloud(context.actual.moved)) out.push(pointsPrimitive(context.actual.moved, resultStyle(context), { size: 4, label: "moved (yours)" }));
+        if (isTransform(expectedTransform)) out.push(frame(expectedTransform, "expected", "expected", { dashed: true }));
+        if (isTransform(actualTransform)) {
+          out.push(frame(actualTransform, resultLabel(context), resultStyle(context)));
+          out.push(...errorArrow(context, actualTransform, motion));
+        }
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -721,6 +1068,11 @@
     "timeline-frame": timelineFrameScene,
     "se3": se3Scene,
     "robot-chain-time": robotChainTimeScene,
+    "matrix": matrixScene,
+    "motion": motionScene,
+    "motion-trail": motionTrailScene,
+    "covariance": covarianceScene,
+    "cloud-align": cloudAlignScene,
   };
 
   function layers(context) {
@@ -734,7 +1086,7 @@
     SCENES,
     initialValues, toArgs, layers, grips, dragHandle, handleWorld,
     se2: { wrap, rotate, applyPoint, compose, invert, identity, direction },
-    primitives: { frame, point, arrow, arc, label, glyph, lane, marker, shade },
+    primitives: { frame, point, arrow, arc, label, glyph, lane, marker, shade, points: pointsPrimitive, segments, ellipse },
     format: { fmt, degrees, fmtPoint, fmtTransform, describe },
     lanes: { laneLayers, laneX, laneY, laneRange, LANE_LEFT, LANE_RIGHT, LANE_TOP },
   };
