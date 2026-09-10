@@ -41,6 +41,12 @@
     { id: "estimation", title: "Estimation", subtitle: "EKF predict and update, particle weights and resampling.", range: [83, 87] },
   ]);
 
+  const BAYES_STAGES = Object.freeze([
+    { id: "scalar-filters", title: "Scalar Filters", subtitle: "g-h, discrete Bayes, Gaussians, and the 1D Kalman filter.", range: [88, 92] },
+    { id: "multivariate-kalman", title: "Multivariate Kalman", subtitle: "A position-velocity tracker, brick by brick.", range: [93, 98] },
+    { id: "nonlinear-smoothing", title: "Nonlinear & Smoothing", subtitle: "Sigma points, the unscented transform, and RTS smoothing.", range: [99, 102] },
+  ]);
+
   const TRACKS = Object.freeze([
     Object.freeze({ id: "tf2", title: "Track 1 · TF2", stages: STAGES }),
     Object.freeze({
@@ -71,6 +77,13 @@
       note: "Unlocks after the map → odom capstone.",
       stages: ESTIMATION_STAGES,
     }),
+    Object.freeze({
+      id: "bayes",
+      title: "Track 6 · Bayesian Filters",
+      unlockAfter: "ekf-localize-step",
+      note: "Unlocks after the EKF localization step.",
+      stages: BAYES_STAGES,
+    }),
   ]);
 
   const PYROBOTICS = "https://github.com/AtsushiSakai/PythonRobotics/blob/master/";
@@ -85,6 +98,12 @@
 
   function navref(page, symbol) {
     return Object.freeze({ label: "p5sim/navigation · core.js · " + symbol, url: "../navigation/" + page + "/index.html" });
+  }
+
+  const KBF = "https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/";
+
+  function bookref(chapter, symbol) {
+    return Object.freeze({ label: "Kalman & Bayesian Filters · " + chapter + (symbol ? " · " + symbol : ""), url: KBF + chapter + ".ipynb" });
   }
 
   function lines() {
@@ -111,12 +130,13 @@
 
   function puzzle(config) {
     const track = config.track || "tf2";
-    const stageList = { tf2: STAGES, toolkit: TOOLKIT_STAGES, advanced: ADVANCED_STAGES, correction: CORRECTION_STAGES, estimation: ESTIMATION_STAGES }[track] || STAGES;
+    const stageList = { tf2: STAGES, toolkit: TOOLKIT_STAGES, advanced: ADVANCED_STAGES, correction: CORRECTION_STAGES, estimation: ESTIMATION_STAGES, bayes: BAYES_STAGES }[track] || STAGES;
     const stage = stageList.find((candidate) => config.number >= candidate.range[0] && config.number <= candidate.range[1]);
     if (!stage) throw new Error("Puzzle " + config.number + " has no stage");
     return Object.freeze({
       tolerance: 1e-6,
       reference: null,
+      reading: null,
       ...config,
       track,
       stage: stage.id,
@@ -3088,8 +3108,7 @@
         { id: "wx", type: "slider", label: "ωx (rad/s)", value: 0.4, min: -2, max: 2 },
         { id: "wy", type: "slider", label: "ωy (rad/s)", value: 0.2, min: -2, max: 2 },
         { id: "wz", type: "slider", label: "ωz (rad/s)", value: 1.2, min: -2, max: 2 },
-        { id: "dt", type: "slider", label: "dt (s)", value: 0.8, min: 0, max: 1 },
-      ], args: [{ fixture: "identityQuat" }, { fixture: "omegaFromSliders" }, { handle: "dt" }] },
+      ], args: [{ fixture: "identityQuat" }, { fixture: "omegaFromSliders" }, 0.8] },
       diagnoses: [
         diagnosis("world-frame-rates", "The increment was applied on the left, as if the rates were world-frame: gyro rates are body-frame, so q ⊗ Δq.", lines(
           "function integrateGyro(q, omega, dt) {",
@@ -3184,6 +3203,7 @@
       comparator: "deep", walkthroughChapter: "frame-roles",
       dependencies: ["mat-mul-3"],
       reference: pyref(EKF_PY, "jacob_f / PPred"),
+      reading: bookref("11-Extended-Kalman-Filters", "linearizing the motion model"),
       scene: { kind: "estimation", view: "predict-cov", handles: [
         { id: "pose", type: "pose", label: "pose", value: { x: -1, y: 0, yaw: 0.4 } },
         { id: "v", type: "slider", label: "v (m/s)", value: 1, min: 0, max: 2 },
@@ -3229,6 +3249,7 @@
       comparator: "deep", walkthroughChapter: "composition",
       dependencies: ["compose", "mat-mul-3"],
       reference: docref("Smith, Self & Cheeseman (1990), Estimating Uncertain Spatial Relationships in Robotics", "https://doi.org/10.1007/978-1-4613-8997-2_14"),
+      reading: bookref("05-Multivariate-Gaussians", "correlation and covariance"),
       scene: { kind: "estimation", view: "compose-uncertain", handles: [{ id: "b", type: "frame", label: "b in a", value: { x: 1.5, y: 0.5, yaw: 0.6 } }], args: [{ fixture: "uncertainA" }, { fixture: "uncertainB" }] },
       diagnoses: [
         diagnosis("sum-only", "Covariances were added without Jacobians: the child's covariance must be rotated by the parent's yaw, and the parent's yaw uncertainty must sweep the child's offset.", lines(
@@ -3303,6 +3324,7 @@
       ),
       comparator: "deep", walkthroughChapter: "frame-roles",
       reference: pyref("utils/plot.py", "plot_covariance_ellipse"),
+      reading: bookref("05-Multivariate-Gaussians", "plot_covariance_ellipse"),
       scene: { kind: "estimation", view: "ellipse", handles: [
         { id: "angle", type: "slider", label: "angle", value: 0.5, min: -PI / 2, max: PI / 2 },
         { id: "major", type: "slider", label: "major σ", value: 1.2, min: 0.2, max: 2 },
@@ -3347,6 +3369,7 @@
       comparator: "deep", walkthroughChapter: "frame-roles",
       dependencies: ["integrate-motion", "covariance-propagate-motion"],
       reference: pyref(EKF_PY, "ekf_estimation (predict)"),
+      reading: bookref("11-Extended-Kalman-Filters", "predict"),
       scene: { kind: "estimation", view: "ekf-predict", handles: [
         { id: "pose", type: "pose", label: "state", value: { x: -1.5, y: -0.5, yaw: 0.3 } },
         { id: "v", type: "slider", label: "v (m/s)", value: 1, min: 0, max: 2 },
@@ -3391,6 +3414,7 @@
       ),
       comparator: "deep", walkthroughChapter: "frame-roles",
       reference: pyref(EKF_PY, "ekf_estimation (update)"),
+      reading: bookref("11-Extended-Kalman-Filters", "update"),
       scene: { kind: "estimation", view: "ekf-update", handles: [
         { id: "state", type: "pose", label: "prior state", value: { x: 0, y: 0, yaw: 0.2 } },
         { id: "z", type: "point", label: "position fix z", value: { x: 1.2, y: 0.6 } },
@@ -3447,6 +3471,7 @@
       ),
       comparator: "deep", walkthroughChapter: "sensor-scenario",
       reference: pyref(PF_PY, "gauss_likelihood"),
+      reading: bookref("12-Particle-Filters", "update"),
       scene: { kind: "estimation", view: "particles", handles: [
         { id: "z", type: "point", label: "measurement z", value: { x: 0.5, y: 0.3 } },
         { id: "sigma", type: "slider", label: "σ", value: 0.8, min: 0.2, max: 2 },
@@ -3490,6 +3515,7 @@
       ),
       comparator: "deep", walkthroughChapter: "sensor-scenario",
       reference: pyref(PF_PY, "re_sampling"),
+      reading: bookref("12-Particle-Filters", "systematic_resample"),
       scene: { kind: "estimation", view: "resample", handles: [{ id: "u0", type: "slider", label: "u0 (start offset)", value: 0.05, min: 0, max: 0.16 }], args: [{ fixture: "resampleParticles" }, { fixture: "resampleWeights" }, { handle: "u0" }] },
       diagnoses: [
         diagnosis("max-weight-only", "Copying only the heaviest particle collapses the filter; sweep the cumulative weights instead.", lines(
@@ -3535,6 +3561,7 @@
       comparator: "deep", walkthroughChapter: "frame-roles",
       dependencies: ["ekf-predict", "ekf-update-position"],
       reference: pyref(EKF_PY, "ekf_estimation"),
+      reading: bookref("11-Extended-Kalman-Filters", "robot localization"),
       scene: { kind: "estimation", view: "ekf-step", handles: [
         { id: "state", type: "pose", label: "state before", value: { x: -1.5, y: -0.5, yaw: 0.3 } },
         { id: "z", type: "point", label: "position fix z", value: { x: -0.4, y: 0.3 } },
@@ -3559,7 +3586,735 @@
     }),
   ];
 
-  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7, TOOLKIT_8, TOOLKIT_9, TOOLKIT_10, TOOLKIT_11, TOOLKIT_12, ADVANCED_13, ADVANCED_14, ADVANCED_15, CORRECTION_16, CORRECTION_17, CORRECTION_18, ESTIMATION_19, ESTIMATION_20, ESTIMATION_21));
+  const CH01 = "01-g-h-filter", CH02 = "02-Discrete-Bayes", CH04 = "04-One-Dimensional-Kalman-Filters", CH05 = "05-Multivariate-Gaussians";
+  const CH06 = "06-Multivariate-Kalman-Filters", CH07 = "07-Kalman-Filter-Math", CH09 = "09-Nonlinear-Filtering", CH10 = "10-Unscented-Kalman-Filter", CH13 = "13-Smoothing";
+  const M2_I = [[1, 0], [0, 1]];
+  const M2_ZERO = [[0, 0], [0, 0]];
+  const F_UNIT = [[1, 1], [0, 1]];
+  const P_STRAIGHT_2 = [[2, 1], [1, 1]];
+  const SQ3 = Math.sqrt(3);
+  const SIGMA_W = [1 / 3, 1 / 6, 1 / 6, 1 / 6, 1 / 6];
+  const POLAR_P = [[1 / 3, 0], [0, PI * PI / 27]];
+
+  const BAYES_22 = [
+    puzzle({
+      number: 88, id: "gh-filter-step", track: "bayes", title: "One g-h Filter Step",
+      goal: "Predict with the current rate, then blend the residual into the estimate (g) and the rate (h).",
+      concept: "Every filter in this track is this loop: predict, measure the residual, trust it a fraction. g and h are that fraction.",
+      functionName: "ghFilterStep", signature: "ghFilterStep(x, dx, z, g, h, dt) → { x, dx }",
+      starterSource: starter("ghFilterStep", "x, dx, z, g, h, dt", "prediction = x + dx·dt; residual = z − prediction; x = prediction + g·residual; dx += h·residual/dt."),
+      referenceSource: lines(
+        "function ghFilterStep(x, dx, z, g, h, dt) {",
+        "  var prediction = x + dx * dt;",
+        "  var residual = z - prediction;",
+        "  return { x: prediction + g * residual, dx: dx + h * residual / dt };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: bookref(CH01, "g_h_filter"),
+      scene: { kind: "bayes", view: "gh", handles: [
+        { id: "z", type: "slider", label: "measurement z", value: 0.5, min: -4, max: 4 },
+        { id: "g", type: "slider", label: "g (position gain)", value: 0.6, min: 0, max: 1 },
+        { id: "h", type: "slider", label: "h (rate gain)", value: 0.2, min: 0, max: 1 },
+      ], args: [{ fixture: "ghPrior" }, { fixture: "ghVelocity" }, { handle: "z" }, { handle: "g" }, { handle: "h" }, 1] },
+      diagnoses: [
+        diagnosis("residual-from-prior", "The residual was measured against the old x; compare z with the prediction x + dx·dt.", lines(
+          "function ghFilterStep(x, dx, z, g, h, dt) {",
+          "  var prediction = x + dx * dt;",
+          "  var residual = z - x;",
+          "  return { x: prediction + g * residual, dx: dx + h * residual / dt };",
+          "}"
+        )),
+        diagnosis("h-not-over-dt", "The rate correction is h·residual/dt: a residual in metres becomes a rate only after dividing by the step.", lines(
+          "function ghFilterStep(x, dx, z, g, h, dt) {",
+          "  var prediction = x + dx * dt;",
+          "  var residual = z - prediction;",
+          "  return { x: prediction + g * residual, dx: dx + h * residual };",
+          "}"
+        )),
+      ],
+      hints: ["First move the estimate forward by dx·dt.", "The residual is z minus that prediction.", "x = prediction + g·residual; dx = dx + h·residual/dt."],
+      cases: [
+        example([160, 1, 158, 0.6, 0.1, 1], { x: 159.2, dx: 0.7 }, "the book's weight example"),
+        example([0, 2, 3, 0.5, 0.5, 2], { x: 3.5, dx: 1.75 }, "two-second step"),
+        example([10, 0, 12, 1, 0, 1], { x: 12, dx: 0 }, "g = 1 trusts the measurement"),
+        example([5, 1, 6, 0, 0.2, 1], { x: 6, dx: 1 }, "no residual"),
+      ],
+    }),
+    puzzle({
+      number: 89, id: "discrete-predict", track: "bayes", title: "Discrete Bayes Predict",
+      goal: "Move a belief along the hallway by offset cells, spreading it with an under/correct/over kernel and wrapping around.",
+      concept: "Prediction is a convolution: motion is uncertain, so every cell's probability smears into its neighbours.",
+      functionName: "discretePredict", signature: "discretePredict(belief, offset, kernel) → belief",
+      starterSource: starter("discretePredict", "belief, offset, kernel", "out[i] = Σk belief[(i + 1 − k − offset) mod N] · kernel[k] for a 3-wide kernel [under, correct, over]."),
+      referenceSource: lines(
+        "function discretePredict(belief, offset, kernel) {",
+        "  var n = belief.length, width = Math.floor(kernel.length / 2), out = [];",
+        "  for (var i = 0; i < n; i += 1) {",
+        "    var total = 0;",
+        "    for (var k = 0; k < kernel.length; k += 1) {",
+        "      var index = (((i + width - k - offset) % n) + n) % n;",
+        "      total += belief[index] * kernel[k];",
+        "    }",
+        "    out.push(total);",
+        "  }",
+        "  return out;",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: bookref(CH02, "predict_move_convolution"),
+      scene: { kind: "bayes", view: "hallway-predict", handles: [
+        { id: "offset", type: "slider", label: "move (cells, rounded)", value: 2, min: 0, max: 4 },
+        { id: "pCorrect", type: "slider", label: "P(exact move)", value: 0.8, min: 0.4, max: 1 },
+      ], args: [{ fixture: "hallBelief" }, { fixture: "hallOffset" }, { fixture: "hallKernel" }] },
+      diagnoses: [
+        diagnosis("no-wrap", "Cells past the end were dropped: the hallway is circular, so indexes must wrap with a modulo.", lines(
+          "function discretePredict(belief, offset, kernel) {",
+          "  var n = belief.length, width = Math.floor(kernel.length / 2), out = [];",
+          "  for (var i = 0; i < n; i += 1) {",
+          "    var total = 0;",
+          "    for (var k = 0; k < kernel.length; k += 1) {",
+          "      var index = i + width - k - offset;",
+          "      if (index >= 0 && index < n) total += belief[index] * kernel[k];",
+          "    }",
+          "    out.push(total);",
+          "  }",
+          "  return out;",
+          "}"
+        )),
+        diagnosis("kernel-mirrored", "The kernel was applied backwards: kernel[0] is the chance of moving one cell short, kernel[2] one cell too far.", lines(
+          "function discretePredict(belief, offset, kernel) {",
+          "  var n = belief.length, width = Math.floor(kernel.length / 2), out = [];",
+          "  for (var i = 0; i < n; i += 1) {",
+          "    var total = 0;",
+          "    for (var k = 0; k < kernel.length; k += 1) {",
+          "      var index = (((i - width + k - offset) % n) + n) % n;",
+          "      total += belief[index] * kernel[k];",
+          "    }",
+          "    out.push(total);",
+          "  }",
+          "  return out;",
+          "}"
+        )),
+      ],
+      hints: ["For each output cell, sum over the kernel entries.", "The source cell for kernel[k] is i + width − k − offset, wrapped into [0, N).", "JavaScript's % can be negative: use ((v % n) + n) % n."],
+      cases: [
+        example([[1, 0, 0, 0, 0], 1, [0.1, 0.8, 0.1]], [0.1, 0.8, 0.1, 0, 0], "one cell, one step"),
+        example([[1, 0, 0, 0, 0], 1, [0.3, 0.6, 0.1]], [0.3, 0.6, 0.1, 0, 0], "asymmetric kernel"),
+        example([[0, 0, 0, 0, 1], 1, [0.1, 0.8, 0.1]], [0.8, 0.1, 0, 0, 0.1], "wraps around the end"),
+        example([[0, 1, 0, 0], -1, [0.2, 0.6, 0.2]], [0.6, 0.2, 0, 0.2], "moving backwards"),
+        example([[0.2, 0.2, 0.2, 0.2, 0.2], 3, [0, 1, 0]], [0.2, 0.2, 0.2, 0.2, 0.2], "uniform stays uniform"),
+      ],
+    }),
+    puzzle({
+      number: 90, id: "discrete-update", track: "bayes", title: "Discrete Bayes Update",
+      goal: "Multiply the belief by the measurement likelihood and normalize.",
+      concept: "Bayes' rule in one line: posterior ∝ likelihood × prior. The division by the sum is what makes it a probability again.",
+      functionName: "discreteUpdate", signature: "discreteUpdate(belief, likelihood) → belief",
+      starterSource: starter("discreteUpdate", "belief, likelihood", "Multiply element-wise, then divide by the total."),
+      referenceSource: lines(
+        "function discreteUpdate(belief, likelihood) {",
+        "  var raw = belief.map(function (b, i) { return b * likelihood[i]; });",
+        "  var total = raw.reduce(function (sum, value) { return sum + value; }, 0);",
+        "  return raw.map(function (value) { return value / total; });",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: bookref(CH02, "update"),
+      scene: { kind: "bayes", view: "hallway-update", handles: [{ id: "trust", type: "slider", label: "door likelihood scale", value: 3, min: 1, max: 6 }], args: [{ fixture: "hallBelief" }, { fixture: "doorLikelihood" }] },
+      diagnoses: [
+        diagnosis("unnormalized", "The product must be divided by its sum so the belief still totals one.", "function discreteUpdate(belief, likelihood) { return belief.map(function (b, i) { return b * likelihood[i]; }); }"),
+        diagnosis("sum-not-product", "Likelihood and prior multiply; adding them lets an impossible cell keep probability.", lines(
+          "function discreteUpdate(belief, likelihood) {",
+          "  var raw = belief.map(function (b, i) { return b + likelihood[i]; });",
+          "  var total = raw.reduce(function (sum, value) { return sum + value; }, 0);",
+          "  return raw.map(function (value) { return value / total; });",
+          "}"
+        )),
+      ],
+      hints: ["Multiply belief[i] by likelihood[i].", "Add the products up.", "Divide each product by that total."],
+      cases: [
+        example([[0.25, 0.25, 0.25, 0.25], [3, 1, 1, 1]], [0.5, 1 / 6, 1 / 6, 1 / 6], "one likely cell"),
+        example([[0.5, 0.5], [0, 1]], [0, 1], "an impossible cell"),
+        example([[0.1, 0.9], [1, 1]], [0.1, 0.9], "uninformative measurement"),
+        example([[0.2, 0.3, 0.5], [2, 2, 1]], [4 / 15, 0.4, 1 / 3], "mixed"),
+      ],
+    }),
+    puzzle({
+      number: 91, id: "gaussian-multiply", track: "bayes", title: "Multiply Two Gaussians",
+      goal: "Fuse two Gaussian beliefs into one: variance-weighted mean, smaller variance.",
+      concept: "The product of two Gaussians is a Gaussian, which is why a Kalman update is one formula and not an integral.",
+      functionName: "gaussianMultiply", signature: "gaussianMultiply(a, b) → { mean, variance }",
+      starterSource: starter("gaussianMultiply", "a, b", "mean = (σa²·μb + σb²·μa) / (σa² + σb²); variance = σa²σb² / (σa² + σb²)."),
+      referenceSource: lines(
+        "function gaussianMultiply(a, b) {",
+        "  var total = a.variance + b.variance;",
+        "  return { mean: (a.variance * b.mean + b.variance * a.mean) / total, variance: (a.variance * b.variance) / total };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: bookref(CH04, "gaussian_multiply"),
+      scene: { kind: "bayes", view: "gaussians", handles: [
+        { id: "meanA", type: "slider", label: "mean a", value: -1.5, min: -4, max: 4 },
+        { id: "varianceA", type: "slider", label: "variance a", value: 1, min: 0.2, max: 3 },
+        { id: "meanB", type: "slider", label: "mean b", value: 1.5, min: -4, max: 4 },
+      ], args: [{ fixture: "gaussA" }, { fixture: "gaussB" }] },
+      diagnoses: [
+        diagnosis("mean-average", "A plain average ignores which belief is tighter: weight each mean by the other's variance.", "function gaussianMultiply(a, b) { var total = a.variance + b.variance; return { mean: (a.mean + b.mean) / 2, variance: (a.variance * b.variance) / total }; }"),
+        diagnosis("variance-sum", "Two measurements agree more than either alone: the product's variance is smaller than both, not their sum.", "function gaussianMultiply(a, b) { var total = a.variance + b.variance; return { mean: (a.variance * b.mean + b.variance * a.mean) / total, variance: total }; }"),
+      ],
+      hints: ["The tighter Gaussian pulls the mean towards itself.", "mean = (σa²·μb + σb²·μa) / (σa² + σb²).", "variance = σa²·σb² / (σa² + σb²), always below both inputs."],
+      cases: [
+        example([{ mean: 10, variance: 1 }, { mean: 12, variance: 1 }], { mean: 11, variance: 0.5 }, "equal trust"),
+        example([{ mean: 0, variance: 4 }, { mean: 2, variance: 1 }], { mean: 1.6, variance: 0.8 }, "tighter b wins"),
+        example([{ mean: 3, variance: 9 }, { mean: 3, variance: 1 }], { mean: 3, variance: 0.9 }, "same mean"),
+        example([{ mean: -1, variance: 2 }, { mean: 3, variance: 2 }], { mean: 1, variance: 1 }, "symmetric"),
+      ],
+    }),
+    puzzle({
+      number: 92, id: "kalman-1d-step", track: "bayes", title: "One-Dimensional Kalman Step",
+      goal: "Predict by adding the movement Gaussian, then update by multiplying with the measurement Gaussian.",
+      concept: "This is the whole Kalman filter in one dimension. The gain form K = P/(P + R) is the same product written differently.",
+      functionName: "kalman1dStep", signature: "kalman1dStep(prior, movement, z, measurementVariance) → { mean, variance }",
+      starterSource: starter("kalman1dStep", "prior, movement, z, measurementVariance", "predicted = { prior.mean + movement.mean, prior.variance + movement.variance }; then gaussianMultiply with { z, measurementVariance }."),
+      referenceSource: lines(
+        "function kalman1dStep(prior, movement, z, measurementVariance) {",
+        "  var predicted = { mean: prior.mean + movement.mean, variance: prior.variance + movement.variance };",
+        "  return gaussianMultiply(predicted, { mean: z, variance: measurementVariance });",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      dependencies: ["gaussian-multiply"],
+      reference: bookref(CH04, "predict / update"),
+      scene: { kind: "bayes", view: "kalman-1d", handles: [
+        { id: "move", type: "slider", label: "movement mean", value: 2, min: -2, max: 4 },
+        { id: "z", type: "slider", label: "measurement z", value: 1, min: -4, max: 4 },
+        { id: "R", type: "slider", label: "measurement variance", value: 1, min: 0.2, max: 3 },
+      ], args: [{ fixture: "prior1d" }, { fixture: "movement1d" }, { handle: "z" }, { handle: "R" }] },
+      diagnoses: [
+        diagnosis("update-before-predict", "The measurement was fused before the move; the measurement describes where the robot is after moving.", lines(
+          "function kalman1dStep(prior, movement, z, measurementVariance) {",
+          "  var updated = gaussianMultiply(prior, { mean: z, variance: measurementVariance });",
+          "  return { mean: updated.mean + movement.mean, variance: updated.variance + movement.variance };",
+          "}"
+        )),
+        diagnosis("movement-noise-dropped", "Moving adds uncertainty: the predicted variance is prior plus movement variance.", lines(
+          "function kalman1dStep(prior, movement, z, measurementVariance) {",
+          "  var predicted = { mean: prior.mean + movement.mean, variance: prior.variance };",
+          "  return gaussianMultiply(predicted, { mean: z, variance: measurementVariance });",
+          "}"
+        )),
+      ],
+      hints: ["Predict: add the means and add the variances.", "Update: multiply the predicted Gaussian with the measurement Gaussian.", "gaussianMultiply(predicted, { mean: z, variance: measurementVariance })."],
+      cases: [
+        example([{ mean: 0, variance: 1 }, { mean: 1, variance: 0 }, 2, 1], { mean: 1.5, variance: 0.5 }, "move one, measure two"),
+        example([{ mean: 0, variance: 1 }, { mean: 1, variance: 1 }, 2, 2], { mean: 1.5, variance: 1 }, "noisy move and measurement"),
+        example([{ mean: 5, variance: 0.5 }, { mean: 0, variance: 0 }, 5, 0.5], { mean: 5, variance: 0.25 }, "standing still"),
+        example([{ mean: 0, variance: 1 }, { mean: 2, variance: 0.5 }, 1, 3], { mean: 5 / 3, variance: 1 }, "loose measurement"),
+      ],
+    }),
+  ];
+
+  const BAYES_23 = [
+    puzzle({
+      number: 93, id: "mat-mul-2", track: "bayes", title: "Multiply 2×2 Matrices",
+      goal: "The 2×2 product brick every multivariate filter step reuses.",
+      concept: "Column j of A·B is A applied to column j of B: the product transforms the second matrix's columns.",
+      functionName: "matMul2", signature: "matMul2(a, b) → 2×2",
+      starterSource: starter("matMul2", "a, b", "result[i][j] = a[i][0]·b[0][j] + a[i][1]·b[1][j]."),
+      referenceSource: lines(
+        "function matMul2(a, b) {",
+        "  return [",
+        "    [a[0][0] * b[0][0] + a[0][1] * b[1][0], a[0][0] * b[0][1] + a[0][1] * b[1][1]],",
+        "    [a[1][0] * b[0][0] + a[1][1] * b[1][0], a[1][0] * b[0][1] + a[1][1] * b[1][1]],",
+        "  ];",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "matrix-stack",
+      reference: bookref(CH05, "multivariate Gaussians"),
+      scene: { kind: "bayes", view: "matrix2", handles: [
+        { id: "col1", type: "vector", label: "B column 1", value: { x: 1, y: 0.3 } },
+        { id: "col2", type: "vector", label: "B column 2", value: { x: -0.4, y: 1 } },
+      ], args: [{ fixture: "shearA" }, { fixture: "matrixFromColumns" }] },
+      diagnoses: [
+        diagnosis("elementwise", "That multiplies matching entries; a matrix product sums row-times-column.", "function matMul2(a, b) { return [[a[0][0] * b[0][0], a[0][1] * b[0][1]], [a[1][0] * b[1][0], a[1][1] * b[1][1]]]; }"),
+        diagnosis("transposed", "The factors were swapped: matrix products do not commute, so A·B ≠ B·A.", lines(
+          "function matMul2(a, b) {",
+          "  return [",
+          "    [b[0][0] * a[0][0] + b[0][1] * a[1][0], b[0][0] * a[0][1] + b[0][1] * a[1][1]],",
+          "    [b[1][0] * a[0][0] + b[1][1] * a[1][0], b[1][0] * a[0][1] + b[1][1] * a[1][1]],",
+          "  ];",
+          "}"
+        )),
+      ],
+      hints: ["Entry (i, j) is row i of a dotted with column j of b.", "Four entries, two terms each.", "Return [[r00, r01], [r10, r11]]."],
+      cases: [
+        example([M2_I, [[1, 2], [3, 4]]], [[1, 2], [3, 4]], "identity"),
+        example([[[1, 2], [3, 4]], [[0, 1], [1, 0]]], [[2, 1], [4, 3]], "swap columns"),
+        example([[[0, 1], [1, 0]], [[1, 2], [3, 4]]], [[3, 4], [1, 2]], "swap rows"),
+        example([F_UNIT, F_UNIT], [[1, 2], [0, 1]], "two constant-velocity steps"),
+      ],
+    }),
+    puzzle({
+      number: 94, id: "mat-inv-2", track: "bayes", title: "Invert a 2×2 Matrix",
+      goal: "The closed-form inverse: swap the diagonal, negate the off-diagonal, divide by the determinant.",
+      concept: "Kalman gains divide by the innovation covariance; in two dimensions that division is this brick.",
+      functionName: "matInv2", signature: "matInv2(m) → 2×2",
+      starterSource: starter("matInv2", "m", "[[d, −b], [−c, a]] / (ad − bc)."),
+      referenceSource: lines(
+        "function matInv2(m) {",
+        "  var det = m[0][0] * m[1][1] - m[0][1] * m[1][0];",
+        "  return [[m[1][1] / det, -m[0][1] / det], [-m[1][0] / det, m[0][0] / det]];",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "matrix-stack",
+      reference: bookref(CH07, "Kalman filter math"),
+      scene: { kind: "bayes", view: "matrix2", handles: [
+        { id: "col1", type: "vector", label: "M column 1", value: { x: 1.2, y: 0.4 } },
+        { id: "col2", type: "vector", label: "M column 2", value: { x: -0.5, y: 1 } },
+      ], args: [{ fixture: "matrixFromColumns" }] },
+      diagnoses: [
+        diagnosis("no-determinant", "That is the adjugate; divide every entry by the determinant ad − bc.", "function matInv2(m) { return [[m[1][1], -m[0][1]], [-m[1][0], m[0][0]]]; }"),
+        diagnosis("diagonal-not-swapped", "The diagonal entries trade places in the inverse: a and d swap.", "function matInv2(m) { var det = m[0][0] * m[1][1] - m[0][1] * m[1][0]; return [[m[0][0] / det, -m[0][1] / det], [-m[1][0] / det, m[1][1] / det]]; }"),
+      ],
+      hints: ["det = ad − bc.", "Swap a and d, negate b and c.", "Divide all four by det."],
+      cases: [
+        example([[[2, 0], [0, 4]]], [[0.5, 0], [0, 0.25]], "diagonal"),
+        example([[[1, 2], [3, 4]]], [[-2, 1], [1.5, -0.5]], "negative determinant"),
+        example([[[0, 1], [-1, 0]]], [[0, -1], [1, 0]], "rotation by 90°"),
+        example([M2_I], M2_I, "identity"),
+      ],
+    }),
+    puzzle({
+      number: 95, id: "constant-velocity-model", track: "bayes", title: "Constant-Velocity Model",
+      goal: "Build the state transition F and the discrete white-noise Q for a [position, velocity] state.",
+      concept: "F says how the state moves on its own; Q says how much you distrust that story per step.",
+      functionName: "constantVelocityModel", signature: "constantVelocityModel(dt, processVariance) → { F, Q }",
+      starterSource: starter("constantVelocityModel", "dt, processVariance", "F = [[1, dt], [0, 1]]; Q = var · [[dt⁴/4, dt³/2], [dt³/2, dt²]]."),
+      referenceSource: lines(
+        "function constantVelocityModel(dt, processVariance) {",
+        "  var dt2 = dt * dt, dt3 = dt2 * dt, dt4 = dt3 * dt;",
+        "  return { F: [[1, dt], [0, 1]], Q: [[processVariance * dt4 / 4, processVariance * dt3 / 2], [processVariance * dt3 / 2, processVariance * dt2]] };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      reference: bookref(CH06, "Q_discrete_white_noise"),
+      scene: { kind: "bayes", view: "cv-model", handles: [
+        { id: "dt", type: "slider", label: "dt (s)", value: 1, min: 0.2, max: 1.5 },
+        { id: "variance", type: "slider", label: "process variance", value: 0.4, min: 0.1, max: 1 },
+      ], args: [{ handle: "dt" }, { handle: "variance" }] },
+      diagnoses: [
+        diagnosis("f-without-dt", "Position advances by velocity times dt, so F's top-right entry is dt.", lines(
+          "function constantVelocityModel(dt, processVariance) {",
+          "  var dt2 = dt * dt, dt3 = dt2 * dt, dt4 = dt3 * dt;",
+          "  return { F: [[1, 1], [0, 1]], Q: [[processVariance * dt4 / 4, processVariance * dt3 / 2], [processVariance * dt3 / 2, processVariance * dt2]] };",
+          "}"
+        )),
+        diagnosis("q-diagonal-only", "Process noise on the velocity also moves the position, so Q has off-diagonal terms dt³/2.", lines(
+          "function constantVelocityModel(dt, processVariance) {",
+          "  var dt2 = dt * dt, dt4 = dt2 * dt2;",
+          "  return { F: [[1, dt], [0, 1]], Q: [[processVariance * dt4 / 4, 0], [0, processVariance * dt2]] };",
+          "}"
+        )),
+      ],
+      hints: ["F: position += velocity·dt, velocity unchanged.", "Q comes from integrating white acceleration noise over dt.", "Q = var·[[dt⁴/4, dt³/2], [dt³/2, dt²]]."],
+      cases: [
+        example([1, 1], { F: F_UNIT, Q: [[0.25, 0.5], [0.5, 1]] }, "unit step"),
+        example([2, 1], { F: [[1, 2], [0, 1]], Q: [[4, 4], [4, 4]] }, "two seconds"),
+        example([0.5, 2], { F: [[1, 0.5], [0, 1]], Q: [[0.03125, 0.125], [0.125, 0.5]] }, "half second, more noise"),
+        example([1, 0], { F: F_UNIT, Q: M2_ZERO }, "no process noise"),
+      ],
+    }),
+    puzzle({
+      number: 96, id: "kf-predict", track: "bayes", title: "Kalman Predict (2 States)",
+      goal: "x = F x and P = F P Fᵀ + Q for the position-velocity tracker.",
+      concept: "Prediction moves the mean with the model and stretches the covariance the same way, then adds process noise.",
+      functionName: "kfPredict", signature: "kfPredict(x, P, F, Q) → { x, P }",
+      starterSource: starter("kfPredict", "x, P, F, Q", "x is [position, velocity]."),
+      referenceSource: lines(
+        "function kfPredict(x, P, F, Q) {",
+        "  var ft = [[F[0][0], F[1][0]], [F[0][1], F[1][1]]];",
+        "  var spread = matMul2(matMul2(F, P), ft);",
+        "  return {",
+        "    x: [F[0][0] * x[0] + F[0][1] * x[1], F[1][0] * x[0] + F[1][1] * x[1]],",
+        "    P: [[spread[0][0] + Q[0][0], spread[0][1] + Q[0][1]], [spread[1][0] + Q[1][0], spread[1][1] + Q[1][1]]],",
+        "  };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      dependencies: ["mat-mul-2"],
+      reference: bookref(CH06, "predict"),
+      scene: { kind: "bayes", view: "kf-predict", handles: [
+        { id: "state", type: "point", label: "state (position, velocity)", value: { x: -2, y: 1 } },
+        { id: "dt", type: "slider", label: "dt (s)", value: 1, min: 0.2, max: 2 },
+      ], args: [{ fixture: "stateVec" }, { fixture: "kfP0" }, { fixture: "cvF" }, { fixture: "cvQ" }] },
+      diagnoses: [
+        diagnosis("no-transpose", "The right-hand factor must be Fᵀ.", lines(
+          "function kfPredict(x, P, F, Q) {",
+          "  var spread = matMul2(matMul2(F, P), F);",
+          "  return {",
+          "    x: [F[0][0] * x[0] + F[0][1] * x[1], F[1][0] * x[0] + F[1][1] * x[1]],",
+          "    P: [[spread[0][0] + Q[0][0], spread[0][1] + Q[0][1]], [spread[1][0] + Q[1][0], spread[1][1] + Q[1][1]]],",
+          "  };",
+          "}"
+        )),
+        diagnosis("state-unchanged", "The mean must move too: x = F x.", lines(
+          "function kfPredict(x, P, F, Q) {",
+          "  var ft = [[F[0][0], F[1][0]], [F[0][1], F[1][1]]];",
+          "  var spread = matMul2(matMul2(F, P), ft);",
+          "  return { x: [x[0], x[1]], P: [[spread[0][0] + Q[0][0], spread[0][1] + Q[0][1]], [spread[1][0] + Q[1][0], spread[1][1] + Q[1][1]]] };",
+          "}"
+        )),
+      ],
+      hints: ["New x is F applied to the state vector.", "New P is matMul2(matMul2(F, P), Fᵀ).", "Add Q element-wise."],
+      cases: [
+        example([[0, 1], M2_I, F_UNIT, M2_ZERO], { x: [1, 1], P: P_STRAIGHT_2 }, "unit step"),
+        example([[2, -1], [[4, 0], [0, 1]], [[1, 2], [0, 1]], M2_I], { x: [0, -1], P: [[9, 2], [2, 2]] }, "two seconds with noise"),
+        example([[1, 0], M2_ZERO, M2_I, [[0.1, 0], [0, 0.2]]], { x: [1, 0], P: [[0.1, 0], [0, 0.2]] }, "only process noise"),
+        example([[0, 0], M2_I, M2_I, M2_ZERO], { x: [0, 0], P: M2_I }, "identity model"),
+      ],
+    }),
+    puzzle({
+      number: 97, id: "kf-update", track: "bayes", title: "Kalman Update (Scalar Measurement)",
+      goal: "Fuse one scalar measurement z = H x: innovation, S, gain, corrected x, shrunk P.",
+      concept: "H picks what the sensor sees. Velocity is never measured here, yet it gets corrected through P's off-diagonal.",
+      functionName: "kfUpdate", signature: "kfUpdate(x, P, z, H, R) → { x, P }",
+      starterSource: starter("kfUpdate", "x, P, z, H, R", "H is 1×2, R a number. y = z − H x; S = H P Hᵀ + R; K = P Hᵀ / S; x += K y; P = (I − K H) P."),
+      referenceSource: lines(
+        "function kfUpdate(x, P, z, H, R) {",
+        "  var h0 = H[0][0], h1 = H[0][1];",
+        "  var y = z - (h0 * x[0] + h1 * x[1]);",
+        "  var pht = [P[0][0] * h0 + P[0][1] * h1, P[1][0] * h0 + P[1][1] * h1];",
+        "  var s = h0 * pht[0] + h1 * pht[1] + R;",
+        "  var k = [pht[0] / s, pht[1] / s];",
+        "  var ikh = [[1 - k[0] * h0, -k[0] * h1], [-k[1] * h0, 1 - k[1] * h1]];",
+        "  return { x: [x[0] + k[0] * y, x[1] + k[1] * y], P: matMul2(ikh, P) };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      dependencies: ["mat-mul-2"],
+      reference: bookref(CH06, "update"),
+      scene: { kind: "bayes", view: "kf-update", handles: [
+        { id: "state", type: "point", label: "prior (position, velocity)", value: { x: -1, y: 0.8 } },
+        { id: "z", type: "slider", label: "position measurement z", value: 1, min: -4, max: 4 },
+        { id: "R", type: "slider", label: "measurement variance R", value: 0.5, min: 0.1, max: 3 },
+      ], args: [{ fixture: "stateVec" }, { fixture: "kfPUpdate" }, { handle: "z" }, { fixture: "hPosition" }, { handle: "R" }] },
+      diagnoses: [
+        diagnosis("full-gain", "The gain must divide by S = H P Hᵀ + R; without it the state jumps onto the measurement.", lines(
+          "function kfUpdate(x, P, z, H, R) {",
+          "  var h0 = H[0][0], h1 = H[0][1];",
+          "  var y = z - (h0 * x[0] + h1 * x[1]);",
+          "  var k = [h0, h1];",
+          "  var ikh = [[1 - k[0] * h0, -k[0] * h1], [-k[1] * h0, 1 - k[1] * h1]];",
+          "  return { x: [x[0] + k[0] * y, x[1] + k[1] * y], P: matMul2(ikh, P) };",
+          "}"
+        )),
+        diagnosis("covariance-unchanged", "A measurement must shrink P: P = (I − K H) P.", lines(
+          "function kfUpdate(x, P, z, H, R) {",
+          "  var h0 = H[0][0], h1 = H[0][1];",
+          "  var y = z - (h0 * x[0] + h1 * x[1]);",
+          "  var pht = [P[0][0] * h0 + P[0][1] * h1, P[1][0] * h0 + P[1][1] * h1];",
+          "  var s = h0 * pht[0] + h1 * pht[1] + R;",
+          "  var k = [pht[0] / s, pht[1] / s];",
+          "  return { x: [x[0] + k[0] * y, x[1] + k[1] * y], P: P };",
+          "}"
+        )),
+      ],
+      hints: ["P Hᵀ is a 2-vector; S = H (P Hᵀ) + R is a number.", "K = P Hᵀ / S; x += K·y.", "I − K H is 2×2 with K's entries in the column H selects; P = matMul2(I − K H, P)."],
+      cases: [
+        example([[0, 0], M2_I, 2, [[1, 0]], 1], { x: [1, 0], P: [[0.5, 0], [0, 1]] }, "equal trust"),
+        example([[0, 0], P_STRAIGHT_2, 1, [[1, 0]], 0], { x: [1, 0.5], P: [[0, 0], [0, 0.5]] }, "perfect fix corrects velocity too"),
+        example([[1, 1], M2_I, 1, [[1, 0]], 1], { x: [1, 1], P: [[0.5, 0], [0, 1]] }, "measurement agrees"),
+        example([[0, 2], M2_I, 3, [[0, 1]], 1], { x: [0, 2.5], P: [[1, 0], [0, 0.5]] }, "measuring velocity instead"),
+      ],
+    }),
+    puzzle({
+      number: 98, id: "kalman-track-step", track: "bayes", title: "One Tracker Step",
+      goal: "Build the model, predict, and update with a position measurement, in that order.",
+      concept: "This is the book's dog tracker: constant velocity plus a noisy position sensor, one step at a time.",
+      functionName: "kalmanTrackStep", signature: "kalmanTrackStep(x, P, z, dt, processVariance, R) → { x, P }",
+      starterSource: starter("kalmanTrackStep", "x, P, z, dt, processVariance, R"),
+      referenceSource: lines(
+        "function kalmanTrackStep(x, P, z, dt, processVariance, R) {",
+        "  var model = constantVelocityModel(dt, processVariance);",
+        "  var predicted = kfPredict(x, P, model.F, model.Q);",
+        "  return kfUpdate(predicted.x, predicted.P, z, [[1, 0]], R);",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      dependencies: ["constant-velocity-model", "kf-predict", "kf-update"],
+      reference: bookref(CH06, "pos_vel_filter"),
+      scene: { kind: "bayes", view: "kf-track", handles: [
+        { id: "state", type: "point", label: "state (position, velocity)", value: { x: -2.5, y: 1 } },
+        { id: "z", type: "slider", label: "position measurement z", value: 0, min: -4, max: 4 },
+        { id: "R", type: "slider", label: "measurement variance R", value: 0.5, min: 0.1, max: 3 },
+      ], args: [{ fixture: "stateVec" }, { fixture: "kfP0" }, { handle: "z" }, 1, 0.1, { handle: "R" }] },
+      diagnoses: [
+        diagnosis("update-before-predict", "The measurement arrives after the motion: predict first, then update.", lines(
+          "function kalmanTrackStep(x, P, z, dt, processVariance, R) {",
+          "  var model = constantVelocityModel(dt, processVariance);",
+          "  var updated = kfUpdate(x, P, z, [[1, 0]], R);",
+          "  return kfPredict(updated.x, updated.P, model.F, model.Q);",
+          "}"
+        )),
+        diagnosis("no-update", "The measurement was ignored; call kfUpdate after predicting.", lines(
+          "function kalmanTrackStep(x, P, z, dt, processVariance, R) {",
+          "  var model = constantVelocityModel(dt, processVariance);",
+          "  return kfPredict(x, P, model.F, model.Q);",
+          "}"
+        )),
+      ],
+      hints: ["constantVelocityModel(dt, processVariance) gives F and Q.", "kfPredict, then kfUpdate with H = [[1, 0]].", "Return the update's result."],
+      cases: [
+        example([[0, 1], M2_I, 1, 1, 0, 1], { x: [1, 1], P: [[2 / 3, 1 / 3], [1 / 3, 2 / 3]] }, "measurement agrees"),
+        example([[0, 1], M2_I, 2, 1, 0, 1], { x: [5 / 3, 4 / 3], P: [[2 / 3, 1 / 3], [1 / 3, 2 / 3]] }, "measurement ahead"),
+        example([[0, 0], M2_I, 0, 1, 1, 0], { x: [0, 0], P: [[0, 0], [0, 1]] }, "perfect sensor, noisy model"),
+      ],
+    }),
+  ];
+
+  const BAYES_24 = [
+    puzzle({
+      number: 99, id: "sigma-points", track: "bayes", title: "Van der Merwe Sigma Points",
+      goal: "Pick 2n + 1 points and weights that reproduce a 2D Gaussian's mean and covariance.",
+      concept: "Instead of linearizing a function, the UKF pushes a few well-chosen points through it. These are the points.",
+      functionName: "sigmaPoints", signature: "sigmaPoints(mean, P, alpha, beta, kappa) → { points, wm, wc }",
+      starterSource: starter("sigmaPoints", "mean, P, alpha, beta, kappa", "n = 2; λ = α²(n + κ) − n; U = upper Cholesky of (n + λ)P; points: mean, mean ± rows of U."),
+      referenceSource: lines(
+        "function sigmaPoints(mean, P, alpha, beta, kappa) {",
+        "  var n = 2, lambda = alpha * alpha * (n + kappa) - n, scale = n + lambda;",
+        "  var a = scale * P[0][0], b = scale * P[0][1], d = scale * P[1][1];",
+        "  var u00 = Math.sqrt(a), u01 = b / u00, u11 = Math.sqrt(d - u01 * u01);",
+        "  var rows = [{ x: u00, y: u01 }, { x: 0, y: u11 }];",
+        "  var points = [{ x: mean.x, y: mean.y }];",
+        "  for (var i = 0; i < n; i += 1) points.push({ x: mean.x + rows[i].x, y: mean.y + rows[i].y });",
+        "  for (var j = 0; j < n; j += 1) points.push({ x: mean.x - rows[j].x, y: mean.y - rows[j].y });",
+        "  var wi = 1 / (2 * scale);",
+        "  return { points: points, wm: [lambda / scale, wi, wi, wi, wi], wc: [lambda / scale + 1 - alpha * alpha + beta, wi, wi, wi, wi] };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: bookref(CH10, "MerweScaledSigmaPoints"),
+      scene: { kind: "bayes", view: "sigma-points", handles: [
+        { id: "mean", type: "point", label: "mean", value: { x: 0.5, y: -0.3 } },
+        { id: "alpha", type: "slider", label: "α", value: 0.7, min: 0.3, max: 1 },
+        { id: "kappa", type: "slider", label: "κ", value: 1, min: 0, max: 3 },
+      ], args: [{ handle: "mean" }, { fixture: "utP" }, { handle: "alpha" }, 2, { handle: "kappa" }] },
+      diagnoses: [
+        diagnosis("no-lambda-scale", "The square root must be of (n + λ)·P, not P; the spread of the points depends on α and κ.", lines(
+          "function sigmaPoints(mean, P, alpha, beta, kappa) {",
+          "  var n = 2, lambda = alpha * alpha * (n + kappa) - n, scale = n + lambda;",
+          "  var a = P[0][0], b = P[0][1], d = P[1][1];",
+          "  var u00 = Math.sqrt(a), u01 = b / u00, u11 = Math.sqrt(d - u01 * u01);",
+          "  var rows = [{ x: u00, y: u01 }, { x: 0, y: u11 }];",
+          "  var points = [{ x: mean.x, y: mean.y }];",
+          "  for (var i = 0; i < n; i += 1) points.push({ x: mean.x + rows[i].x, y: mean.y + rows[i].y });",
+          "  for (var j = 0; j < n; j += 1) points.push({ x: mean.x - rows[j].x, y: mean.y - rows[j].y });",
+          "  var wi = 1 / (2 * scale);",
+          "  return { points: points, wm: [lambda / scale, wi, wi, wi, wi], wc: [lambda / scale + 1 - alpha * alpha + beta, wi, wi, wi, wi] };",
+          "}"
+        )),
+        diagnosis("wc0-without-beta", "The covariance weight of the centre point is λ/(n+λ) + 1 − α² + β, not the mean weight.", lines(
+          "function sigmaPoints(mean, P, alpha, beta, kappa) {",
+          "  var n = 2, lambda = alpha * alpha * (n + kappa) - n, scale = n + lambda;",
+          "  var a = scale * P[0][0], b = scale * P[0][1], d = scale * P[1][1];",
+          "  var u00 = Math.sqrt(a), u01 = b / u00, u11 = Math.sqrt(d - u01 * u01);",
+          "  var rows = [{ x: u00, y: u01 }, { x: 0, y: u11 }];",
+          "  var points = [{ x: mean.x, y: mean.y }];",
+          "  for (var i = 0; i < n; i += 1) points.push({ x: mean.x + rows[i].x, y: mean.y + rows[i].y });",
+          "  for (var j = 0; j < n; j += 1) points.push({ x: mean.x - rows[j].x, y: mean.y - rows[j].y });",
+          "  var wi = 1 / (2 * scale);",
+          "  return { points: points, wm: [lambda / scale, wi, wi, wi, wi], wc: [lambda / scale, wi, wi, wi, wi] };",
+          "}"
+        )),
+      ],
+      hints: ["λ = α²(n + κ) − n with n = 2.", "Upper Cholesky of (n + λ)P: u00 = √a, u01 = b/u00, u11 = √(d − u01²); the two rows are (u00, u01) and (0, u11).", "Points: mean, mean + row₁, mean + row₂, mean − row₁, mean − row₂. Weights: wm₀ = λ/(n+λ), wc₀ = wm₀ + 1 − α² + β, others 1/(2(n+λ))."],
+      cases: [
+        example([{ x: 0, y: 0 }, M2_I, 1, 0, 1], { points: [{ x: 0, y: 0 }, { x: SQ3, y: 0 }, { x: 0, y: SQ3 }, { x: -SQ3, y: 0 }, { x: 0, y: -SQ3 }], wm: SIGMA_W, wc: SIGMA_W }, "unit covariance"),
+        example([{ x: 1, y: 2 }, [[4, 0], [0, 1]], 1, 2, 1], { points: [{ x: 1, y: 2 }, { x: 1 + 2 * SQ3, y: 2 }, { x: 1, y: 2 + SQ3 }, { x: 1 - 2 * SQ3, y: 2 }, { x: 1, y: 2 - SQ3 }], wm: SIGMA_W, wc: [7 / 3, 1 / 6, 1 / 6, 1 / 6, 1 / 6] }, "β adds to wc₀"),
+        example([{ x: 0, y: 0 }, [[1, 0.5], [0.5, 1]], 1, 0, 1], { points: [{ x: 0, y: 0 }, { x: SQ3, y: SQ3 / 2 }, { x: 0, y: 1.5 }, { x: -SQ3, y: -SQ3 / 2 }, { x: 0, y: -1.5 }], wm: SIGMA_W, wc: SIGMA_W }, "correlated"),
+        example([{ x: 0, y: 0 }, M2_I, 0.5, 2, 1], { points: [{ x: 0, y: 0 }, { x: Math.sqrt(0.75), y: 0 }, { x: 0, y: Math.sqrt(0.75) }, { x: -Math.sqrt(0.75), y: 0 }, { x: 0, y: -Math.sqrt(0.75) }], wm: [-5 / 3, 2 / 3, 2 / 3, 2 / 3, 2 / 3], wc: [13 / 12, 2 / 3, 2 / 3, 2 / 3, 2 / 3] }, "small α pulls the points in"),
+      ],
+    }),
+    puzzle({
+      number: 100, id: "unscented-transform", track: "bayes", title: "Unscented Transform",
+      goal: "Recover a mean and covariance from weighted points.",
+      concept: "Weighted mean with wm, weighted scatter around that mean with wc. Push the points through any function first and this gives the transformed Gaussian.",
+      functionName: "unscentedTransform", signature: "unscentedTransform(points, wm, wc) → { mean, P }",
+      starterSource: starter("unscentedTransform", "points, wm, wc", "mean = Σ wm[i]·p[i]; P = Σ wc[i]·(p[i] − mean)(p[i] − mean)ᵀ."),
+      referenceSource: lines(
+        "function unscentedTransform(points, wm, wc) {",
+        "  var mean = { x: 0, y: 0 };",
+        "  for (var i = 0; i < points.length; i += 1) { mean.x += wm[i] * points[i].x; mean.y += wm[i] * points[i].y; }",
+        "  var P = [[0, 0], [0, 0]];",
+        "  for (var j = 0; j < points.length; j += 1) {",
+        "    var dx = points[j].x - mean.x, dy = points[j].y - mean.y;",
+        "    P[0][0] += wc[j] * dx * dx; P[0][1] += wc[j] * dx * dy; P[1][0] += wc[j] * dx * dy; P[1][1] += wc[j] * dy * dy;",
+        "  }",
+        "  return { mean: mean, P: P };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: bookref(CH10, "unscented_transform"),
+      scene: { kind: "bayes", view: "unscented", handles: [{ id: "mean", type: "point", label: "mean of the sigma set", value: { x: 0.5, y: 0.2 } }], args: [{ fixture: "utPoints" }, { fixture: "utWm" }, { fixture: "utWc" }] },
+      diagnoses: [
+        diagnosis("wm-for-covariance", "The covariance uses the wc weights; wm is only for the mean.", lines(
+          "function unscentedTransform(points, wm, wc) {",
+          "  var mean = { x: 0, y: 0 };",
+          "  for (var i = 0; i < points.length; i += 1) { mean.x += wm[i] * points[i].x; mean.y += wm[i] * points[i].y; }",
+          "  var P = [[0, 0], [0, 0]];",
+          "  for (var j = 0; j < points.length; j += 1) {",
+          "    var dx = points[j].x - mean.x, dy = points[j].y - mean.y;",
+          "    P[0][0] += wm[j] * dx * dx; P[0][1] += wm[j] * dx * dy; P[1][0] += wm[j] * dx * dy; P[1][1] += wm[j] * dy * dy;",
+          "  }",
+          "  return { mean: mean, P: P };",
+          "}"
+        )),
+        diagnosis("covariance-around-first-point", "Deviations are taken from the weighted mean, not from the first point.", lines(
+          "function unscentedTransform(points, wm, wc) {",
+          "  var mean = { x: 0, y: 0 };",
+          "  for (var i = 0; i < points.length; i += 1) { mean.x += wm[i] * points[i].x; mean.y += wm[i] * points[i].y; }",
+          "  var P = [[0, 0], [0, 0]];",
+          "  for (var j = 0; j < points.length; j += 1) {",
+          "    var dx = points[j].x - points[0].x, dy = points[j].y - points[0].y;",
+          "    P[0][0] += wc[j] * dx * dx; P[0][1] += wc[j] * dx * dy; P[1][0] += wc[j] * dx * dy; P[1][1] += wc[j] * dy * dy;",
+          "  }",
+          "  return { mean: mean, P: P };",
+          "}"
+        )),
+      ],
+      hints: ["Mean: sum wm[i] times each point.", "Then subtract that mean from every point.", "P accumulates wc[i]·(dx², dx·dy; dx·dy, dy²)."],
+      cases: [
+        example([[{ x: 0, y: 0 }, { x: SQ3, y: 0 }, { x: 0, y: SQ3 }, { x: -SQ3, y: 0 }, { x: 0, y: -SQ3 }], SIGMA_W, SIGMA_W], { mean: { x: 0, y: 0 }, P: M2_I }, "unit sigma set"),
+        example([[{ x: 1, y: 2 }, { x: 1 + 2 * SQ3, y: 2 }, { x: 1, y: 2 + SQ3 }, { x: 1 - 2 * SQ3, y: 2 }, { x: 1, y: 2 - SQ3 }], SIGMA_W, [7 / 3, 1 / 6, 1 / 6, 1 / 6, 1 / 6]], { mean: { x: 1, y: 2 }, P: [[4, 0], [0, 1]] }, "stretched sigma set"),
+        example([[{ x: 0, y: 0 }, { x: 2, y: 0 }], [0.5, 0.5], [0.5, 0.5]], { mean: { x: 1, y: 0 }, P: [[1, 0], [0, 0]] }, "two points"),
+        example([[{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }], [0.25, 0.5, 0.25], [0.5, 0.5, 0.5]], { mean: { x: 1, y: 1 }, P: [[1, 1], [1, 1]] }, "different weights for mean and covariance"),
+      ],
+    }),
+    puzzle({
+      number: 101, id: "unscented-polar", track: "bayes", title: "Unscented Transform of a Radar Return",
+      goal: "Push a (range, bearing) Gaussian through polar → cartesian using sigma points.",
+      concept: "Linearizing at the mean gives a straight ellipse; the true distribution is banana-shaped, and the sigma points feel that curvature.",
+      functionName: "unscentedPolarToCartesian", signature: "unscentedPolarToCartesian(mean, P, alpha, beta, kappa) → { mean, P }",
+      starterSource: starter("unscentedPolarToCartesian", "mean, P, alpha, beta, kappa", "mean.x is range, mean.y is bearing. Map each sigma point through (r·cos θ, r·sin θ), then unscentedTransform."),
+      referenceSource: lines(
+        "function unscentedPolarToCartesian(mean, P, alpha, beta, kappa) {",
+        "  var sigma = sigmaPoints(mean, P, alpha, beta, kappa);",
+        "  var mapped = sigma.points.map(function (p) { return { x: p.x * Math.cos(p.y), y: p.x * Math.sin(p.y) }; });",
+        "  return unscentedTransform(mapped, sigma.wm, sigma.wc);",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      dependencies: ["sigma-points", "unscented-transform"],
+      reference: bookref(CH10, "nonlinear transform of a Gaussian (see also 09-Nonlinear-Filtering)"),
+      scene: { kind: "bayes", view: "polar", handles: [
+        { id: "range", type: "slider", label: "range (m)", value: 2, min: 0.8, max: 2.6 },
+        { id: "bearing", type: "slider", label: "bearing (rad)", value: 0.6, min: -1.4, max: 1.4 },
+        { id: "sigmaTheta", type: "slider", label: "σ bearing (rad)", value: 0.4, min: 0.1, max: 0.7 },
+      ], args: [{ fixture: "polarMean" }, { fixture: "polarP" }, 1, 2, 1] },
+      diagnoses: [
+        diagnosis("mean-through-function", "The mean was mapped directly; the unscented mean is the weighted average of the mapped points, which sits inside the curve.", lines(
+          "function unscentedPolarToCartesian(mean, P, alpha, beta, kappa) {",
+          "  var sigma = sigmaPoints(mean, P, alpha, beta, kappa);",
+          "  var mapped = sigma.points.map(function (p) { return { x: p.x * Math.cos(p.y), y: p.x * Math.sin(p.y) }; });",
+          "  var center = { x: mean.x * Math.cos(mean.y), y: mean.x * Math.sin(mean.y) };",
+          "  var cov = [[0, 0], [0, 0]];",
+          "  for (var i = 0; i < mapped.length; i += 1) {",
+          "    var dx = mapped[i].x - center.x, dy = mapped[i].y - center.y;",
+          "    cov[0][0] += sigma.wc[i] * dx * dx; cov[0][1] += sigma.wc[i] * dx * dy; cov[1][0] += sigma.wc[i] * dx * dy; cov[1][1] += sigma.wc[i] * dy * dy;",
+          "  }",
+          "  return { mean: center, P: cov };",
+          "}"
+        )),
+        diagnosis("no-transform", "The sigma points were never pushed through polar → cartesian.", lines(
+          "function unscentedPolarToCartesian(mean, P, alpha, beta, kappa) {",
+          "  var sigma = sigmaPoints(mean, P, alpha, beta, kappa);",
+          "  return unscentedTransform(sigma.points, sigma.wm, sigma.wc);",
+          "}"
+        )),
+      ],
+      hints: ["sigmaPoints(mean, P, alpha, beta, kappa) in polar space.", "Map each point: x = r·cos θ, y = r·sin θ.", "unscentedTransform(mapped, wm, wc)."],
+      cases: [
+        example([{ x: 2, y: 0 }, POLAR_P, 1, 0, 1], { mean: { x: 5 / 3, y: 0 }, P: [[5 / 9, 0], [0, 1]] }, "straight ahead"),
+        example([{ x: 1, y: PI / 2 }, POLAR_P, 1, 0, 1], { mean: { x: 0, y: 5 / 6 }, P: [[0.25, 0], [0, 7 / 18]] }, "to the left"),
+        example([{ x: 1, y: 0 }, POLAR_P, 1, 0, 1], { mean: { x: 5 / 6, y: 0 }, P: [[7 / 18, 0], [0, 0.25]] }, "closer target"),
+      ],
+    }),
+    puzzle({
+      number: 102, id: "rts-smoother-step", track: "bayes", title: "One RTS Smoother Step",
+      goal: "Pull a filtered estimate towards the smoothed estimate that follows it.",
+      concept: "Smoothing runs backwards: knowing where the state ended up tightens every earlier estimate.",
+      functionName: "rtsSmootherStep", signature: "rtsSmootherStep(x, P, xNext, PNext, F, Q) → { x, P }",
+      starterSource: starter("rtsSmootherStep", "x, P, xNext, PNext, F, Q", "Pp = F P Fᵀ + Q; K = P Fᵀ Pp⁻¹; x += K (xNext − F x); P += K (PNext − Pp) Kᵀ."),
+      referenceSource: lines(
+        "function rtsSmootherStep(x, P, xNext, PNext, F, Q) {",
+        "  var ft = [[F[0][0], F[1][0]], [F[0][1], F[1][1]]];",
+        "  var spread = matMul2(matMul2(F, P), ft);",
+        "  var pp = [[spread[0][0] + Q[0][0], spread[0][1] + Q[0][1]], [spread[1][0] + Q[1][0], spread[1][1] + Q[1][1]]];",
+        "  var k = matMul2(matMul2(P, ft), matInv2(pp));",
+        "  var kt = [[k[0][0], k[1][0]], [k[0][1], k[1][1]]];",
+        "  var fx = [F[0][0] * x[0] + F[0][1] * x[1], F[1][0] * x[0] + F[1][1] * x[1]];",
+        "  var dx = [xNext[0] - fx[0], xNext[1] - fx[1]];",
+        "  var dp = [[PNext[0][0] - pp[0][0], PNext[0][1] - pp[0][1]], [PNext[1][0] - pp[1][0], PNext[1][1] - pp[1][1]]];",
+        "  var gain = matMul2(matMul2(k, dp), kt);",
+        "  return {",
+        "    x: [x[0] + k[0][0] * dx[0] + k[0][1] * dx[1], x[1] + k[1][0] * dx[0] + k[1][1] * dx[1]],",
+        "    P: [[P[0][0] + gain[0][0], P[0][1] + gain[0][1]], [P[1][0] + gain[1][0], P[1][1] + gain[1][1]]],",
+        "  };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "time-buffer",
+      dependencies: ["mat-mul-2", "mat-inv-2"],
+      reference: bookref(CH13, "rts_smoother"),
+      scene: { kind: "bayes", view: "rts", handles: [
+        { id: "x", type: "point", label: "filtered k (position, velocity)", value: { x: -2, y: 1 } },
+        { id: "xNext", type: "point", label: "smoothed k+1", value: { x: -0.5, y: 0.8 } },
+      ], args: [{ fixture: "rtsX" }, { fixture: "rtsP" }, { fixture: "rtsXNext" }, { fixture: "rtsPNext" }, { fixture: "rtsF" }, { fixture: "rtsQ" }] },
+      diagnoses: [
+        diagnosis("no-process-noise", "The predicted covariance Pp must include Q, exactly as in the forward predict.", lines(
+          "function rtsSmootherStep(x, P, xNext, PNext, F, Q) {",
+          "  var ft = [[F[0][0], F[1][0]], [F[0][1], F[1][1]]];",
+          "  var pp = matMul2(matMul2(F, P), ft);",
+          "  var k = matMul2(matMul2(P, ft), matInv2(pp));",
+          "  var kt = [[k[0][0], k[1][0]], [k[0][1], k[1][1]]];",
+          "  var fx = [F[0][0] * x[0] + F[0][1] * x[1], F[1][0] * x[0] + F[1][1] * x[1]];",
+          "  var dx = [xNext[0] - fx[0], xNext[1] - fx[1]];",
+          "  var dp = [[PNext[0][0] - pp[0][0], PNext[0][1] - pp[0][1]], [PNext[1][0] - pp[1][0], PNext[1][1] - pp[1][1]]];",
+          "  var gain = matMul2(matMul2(k, dp), kt);",
+          "  return {",
+          "    x: [x[0] + k[0][0] * dx[0] + k[0][1] * dx[1], x[1] + k[1][0] * dx[0] + k[1][1] * dx[1]],",
+          "    P: [[P[0][0] + gain[0][0], P[0][1] + gain[0][1]], [P[1][0] + gain[1][0], P[1][1] + gain[1][1]]],",
+          "  };",
+          "}"
+        )),
+        diagnosis("gain-not-transposed", "The covariance correction is K (PNext − Pp) Kᵀ; the right-hand factor must be transposed.", lines(
+          "function rtsSmootherStep(x, P, xNext, PNext, F, Q) {",
+          "  var ft = [[F[0][0], F[1][0]], [F[0][1], F[1][1]]];",
+          "  var spread = matMul2(matMul2(F, P), ft);",
+          "  var pp = [[spread[0][0] + Q[0][0], spread[0][1] + Q[0][1]], [spread[1][0] + Q[1][0], spread[1][1] + Q[1][1]]];",
+          "  var k = matMul2(matMul2(P, ft), matInv2(pp));",
+          "  var fx = [F[0][0] * x[0] + F[0][1] * x[1], F[1][0] * x[0] + F[1][1] * x[1]];",
+          "  var dx = [xNext[0] - fx[0], xNext[1] - fx[1]];",
+          "  var dp = [[PNext[0][0] - pp[0][0], PNext[0][1] - pp[0][1]], [PNext[1][0] - pp[1][0], PNext[1][1] - pp[1][1]]];",
+          "  var gain = matMul2(matMul2(k, dp), k);",
+          "  return {",
+          "    x: [x[0] + k[0][0] * dx[0] + k[0][1] * dx[1], x[1] + k[1][0] * dx[0] + k[1][1] * dx[1]],",
+          "    P: [[P[0][0] + gain[0][0], P[0][1] + gain[0][1]], [P[1][0] + gain[1][0], P[1][1] + gain[1][1]]],",
+          "  };",
+          "}"
+        )),
+      ],
+      hints: ["Pp is the forward prediction of P: F P Fᵀ + Q.", "K = P Fᵀ Pp⁻¹ using matMul2 and matInv2.", "x += K (xNext − F x); P += K (PNext − Pp) Kᵀ."],
+      cases: [
+        example([[0, 1], M2_I, [1, 1], P_STRAIGHT_2, F_UNIT, M2_ZERO], { x: [0, 1], P: M2_I }, "next state agrees"),
+        example([[0, 1], M2_I, [2, 1], P_STRAIGHT_2, F_UNIT, M2_ZERO], { x: [1, 1], P: M2_I }, "next state further ahead"),
+        example([[0, 0], M2_I, [0, 0], M2_I, M2_I, M2_I], { x: [0, 0], P: [[0.75, 0], [0, 0.75]] }, "tighter future shrinks P"),
+        example([[0, 0], M2_I, [0, 0], M2_I, F_UNIT, M2_ZERO], { x: [0, 0], P: [[2, -1], [-1, 1]] }, "correlated correction"),
+      ],
+    }),
+  ];
+
+  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7, TOOLKIT_8, TOOLKIT_9, TOOLKIT_10, TOOLKIT_11, TOOLKIT_12, ADVANCED_13, ADVANCED_14, ADVANCED_15, CORRECTION_16, CORRECTION_17, CORRECTION_18, ESTIMATION_19, ESTIMATION_20, ESTIMATION_21, BAYES_22, BAYES_23, BAYES_24));
   const byId = new Map(PUZZLES.map((entry) => [entry.id, entry]));
 
   function getPuzzle(id) {

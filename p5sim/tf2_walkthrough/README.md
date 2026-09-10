@@ -65,6 +65,14 @@ Track 5 (Uncertainty & Estimation) adds puzzles 76 to 87, unlocked by the map â†
 20. Uncertainty: predictCovariance (F P Fáµ€ + Q), composeUncertain, mahalanobisDistance, covarianceEllipse.
 21. Estimation: ekfPredict, ekfUpdatePosition, particleWeights, resampleLowVariance, ekfLocalizeStep.
 
+Track 6 (Bayesian Filters) adds puzzles 88 to 102, unlocked by the EKF localization step, and follows *Kalman and Bayesian Filters in Python* (`references/Kalman-and-Bayesian-Filters-in-Python-master`) chapter by chapter:
+
+22. Scalar filters: ghFilterStep, discretePredict, discreteUpdate, gaussianMultiply, kalman1dStep.
+23. Multivariate Kalman: matMul2, matInv2, constantVelocityModel, kfPredict, kfUpdate, kalmanTrackStep (the dog tracker).
+24. Nonlinear and smoothing: sigmaPoints, unscentedTransform, unscentedPolarToCartesian, rtsSmootherStep.
+
+Track 5's covariance, EKF, and particle puzzles carry an "Also read" link into the book's matching chapter.
+
 Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
 
 Puzzle code is plain JavaScript, but the p5 math vocabulary is available: `PI`, `TWO_PI`, `HALF_PI`, `sin`, `cos`, `atan2`, `sqrt`, `dist`, `radians`, `degrees`, `lerp`, `map`, `constrain`, and friends. Drawing and vector helpers such as `createVector` or `push` are not, because results must be plain `{ x, y }` objects. The editor colours syntax, indents on Enter, and handles Tab and Shift+Tab.

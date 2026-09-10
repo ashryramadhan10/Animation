@@ -211,14 +211,16 @@
     list.forEach((puzzle, index) => {
       assert(puzzle.number === index + 1, puzzle.id + " has number " + puzzle.number);
       assert(!seen.has(puzzle.id), "duplicate id " + puzzle.id);
-      assert(["tf2", "toolkit", "advanced", "correction", "estimation"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
+      assert(["tf2", "toolkit", "advanced", "correction", "estimation", "bayes"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
       puzzle.dependencies.forEach((dependency) => assert(seen.has(dependency), puzzle.id + " depends on unknown or later puzzle " + dependency));
       seen.add(puzzle.id);
       assert(api.getPuzzle(puzzle.id) === puzzle, "getPuzzle should resolve " + puzzle.id);
     });
     const stageIds = api.TF2_PUZZLE_TRACKS.flatMap((track) => track.stages.map((stage) => stage.id));
     list.forEach((puzzle) => assert(stageIds.includes(puzzle.stage), puzzle.id + " has unknown stage " + puzzle.stage));
-    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "correction", "estimation"]);
+    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "correction", "estimation", "bayes"]);
+    assert(api.TF2_PUZZLE_TRACKS[5].unlockAfter === "ekf-localize-step", "track 6 unlocks after the EKF localization step");
+    assert(api.TF2_PUZZLE_TRACKS[5].stages.length === 3, "track 6 lists three stages");
     assert(api.TF2_PUZZLE_TRACKS[4].unlockAfter === "aisle-correction-step", "track 5 unlocks after the map → odom capstone");
     assert(api.TF2_PUZZLE_TRACKS[4].stages.length === 3, "track 5 lists three stages");
     assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
@@ -362,12 +364,12 @@
     const list = puzzleList();
     const tracks = puzzlesApi().TF2_PUZZLE_TRACKS;
     let progress = api.createProgress();
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked", "locked", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked", "locked", "locked", "locked"]);
     progress = api.completePuzzle(progress, list[0], "function headingVector(yaw) { return null; }", "2026-09-08T00:00:00Z", list);
     same(progress.highestUnlocked, 1);
     same(progress.currentPuzzleId, "heading-of");
     progress = api.completePuzzle(progress, list[26], "source", "2026-09-08T00:00:00Z", list);
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked", "locked", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked", "locked", "locked", "locked"]);
     const reset = api.resetPuzzle(progress, list, "heading-vector");
     assert(!reset.progress.solved["heading-vector"] && reset.invalidated.includes("heading-vector"), "reset clears the puzzle");
   });
@@ -744,7 +746,7 @@
     same(idsInRange(76, 78), ["diff-drive-twist", "integrate-gyro", "twist-in-sensor-frame"]);
     same(idsInRange(79, 82), ["covariance-propagate-motion", "compose-uncertain", "mahalanobis-distance", "covariance-ellipse"]);
     same(idsInRange(83, 87), ["ekf-predict", "ekf-update-position", "particle-weights", "resample-particles", "ekf-localize-step"]);
-    assert(puzzleList().length === 87, "catalog should hold 87 puzzles");
+    assert(puzzleList().length >= 87, "catalog should hold at least 87 puzzles");
   });
 
   test("catalog stages 19 to 21 references pass their cases and diagnoses differ", () => {
@@ -764,6 +766,44 @@
     const resample = puzzlesApi().getPuzzle("resample-particles");
     const list = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }];
     same(referenceOutput(resample, [list, [0.25, 0.25, 0.25, 0.25], 0.1]), list);
+  });
+
+  // ---------------------------------------------------------------- bayesian filters track
+  test("catalog track 6 contains the scalar, multivariate, and nonlinear ladders", () => {
+    same(idsInRange(88, 92), ["gh-filter-step", "discrete-predict", "discrete-update", "gaussian-multiply", "kalman-1d-step"]);
+    same(idsInRange(93, 98), ["mat-mul-2", "mat-inv-2", "constant-velocity-model", "kf-predict", "kf-update", "kalman-track-step"]);
+    same(idsInRange(99, 102), ["sigma-points", "unscented-transform", "unscented-polar", "rts-smoother-step"]);
+    assert(puzzleList().length === 102, "catalog should hold 102 puzzles");
+    puzzleList().filter((puzzle) => puzzle.track === "bayes").forEach((puzzle) => {
+      assert(/rlabbe\/Kalman-and-Bayesian-Filters-in-Python/.test(puzzle.reference.url), puzzle.id + " should link the book");
+    });
+    ["covariance-propagate-motion", "compose-uncertain", "covariance-ellipse", "ekf-predict", "ekf-update-position", "ekf-localize-step", "particle-weights", "resample-particles"].forEach((id) => {
+      const puzzle = puzzlesApi().getPuzzle(id);
+      assert(puzzle.reading && typeof puzzle.reading.label === "string" && /^https:\/\//.test(puzzle.reading.url), id + " should carry an also-read link");
+    });
+    puzzleList().forEach((puzzle) => {
+      const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
+      assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes; only three fit on the canvas");
+    });
+  });
+
+  test("catalog stages 22 to 24 references pass their cases and diagnoses differ", () => {
+    checkStageRange(88, 102);
+  });
+
+  test("scenes: bayes views build valid arguments and analytic checks hold", () => {
+    checkSceneKinds(["bayes"]);
+    const api = puzzlesApi();
+    const sigma = referenceOutput(api.getPuzzle("sigma-points"), [{ x: 1, y: -0.5 }, [[0.6, 0.25], [0.25, 0.4]], 0.7, 2, 1]);
+    const back = referenceOutput(api.getPuzzle("unscented-transform"), [sigma.points, sigma.wm, sigma.wc]);
+    near(back.mean.x, 1); near(back.mean.y, -0.5); near(back.P[0][0], 0.6); near(back.P[0][1], 0.25); near(back.P[1][1], 0.4);
+    const step = referenceOutput(api.getPuzzle("kalman-1d-step"), [{ mean: 0, variance: 1 }, { mean: 1, variance: 0 }, 2, 1]);
+    const gain = 1 / (1 + 1);
+    near(step.mean, 1 + gain * (2 - 1)); near(step.variance, (1 - gain) * 1);
+    const rts = referenceOutput(api.getPuzzle("rts-smoother-step"), [[0, 1], [[1, 0], [0, 1]], [1, 1], [[2, 1], [1, 1]], [[1, 1], [0, 1]], [[0, 0], [0, 0]]]);
+    near(rts.x[0], 0); near(rts.x[1], 1); near(rts.P[0][0], 1); near(rts.P[0][1], 0); near(rts.P[1][1], 1);
+    const predicted = referenceOutput(api.getPuzzle("discrete-predict"), [[0.1, 0.2, 0.3, 0.4], 2, [0.2, 0.7, 0.1]]);
+    near(predicted.reduce((sum, p) => sum + p, 0), 1);
   });
 
   async function runAllTests() {

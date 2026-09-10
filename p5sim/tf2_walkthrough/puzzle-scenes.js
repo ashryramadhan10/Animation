@@ -71,6 +71,12 @@
       if (Number.isFinite(value.angle) && Number.isFinite(value.major) && Number.isFinite(value.minor)) return "angle " + degrees(value.angle) + " · major " + fmt(value.major) + " · minor " + fmt(value.minor);
       if (value.transform && Array.isArray(value.covariance)) return fmtTransform(value.transform) + " · σx " + fmt(Math.sqrt(Math.max(0, value.covariance[0][0]))) + " σy " + fmt(Math.sqrt(Math.max(0, value.covariance[1][1])));
       if (Number.isFinite(value.v) && Number.isFinite(value.omega)) return "v " + fmt(value.v) + " m/s · ω " + fmt(value.omega) + " rad/s";
+      if (Number.isFinite(value.mean) && Number.isFinite(value.variance)) return "mean " + fmt(value.mean) + " · σ " + fmt(Math.sqrt(Math.max(0, value.variance)));
+      if (Number.isFinite(value.x) && Number.isFinite(value.dx)) return "x " + fmt(value.x) + " · dx " + fmt(value.dx);
+      if (Array.isArray(value.x) && Array.isArray(value.P)) return "pos " + fmt(value.x[0]) + " vel " + fmt(value.x[1]) + " · σpos " + fmt(Math.sqrt(Math.max(0, value.P[0][0]))) + " σvel " + fmt(Math.sqrt(Math.max(0, value.P[1][1])));
+      if (Array.isArray(value.F) && Array.isArray(value.Q)) return "F " + describe(value.F) + " · Q " + describe(value.Q);
+      if (Array.isArray(value.points) && Array.isArray(value.wm)) return value.points.length + " sigma points · wm₀ " + fmt(value.wm[0]) + " · wc₀ " + fmt(Array.isArray(value.wc) ? value.wc[0] : NaN);
+      if (isPoint(value.mean) && Array.isArray(value.P)) return "mean " + fmtPoint(value.mean) + " · σx " + fmt(Math.sqrt(Math.max(0, value.P[0][0]))) + " σy " + fmt(Math.sqrt(Math.max(0, value.P[1][1])));
       if (value.transform && Number.isFinite(value.error)) return fmtTransform(value.transform) + " · error " + fmt(value.error);
       if ("roll" in value && "pitch" in value && "yaw" in value) return "roll " + degrees(value.roll) + " · pitch " + degrees(value.pitch) + " · yaw " + degrees(value.yaw);
       if (value.axis && Number.isFinite(value.angle)) return "axis " + fmtVector3(value.axis) + " · " + degrees(value.angle);
@@ -853,7 +859,7 @@
       } else if (view === "gyro") {
         const omega = se3Scene.fixtures.omegaFromSliders(context.values);
         const rate = Math.hypot(omega.x, omega.y, omega.z);
-        if (rate > 1e-9) out.push(arrow3d(ORIGIN3, scaled3({ x: omega.x / rate, y: omega.y / rate, z: omega.z / rate }, 1.4), "ω axis · " + fmt(rate) + " rad/s × " + fmt(context.values.dt) + " s", "input"));
+        if (rate > 1e-9) out.push(arrow3d(ORIGIN3, scaled3({ x: omega.x / rate, y: omega.y / rate, z: omega.z / rate }, 1.4), "ω axis · " + fmt(rate) + " rad/s × 0.80 s", "input"));
         if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
         if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
       } else {
@@ -1505,6 +1511,209 @@
       return out;
     },
   };
+  // ------------------------------------------------------------ bayesian filters
+  const HALLWAY = [1, 1, 0, 0, 0, 0, 0, 0, 1, 0];
+  const HALL_BELIEF = [0.05, 0.05, 0.4, 0.3, 0.1, 0.04, 0.02, 0.02, 0.01, 0.01];
+  const HALL_LEFT = -4.5, HALL_STEP = 1, HALL_BASE = -1.6, HALL_HEIGHT = 3.2;
+  const KF_P0 = [[0.8, 0.3], [0.3, 0.5]];
+  const KF_P_UPDATE = [[1.2, 0.6], [0.6, 0.8]];
+  const RTS_P = [[0.6, 0.2], [0.2, 0.4]];
+  const RTS_P_NEXT = [[0.5, 0.1], [0.1, 0.3]];
+  const RTS_F = [[1, 1], [0, 1]];
+  const RTS_Q = [[0.05, 0.05], [0.05, 0.1]];
+  const UT_P = [[0.6, 0.25], [0.25, 0.4]];
+  function isGaussian1(v) { return Boolean(v) && typeof v === "object" && Number.isFinite(v.mean) && Number.isFinite(v.variance) && v.variance > 0; }
+  function isGh(v) { return Boolean(v) && typeof v === "object" && Number.isFinite(v.x) && Number.isFinite(v.dx); }
+  function isVec2(v) { return Array.isArray(v) && v.length === 2 && v.every(Number.isFinite); }
+  function isKfState(v) { return Boolean(v) && typeof v === "object" && isVec2(v.x) && isMatrix(v.P, 2); }
+  function isModel(v) { return Boolean(v) && typeof v === "object" && isMatrix(v.F, 2) && isMatrix(v.Q, 2); }
+  function isSigmaSet(v) { return Boolean(v) && typeof v === "object" && isCloud(v.points) && Array.isArray(v.wm) && Array.isArray(v.wc); }
+  function isMeanCov(v) { return Boolean(v) && typeof v === "object" && isPoint(v.mean) && isMatrix(v.P, 2); }
+  function isBelief(v) { return Array.isArray(v) && v.length > 0 && v.every(Number.isFinite); }
+  function hallX(i) { return HALL_LEFT + i * HALL_STEP; }
+  function barLayers(values, style, options) {
+    const opts = options || {};
+    const shift = opts.shift || 0;
+    const pairs = values.map((p, i) => [{ x: hallX(i) + shift, y: HALL_BASE }, { x: hallX(i) + shift, y: HALL_BASE + HALL_HEIGHT * Math.max(0, p) }]);
+    return [segments(pairs, style, { weight: opts.weight || 8, alpha: opts.alpha })];
+  }
+  function gaussianCurve(g, baseline, style, options) {
+    const pairs = [];
+    let previous = null;
+    for (let i = 0; i <= 88; i += 1) {
+      const x = -5.5 + i * 0.125;
+      const current = { x, y: baseline + 2.5 * Math.exp(-(x - g.mean) * (x - g.mean) / (2 * g.variance)) / Math.sqrt(2 * Math.PI * g.variance) };
+      if (previous) pairs.push([previous, current]);
+      previous = current;
+    }
+    return segments(pairs, style, { weight: (options && options.weight) || 2, dashed: options && options.dashed });
+  }
+  function mul2(a, b) { return [[a[0][0] * b[0][0] + a[0][1] * b[1][0], a[0][0] * b[0][1] + a[0][1] * b[1][1]], [a[1][0] * b[0][0] + a[1][1] * b[1][0], a[1][0] * b[0][1] + a[1][1] * b[1][1]]]; }
+  function transpose2(m) { return [[m[0][0], m[1][0]], [m[0][1], m[1][1]]]; }
+  function add2(a, b) { return [[a[0][0] + b[0][0], a[0][1] + b[0][1]], [a[1][0] + b[1][0], a[1][1] + b[1][1]]]; }
+  function apply2(m, v) { return [m[0][0] * v[0] + m[0][1] * v[1], m[1][0] * v[0] + m[1][1] * v[1]]; }
+  function cvQ(dt, variance) { const dt2 = dt * dt, dt3 = dt2 * dt, dt4 = dt3 * dt; return [[variance * dt4 / 4, variance * dt3 / 2], [variance * dt3 / 2, variance * dt2]]; }
+  function kfPredictJs(x, P, F, Q) { return { x: apply2(F, x), P: add2(mul2(mul2(F, P), transpose2(F)), Q) }; }
+  function merweSigmaPoints(mean, P, alpha, beta, kappa) {
+    const n = 2, lambda = alpha * alpha * (n + kappa) - n, scale = n + lambda;
+    const a = scale * P[0][0], b = scale * P[0][1], d = scale * P[1][1];
+    const u00 = Math.sqrt(a), u01 = b / u00, u11 = Math.sqrt(Math.max(0, d - u01 * u01));
+    const rows = [{ x: u00, y: u01 }, { x: 0, y: u11 }];
+    const points = [{ x: mean.x, y: mean.y }];
+    rows.forEach((row) => points.push({ x: mean.x + row.x, y: mean.y + row.y }));
+    rows.forEach((row) => points.push({ x: mean.x - row.x, y: mean.y - row.y }));
+    const wi = 1 / (2 * scale);
+    return { points, wm: [lambda / scale, wi, wi, wi, wi], wc: [lambda / scale + 1 - alpha * alpha + beta, wi, wi, wi, wi] };
+  }
+  function polarToCartesian(p) { return { x: p.x * Math.cos(p.y), y: p.x * Math.sin(p.y) }; }
+  function vecPoint(vec) { return { x: vec[0], y: vec[1] }; }
+  function kfEllipse(state, style, options) { return ellipse(vecPoint(state.x), state.P, style, options); }
+  function stateSpaceAxes() { return [label("position →", "muted", { at: { x: 4.3, y: -0.25 } }), label("↑ velocity", "muted", { at: { x: 0.12, y: 3.45 } })]; }
+  const bayesScene = {
+    fixtures: {
+      ghPrior: () => -2,
+      ghVelocity: () => 1,
+      hallBelief: () => HALL_BELIEF.slice(),
+      hallOffset: (values) => Math.round(values.offset),
+      hallKernel: (values) => [(1 - values.pCorrect) / 2, values.pCorrect, (1 - values.pCorrect) / 2],
+      doorLikelihood: (values) => HALLWAY.map((cell) => (cell === 1 ? values.trust : 1)),
+      gaussA: (values) => ({ mean: values.meanA, variance: values.varianceA }),
+      gaussB: (values) => ({ mean: values.meanB, variance: 0.5 }),
+      prior1d: () => ({ mean: -2, variance: 1 }),
+      movement1d: (values) => ({ mean: values.move, variance: 0.3 }),
+      shearA: () => [[1, 0.5], [0, 1]],
+      matrixFromColumns: (values) => [[values.col1.x, values.col2.x], [values.col1.y, values.col2.y]],
+      stateVec: (values) => [values.state.x, values.state.y],
+      kfP0: () => KF_P0,
+      kfPUpdate: () => KF_P_UPDATE,
+      cvF: (values) => [[1, values.dt], [0, 1]],
+      cvQ: (values) => cvQ(values.dt, 0.1),
+      hPosition: () => [[1, 0]],
+      utP: () => UT_P,
+      utPoints: (values) => merweSigmaPoints(values.mean, UT_P, 1, 2, 1).points,
+      utWm: (values) => merweSigmaPoints(values.mean, UT_P, 1, 2, 1).wm,
+      utWc: (values) => merweSigmaPoints(values.mean, UT_P, 1, 2, 1).wc,
+      polarMean: (values) => ({ x: values.range, y: values.bearing }),
+      polarP: (values) => [[0.09, 0], [0, values.sigmaTheta * values.sigmaTheta]],
+      rtsX: (values) => [values.x.x, values.x.y],
+      rtsXNext: (values) => [values.xNext.x, values.xNext.y],
+      rtsP: () => RTS_P,
+      rtsPNext: () => RTS_P_NEXT,
+      rtsF: () => RTS_F,
+      rtsQ: () => RTS_Q,
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const values = context.values;
+      const out = laneLayers(context.puzzle, values);
+      const style = resultStyle(context);
+      const text = resultLabel(context);
+      const origin = { x: 0, y: 0 };
+      if (view === "gh") {
+        const prior = bayesScene.fixtures.ghPrior(), velocity = bayesScene.fixtures.ghVelocity();
+        const prediction = prior + velocity;
+        out.push(segments([[{ x: -5.2, y: 0 }, { x: 5.2, y: 0 }]], "muted", { weight: 1 }));
+        out.push(marker({ x: prior, y: 0 }, "prior x " + fmt(prior), "muted"), arrow({ x: prior, y: 0 }, { x: prediction, y: 0 }, "muted", { dashed: true, weight: 1 }), marker({ x: prediction, y: 0 }, "prediction " + fmt(prediction), "muted", { dashed: true }));
+        out.push(marker({ x: values.z, y: 0 }, "z " + fmt(values.z), "input", { height: 0.35 }));
+        const drawEstimate = (result, row, styleName, dashed, name) => {
+          const at = { x: result.x, y: row };
+          out.push(marker(at, name + " x " + fmt(result.x) + " · dx " + fmt(result.dx), styleName, { dashed, height: 0.25 }), arrow(at, { x: result.x + result.dx, y: row }, styleName, { dashed, weight: dashed ? 2 : 3 }));
+        };
+        if (isGh(context.expected)) drawEstimate(context.expected, 1, "expected", true, "expected");
+        if (isGh(context.actual)) drawEstimate(context.actual, -1, style, false, text);
+        out.push(label("prior dx 1 · dt 1 · g " + fmt(values.g) + " · h " + fmt(values.h) + " · arrows show the new dx", "muted", { row: 3 }));
+      } else if (view === "hallway-predict" || view === "hallway-update") {
+        HALLWAY.forEach((cell, i) => { if (cell === 1) out.push(shade({ x: hallX(i) - 0.45, y: HALL_BASE - 0.5 }, { x: hallX(i) + 0.45, y: HALL_BASE - 0.1 }, "input")); });
+        out.push(label("doors shaded · the hallway wraps around", "muted", { at: { x: HALL_LEFT - 0.4, y: HALL_BASE - 0.75 } }));
+        out.push(...barLayers(HALL_BELIEF, "muted", { shift: -0.22, alpha: 150 }));
+        if (view === "hallway-predict") out.push(label("prior (grey) · move " + bayesScene.fixtures.hallOffset(values) + " cells · kernel [" + bayesScene.fixtures.hallKernel(values).map(fmt).join(", ") + "]", "muted", { row: 3 }));
+        else out.push(label("prior (grey) · the sensor saw a door · door cells weighted ×" + fmt(values.trust), "muted", { row: 3 }));
+        if (isBelief(context.expected)) out.push(...barLayers(context.expected, "expected", { shift: 0, alpha: 170 }));
+        if (isBelief(context.actual)) out.push(...barLayers(context.actual, style, { shift: 0.22 }));
+      } else if (view === "gaussians" || view === "kalman-1d") {
+        const base = -1.7;
+        out.push(segments([[{ x: -5.5, y: base }, { x: 5.5, y: base }]], "muted", { weight: 1 }));
+        if (view === "gaussians") {
+          const a = bayesScene.fixtures.gaussA(values), b = bayesScene.fixtures.gaussB(values);
+          out.push(gaussianCurve(a, base, "input"), gaussianCurve(b, base, "input"), label("a", "input", { at: { x: a.mean, y: base - 0.28 } }), label("b (variance 0.5)", "input", { at: { x: b.mean, y: base - 0.5 } }));
+        } else {
+          const prior = bayesScene.fixtures.prior1d(), movement = bayesScene.fixtures.movement1d(values);
+          const predicted = { mean: prior.mean + movement.mean, variance: prior.variance + movement.variance };
+          out.push(gaussianCurve(prior, base, "muted"), gaussianCurve(predicted, base, "muted", { dashed: true }), gaussianCurve({ mean: values.z, variance: values.R }, base, "input"));
+          out.push(label("prior", "muted", { at: { x: prior.mean, y: base - 0.28 } }), label("predicted", "muted", { at: { x: predicted.mean, y: base - 0.5 } }), label("z", "input", { at: { x: values.z, y: base - 0.28 } }));
+        }
+        if (isGaussian1(context.expected)) out.push(gaussianCurve(context.expected, base, "expected", { dashed: true }));
+        if (isGaussian1(context.actual)) out.push(gaussianCurve(context.actual, base, style, { weight: 3 }));
+        out.push(label(view === "gaussians" ? "curves are scaled pdfs · the result is the product of a and b" : "curves are scaled pdfs · movement variance 0.3", "muted", { row: 3 }));
+      } else if (view === "matrix2") {
+        const m = bayesScene.fixtures.matrixFromColumns(values);
+        const columnsOf = (mat) => [{ x: mat[0][0], y: mat[1][0] }, { x: mat[0][1], y: mat[1][1] }];
+        const drawColumns = (mat, styleName, dashed, name) => {
+          columnsOf(mat).forEach((column, i) => out.push(arrow(origin, column, styleName, { dashed, weight: dashed ? 2 : 3 }), label(name + " c" + (i + 1), styleName, { at: add(column, { x: 0.1, y: 0.2 }) })));
+        };
+        const product = context.puzzle.id === "mat-mul-2";
+        if (product) drawColumns(bayesScene.fixtures.shearA(), "muted", true, "A");
+        drawColumns(m, "input", false, product ? "B" : "M");
+        if (isMatrix(context.expected, 2)) drawColumns(context.expected, "expected", true, "expected");
+        if (isMatrix(context.actual, 2)) drawColumns(context.actual, style, false, text);
+        out.push(label(product ? "A = [[1, 0.5], [0, 1]] · columns of A·B are A applied to B's columns" : "M · yours must be the identity", "muted", { row: 3 }));
+      } else if (view === "cv-model") {
+        const unitState = { x: 1, y: 1 };
+        out.push(...stateSpaceAxes(), arrow(origin, unitState, "input", { weight: 2 }), label("state (1, 1)", "input", { at: add(unitState, { x: 0.1, y: 0.2 }) }));
+        const drawModel = (model, styleName, dashed, name) => {
+          const moved = vecPoint(apply2(model.F, [unitState.x, unitState.y]));
+          out.push(arrow(origin, moved, styleName, { dashed, weight: dashed ? 2 : 3 }), label(name + " F·state", styleName, { at: add(moved, { x: 0.1, y: 0.2 }) }), ellipse(origin, model.Q, styleName, { scale: 1, dashed, label: name + " Q 1σ" }));
+        };
+        if (isModel(context.expected)) drawModel(context.expected, "expected", true, "expected");
+        if (isModel(context.actual)) drawModel(context.actual, style, false, text);
+        out.push(label("dt " + fmt(values.dt) + " · process variance " + fmt(values.variance), "muted", { row: 3 }));
+      } else if (view === "kf-predict" || view === "kf-update" || view === "kf-track") {
+        const state = [values.state.x, values.state.y];
+        const priorP = view === "kf-update" ? KF_P_UPDATE : KF_P0;
+        out.push(...stateSpaceAxes(), point(values.state, "prior", "input"), ellipse(values.state, priorP, "input", { label: "prior 2σ" }));
+        if (view !== "kf-predict") {
+          const spread = Math.sqrt(values.R);
+          out.push(shade({ x: values.z - spread, y: -3.6 }, { x: values.z + spread, y: 3.6 }, "input"), segments([[{ x: values.z, y: -3.6 }, { x: values.z, y: 3.6 }]], "input", { weight: 1, dashed: true }), label("z " + fmt(values.z) + " ± √R", "input", { at: { x: values.z + 0.1, y: 3.2 } }));
+        }
+        if (view === "kf-track") {
+          const predicted = kfPredictJs(state, KF_P0, RTS_F, cvQ(1, 0.1));
+          out.push(point(vecPoint(predicted.x), "predicted", "muted", { dashed: true }), ellipse(vecPoint(predicted.x), predicted.P, "muted", { dashed: true }));
+        }
+        if (isKfState(context.expected)) out.push(point(vecPoint(context.expected.x), "expected", "expected", { dashed: true }), kfEllipse(context.expected, "expected", { dashed: true }));
+        if (isKfState(context.actual)) out.push(point(vecPoint(context.actual.x), text, style), kfEllipse(context.actual, style));
+      } else if (view === "sigma-points" || view === "unscented") {
+        const mean = values.mean;
+        out.push(point(mean, "mean", "input"), ellipse(mean, UT_P, "input", { scale: 1, label: "P 1σ" }));
+        if (view === "unscented") out.push(pointsPrimitive(bayesScene.fixtures.utPoints(values), "input", { size: 8, label: "sigma points (input)" }));
+        else out.push(label("α " + fmt(values.alpha) + " · β 2 · κ " + fmt(values.kappa), "muted", { row: 3 }));
+        if (isSigmaSet(context.expected)) out.push(pointsPrimitive(context.expected.points, "expected", { size: 10, alpha: 140, label: "expected" }));
+        if (isSigmaSet(context.actual)) out.push(pointsPrimitive(context.actual.points, style, { size: 5, label: text }));
+        if (isMeanCov(context.expected)) out.push(point(context.expected.mean, "expected", "expected", { dashed: true }), ellipse(context.expected.mean, context.expected.P, "expected", { scale: 1, dashed: true }));
+        if (isMeanCov(context.actual)) out.push(point(context.actual.mean, text, style), ellipse(context.actual.mean, context.actual.P, style, { scale: 1 }));
+      } else if (view === "polar") {
+        const mean = bayesScene.fixtures.polarMean(values), P = bayesScene.fixtures.polarP(values);
+        const boundary = [];
+        for (let i = 0; i < 60; i += 1) {
+          const t = i / 60 * 2 * Math.PI;
+          boundary.push(polarToCartesian({ x: mean.x + 0.3 * Math.cos(t), y: mean.y + values.sigmaTheta * Math.sin(t) }));
+        }
+        out.push(point(origin, "sensor", "muted"), pointsPrimitive(boundary, "muted", { size: 3, label: "true 1σ boundary" }), point(polarToCartesian(mean), "f(mean)", "muted", { dashed: true }));
+        out.push(pointsPrimitive(merweSigmaPoints(mean, P, 1, 2, 1).points.map(polarToCartesian), "input", { size: 7, label: "sigma points through f" }));
+        if (isMeanCov(context.expected)) out.push(point(context.expected.mean, "expected", "expected", { dashed: true }), ellipse(context.expected.mean, context.expected.P, "expected", { scale: 1, dashed: true }));
+        if (isMeanCov(context.actual)) out.push(point(context.actual.mean, text, style), ellipse(context.actual.mean, context.actual.P, style, { scale: 1 }));
+        out.push(label("range " + fmt(values.range) + " · bearing " + degrees(values.bearing) + " · σ range 0.3 · σ bearing " + fmt(values.sigmaTheta) + " · α 1 β 2 κ 1", "muted", { row: 3 }));
+      } else if (view === "rts") {
+        const x = [values.x.x, values.x.y];
+        const predicted = kfPredictJs(x, RTS_P, RTS_F, RTS_Q);
+        out.push(...stateSpaceAxes(), point(values.x, "filtered k", "input"), ellipse(values.x, RTS_P, "input", { label: "P k" }), point(values.xNext, "smoothed k+1", "input"), ellipse(values.xNext, RTS_P_NEXT, "input", { label: "P k+1" }));
+        out.push(arrow(values.x, vecPoint(predicted.x), "muted", { dashed: true, weight: 1 }), point(vecPoint(predicted.x), "F·x k", "muted", { dashed: true }), ellipse(vecPoint(predicted.x), predicted.P, "muted", { dashed: true }));
+        if (isKfState(context.expected)) out.push(point(vecPoint(context.expected.x), "expected smoothed k", "expected", { dashed: true }), kfEllipse(context.expected, "expected", { dashed: true }));
+        if (isKfState(context.actual)) out.push(point(vecPoint(context.actual.x), text, style), kfEllipse(context.actual, style));
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -1535,6 +1744,7 @@
     "buffer": bufferScene,
     "aisle": aisleScene,
     "estimation": estimationScene,
+    "bayes": bayesScene,
   };
 
   function layers(context) {

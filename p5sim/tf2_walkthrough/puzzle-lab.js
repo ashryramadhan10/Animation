@@ -22,7 +22,7 @@
   const dom = {};
   const ids = [
     "saveStatus", "stageMap", "puzzleCounter", "puzzleNumber", "puzzleStage", "puzzleTitle",
-    "puzzleGoal", "puzzleConcept", "puzzleSignature", "walkthroughLink", "referenceLink", "curriculumHeading", "canvasHost", "selectorStrip", "runState",
+    "puzzleGoal", "puzzleConcept", "puzzleSignature", "walkthroughLink", "referenceLink", "readingLink", "curriculumHeading", "canvasHost", "selectorStrip", "runState",
     "componentShelf", "componentCount", "codeEditor", "runButton", "checkButton", "resetCodeButton",
     "hintButton", "hintPanel", "feedbackPanel", "caseComparison", "previousPuzzle", "previousPuzzleLabel",
     "nextPuzzle", "nextPuzzleLabel", "resetProgress", "solvedCount", "progressFill", "lineStatus",
@@ -242,6 +242,13 @@
       dom.referenceLink.hidden = false;
     } else {
       dom.referenceLink.hidden = true;
+    }
+    if (puzzle.reading) {
+      dom.readingLink.href = puzzle.reading.url;
+      dom.readingLink.textContent = "Also read: " + puzzle.reading.label + " ↗";
+      dom.readingLink.hidden = false;
+    } else {
+      dom.readingLink.hidden = true;
     }
     if (!settings.keepEditor) {
       dom.codeEditor.value = progress.drafts[puzzle.id] || progress.sources[puzzle.id] || puzzle.starterSource;
