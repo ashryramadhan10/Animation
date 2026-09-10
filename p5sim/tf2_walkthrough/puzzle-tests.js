@@ -99,7 +99,9 @@
   });
 
   // ---------------------------------------------------------------- catalog helpers
-  function puzzlesApi() { return requireApi(catalog, "puzzles.js"); }
+  let catalogOverride = null;
+  function puzzlesApi() { return catalogOverride || requireApi(catalog, "puzzles.js"); }
+  function withCatalog(api, run) { const previous = catalogOverride; catalogOverride = api; try { return run(); } finally { catalogOverride = previous; } }
   function puzzleList() { return puzzlesApi().TF2_PUZZLES; }
   function referenceDependencies(puzzle) {
     const api = puzzlesApi();
@@ -804,6 +806,65 @@
     near(rts.x[0], 0); near(rts.x[1], 1); near(rts.P[0][0], 1); near(rts.P[0][1], 0); near(rts.P[1][1], 1);
     const predicted = referenceOutput(api.getPuzzle("discrete-predict"), [[0.1, 0.2, 0.3, 0.4], 2, [0.2, 0.7, 0.1]]);
     near(predicted.reduce((sum, p) => sum + p, 0), 1);
+  });
+
+  // ---------------------------------------------------------------- side lab (nature of code)
+  const sideCatalog = load("./side-puzzles.js", "SidePuzzles");
+  function sideApi() {
+    const api = requireApi(sideCatalog, "side-puzzles.js");
+    return { TF2_PUZZLES: api.SIDE_PUZZLES, TF2_PUZZLE_TRACKS: api.SIDE_PUZZLE_TRACKS, getPuzzle: api.getPuzzle };
+  }
+
+  test("catalog exports every stage that a puzzle uses", () => {
+    const api = puzzlesApi();
+    const ids = new Set(api.TF2_PUZZLE_STAGES.map((stage) => stage.id));
+    puzzleList().forEach((puzzle) => assert(ids.has(puzzle.stage), puzzle.id + " uses stage " + puzzle.stage + " that TF2_PUZZLE_STAGES does not list"));
+    same(api.TF2_PUZZLE_TRACKS.flatMap((track) => track.stages.map((stage) => stage.id)), api.TF2_PUZZLE_STAGES.map((stage) => stage.id));
+  });
+
+  test("side catalog lists the six sketch stages and validates", () => {
+    withCatalog(sideApi(), () => {
+      const engineApi = requireApi(engine, "puzzle-engine.js");
+      const status = engineApi.validateCatalog(puzzleList(), scenesApi().SCENE_KINDS);
+      assert(status.valid, status.message);
+      assert(puzzleList().length === 32, "side catalog should hold 32 puzzles");
+      same(puzzlesApi().TF2_PUZZLE_TRACKS.map((track) => track.id), ["nature"]);
+      same(idsInRange(1, 7), ["normalize", "set-magnitude", "limit-vector", "dot-product", "angle-between", "scalar-projection", "nearest-point-on-segment"]);
+      same(idsInRange(8, 13), ["apply-force", "step-mover", "friction-force", "drag-force", "gravitational-attraction", "wrap-edges"]);
+      same(idsInRange(14, 21), ["seek", "flee", "arrive", "pursue", "wander-target", "flow-field-lookup", "follow-field", "path-target"]);
+      same(idsInRange(22, 25), ["separate", "align", "cohere", "flock"]);
+      same(idsInRange(26, 29), ["simplify-angle", "constrain-angle", "chain-follow", "wrap-offset"]);
+      same(idsInRange(30, 32), ["bin-index", "histogram", "normalize-histogram"]);
+      puzzleList().forEach((puzzle) => {
+        assert(/^https:\/\//.test(puzzle.reference.url), puzzle.id + " needs a reference link");
+        assert(/^(agents|force|scalar_projection|procedural_animation|random_distribution)\//.test(puzzle.walkthroughChapter), puzzle.id + " should point at its source sketch");
+        const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
+        assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes");
+      });
+    });
+  });
+
+  test("side catalog references pass their cases and diagnoses differ", () => {
+    withCatalog(sideApi(), () => checkStageRange(1, 32));
+  });
+
+  test("scenes: nature views build valid arguments and analytic checks hold", () => {
+    withCatalog(sideApi(), () => {
+      checkSceneKinds(["nature"]);
+      const api = puzzlesApi();
+      const agent = { pos: { x: 0, y: 0 }, vel: { x: 0.5, y: 0 } };
+      const others = [{ pos: { x: 1, y: 0 }, vel: { x: 0, y: 1 } }, { pos: { x: 0, y: 1.5 }, vel: { x: 1, y: 0 } }];
+      const params = { separation: 1.2, neighbourRadius: 2.5, maxSpeed: 1.5, maxForce: 0.6 };
+      const parts = ["separate", "align", "cohere"].map((id) => referenceOutput(api.getPuzzle(id), [agent, others, id === "separate" ? params.separation : params.neighbourRadius, params.maxSpeed, params.maxForce]));
+      const combined = referenceOutput(api.getPuzzle("flock"), [agent, others, { separation: 1, alignment: 1, cohesion: 1 }, params]);
+      near(combined.x, parts[0].x + parts[1].x + parts[2].x); near(combined.y, parts[0].y + parts[1].y + parts[2].y);
+      const link = referenceOutput(api.getPuzzle("chain-follow"), [{ x: 1, y: 1 }, { x: 4, y: 3 }, 1.5, 0.2, 0.3]);
+      near(Math.hypot(link.pos.x - 1, link.pos.y - 1), 1.5);
+      const counts = referenceOutput(api.getPuzzle("histogram"), [[0.1, 0.2, 0.5, 0.9, 1], 0, 1, 5]);
+      near(counts.reduce((sum, c) => sum + c, 0), 5);
+      const nearest = referenceOutput(api.getPuzzle("nearest-point-on-segment"), [{ x: 2, y: 5 }, { x: 0, y: 0 }, { x: 4, y: 0 }]);
+      near(nearest.x, 2); near(nearest.y, 0);
+    });
   });
 
   async function runAllTests() {

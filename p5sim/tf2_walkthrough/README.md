@@ -88,6 +88,10 @@ Puzzle Lab keyboard controls:
 - Alt+Left / Alt+Right: move between unlocked puzzles.
 - Escape: dismiss transient detail.
 
+## Side Lab
+
+`side-lab.html` is a second lab that shares the engine, scenes, editor, and worker but keeps its own progress. It rebuilds the core of the `agents`, `force`, `scalar_projection`, `procedural_animation`, and `random_distribution` sketches as 32 puzzles in six stages: vectors, forces, steering, flocking, procedural chains, and randomness. Every puzzle links its Nature of Code chapter and opens the sketch file it came from. It is open from the start and does not depend on the TF2 tracks.
+
 ## Learning Route
 
 The thirteen chapters cover:

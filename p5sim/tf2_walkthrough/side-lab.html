@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="A p5.js coding puzzle lab for learning TF2 geometry from vectors to a time-aware transform buffer." />
-    <title>TF2 Puzzle Lab</title>
+    <meta name="description" content="A p5.js coding puzzle lab that rebuilds the vectors, forces, steering, flocking, joint-chain, and histogram sketches brick by brick." />
+    <title>Side Lab · Nature of Code Core</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="puzzle-lab.css" />
   </head>
@@ -12,16 +12,15 @@
     <main class="app-shell puzzle-shell">
       <header class="topbar lab-topbar">
         <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true">TF</span>
+          <span class="brand-mark" aria-hidden="true">NC</span>
           <div>
-            <p class="overline">Build geometry from tiny parts</p>
-            <h1>TF2 Puzzle Lab</h1>
+            <p class="overline">Revisit the sketches, brick by brick</p>
+            <h1>Side Lab</h1>
           </div>
         </div>
         <div class="top-actions">
           <span id="saveStatus" class="save-status" aria-live="polite">Saved locally</span>
-          <a class="button button-secondary" href="index.html">Walkthrough</a>
-          <a class="button button-secondary" href="side-lab.html">Side Lab</a>
+          <a class="button button-secondary" href="puzzle-lab.html">TF2 Puzzle Lab</a>
         </div>
       </header>
 
@@ -29,7 +28,7 @@
         <aside class="curriculum-card" aria-labelledby="curriculumHeading">
           <div class="lab-card-heading">
             <div>
-              <p class="card-kicker">Three tracks, one ladder</p>
+              <p class="card-kicker">One side track, open from the start</p>
               <h2 id="curriculumHeading">Geometry builds</h2>
             </div>
             <span id="puzzleCounter" class="counter-pill">01 / 27</span>
@@ -53,7 +52,7 @@
               <p id="puzzleConcept" class="puzzle-concept"></p>
               <div class="brief-links">
                 <code id="puzzleSignature" class="signature"></code>
-                <a id="walkthroughLink" class="concept-link" href="index.html">Review concept ↗</a>
+                <a id="walkthroughLink" class="concept-link" href="../agents/vehicle.js" target="_blank" rel="noopener">Open the sketch ↗</a>
                 <a id="referenceLink" class="concept-link" href="#" target="_blank" rel="noopener" hidden>Reference ↗</a>
                 <a id="readingLink" class="concept-link" href="#" target="_blank" rel="noopener" hidden>Also read ↗</a>
               </div>
@@ -148,12 +147,23 @@
     </main>
 
     <script src="../libraries/p5.min.js"></script>
-    <script src="puzzles.js"></script>
+    <script src="side-puzzles.js"></script>
     <script src="puzzle-runtime.js"></script>
     <script src="puzzle-engine.js"></script>
     <script src="puzzle-scenes.js"></script>
     <script src="puzzle-sketch.js"></script>
     <script src="puzzle-editor.js"></script>
+    <script>
+      window.PUZZLE_LAB_CONFIG = {
+        puzzles: window.SIDE_PUZZLES,
+        tracks: window.SIDE_PUZZLE_TRACKS,
+        storageKey: "side-lab:v1",
+        title: "Side Lab",
+        heading: "sketch builds",
+        resetNote: "The TF2 Puzzle Lab is not affected.",
+        conceptLink: function (puzzle) { return { href: "../" + puzzle.walkthroughChapter, label: "Open " + puzzle.walkthroughChapter + " ↗" }; },
+      };
+    </script>
     <script src="puzzle-lab.js"></script>
   </body>
 </html>

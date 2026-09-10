@@ -176,9 +176,9 @@
     return value && typeof value === "object" && !Array.isArray(value);
   }
 
-  function loadProgress(storage) {
+  function loadProgress(storage, key) {
     try {
-      const raw = storage.getItem(STORAGE_KEY);
+      const raw = storage.getItem(key || STORAGE_KEY);
       if (!raw) return createProgress();
       const progress = JSON.parse(raw);
       if (
@@ -196,9 +196,9 @@
     }
   }
 
-  function saveProgress(storage, progress) {
+  function saveProgress(storage, progress, key) {
     try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(progress));
+      storage.setItem(key || STORAGE_KEY, JSON.stringify(progress));
       return true;
     } catch (error) {
       return false;

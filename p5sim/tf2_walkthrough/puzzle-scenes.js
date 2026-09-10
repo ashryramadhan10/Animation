@@ -72,6 +72,10 @@
       if (value.transform && Array.isArray(value.covariance)) return fmtTransform(value.transform) + " · σx " + fmt(Math.sqrt(Math.max(0, value.covariance[0][0]))) + " σy " + fmt(Math.sqrt(Math.max(0, value.covariance[1][1])));
       if (Number.isFinite(value.v) && Number.isFinite(value.omega)) return "v " + fmt(value.v) + " m/s · ω " + fmt(value.omega) + " rad/s";
       if (Number.isFinite(value.mean) && Number.isFinite(value.variance)) return "mean " + fmt(value.mean) + " · σ " + fmt(Math.sqrt(Math.max(0, value.variance)));
+      if (isPoint(value.pos) && isPoint(value.vel) && isPoint(value.acc)) return "pos " + fmtPoint(value.pos) + " · vel " + fmtPoint(value.vel);
+      if (isPoint(value.future) && isPoint(value.normal) && isPoint(value.target)) return "normal " + fmtPoint(value.normal) + " · target " + fmtPoint(value.target);
+      if (isPoint(value.pos) && Number.isFinite(value.angle)) return "pos " + fmtPoint(value.pos) + " · angle " + degrees(value.angle);
+      if (isPoint(value.pos) && isPoint(value.offset)) return "pos " + fmtPoint(value.pos) + " · offset " + fmtPoint(value.offset);
       if (Number.isFinite(value.x) && Number.isFinite(value.dx)) return "x " + fmt(value.x) + " · dx " + fmt(value.dx);
       if (Array.isArray(value.x) && Array.isArray(value.P)) return "pos " + fmt(value.x[0]) + " vel " + fmt(value.x[1]) + " · σpos " + fmt(Math.sqrt(Math.max(0, value.P[0][0]))) + " σvel " + fmt(Math.sqrt(Math.max(0, value.P[1][1])));
       if (Array.isArray(value.F) && Array.isArray(value.Q)) return "F " + describe(value.F) + " · Q " + describe(value.Q);
@@ -1714,6 +1718,263 @@
       return out;
     },
   };
+  // ------------------------------------------------------------ nature of code side lab
+  const NATURE_FIELD = (() => {
+    const cols = 6, rows = 4, list = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const theta = Math.sin(col * 0.9) * 0.8 + Math.cos(row * 1.1) * 0.6;
+        list.push({ x: Math.cos(theta), y: Math.sin(theta) });
+      }
+    }
+    return { field: list, cols, rows, resolution: 1, origin: { x: -3, y: -2 } };
+  })();
+  const NATURE_PATH = [{ x: -5, y: -1.5 }, { x: -2, y: 1.5 }, { x: 1.5, y: -1 }, { x: 5, y: 1.2 }];
+  const NATURE_OTHERS = [
+    { pos: { x: 1.2, y: 0.4 }, vel: { x: 0.6, y: 0.4 } },
+    { pos: { x: -0.8, y: 1.3 }, vel: { x: 0.2, y: -0.7 } },
+    { pos: { x: 0.5, y: -1.4 }, vel: { x: -0.5, y: 0.5 } },
+    { pos: { x: 2.6, y: -0.6 }, vel: { x: 0.7, y: 0.1 } },
+    { pos: { x: -2.2, y: -0.9 }, vel: { x: 0.3, y: 0.6 } },
+  ];
+  const NATURE_SAMPLES = [0.02, 0.11, 0.13, 0.19, 0.24, 0.27, 0.31, 0.33, 0.38, 0.42, 0.45, 0.47, 0.52, 0.55, 0.58, 0.61, 0.66, 0.7, 0.74, 0.79, 0.83, 0.88, 0.93, 0.98];
+  const NATURE_COUNTS = [3, 7, 5, 9, 4, 2];
+  const BOX = { width: 8, height: 5, origin: { x: -4, y: -2.5 } };
+  function toBox(p) { return { x: p.x - BOX.origin.x, y: p.y - BOX.origin.y }; }
+  function fromBox(p) { return { x: p.x + BOX.origin.x, y: p.y + BOX.origin.y }; }
+  function normalizeJs(v) { const n = Math.hypot(v.x, v.y); return n > 0 ? { x: v.x / n, y: v.y / n } : { x: 0, y: 0 }; }
+  function velocityOf(values) { return { x: Math.cos(values.agent.yaw) * values.speed, y: Math.sin(values.agent.yaw) * values.speed }; }
+  function agentOf(values) { return { pos: { x: values.agent.x, y: values.agent.y }, vel: velocityOf(values) }; }
+  function agentUnitSpeed(values) { return { pos: { x: values.agent.x, y: values.agent.y }, vel: { x: Math.cos(values.agent.yaw), y: Math.sin(values.agent.yaw) } }; }
+  function lookupField(pos) {
+    const local = { x: pos.x - NATURE_FIELD.origin.x, y: pos.y - NATURE_FIELD.origin.y };
+    const col = Math.floor(Math.max(0, Math.min(NATURE_FIELD.cols - 1, local.x / NATURE_FIELD.resolution)));
+    const row = Math.floor(Math.max(0, Math.min(NATURE_FIELD.rows - 1, local.y / NATURE_FIELD.resolution)));
+    return NATURE_FIELD.field[row * NATURE_FIELD.cols + col];
+  }
+  function fieldLayers() {
+    const out = [];
+    for (let row = 0; row < NATURE_FIELD.rows; row += 1) {
+      for (let col = 0; col < NATURE_FIELD.cols; col += 1) {
+        const cell = NATURE_FIELD.field[row * NATURE_FIELD.cols + col];
+        const center = { x: NATURE_FIELD.origin.x + (col + 0.5) * NATURE_FIELD.resolution, y: NATURE_FIELD.origin.y + (row + 0.5) * NATURE_FIELD.resolution };
+        out.push(arrow(center, add(center, { x: cell.x * 0.35, y: cell.y * 0.35 }), "muted", { weight: 1 }));
+      }
+    }
+    const o = NATURE_FIELD.origin, w = NATURE_FIELD.cols * NATURE_FIELD.resolution, h = NATURE_FIELD.rows * NATURE_FIELD.resolution;
+    out.push(segments([[o, { x: o.x + w, y: o.y }], [{ x: o.x + w, y: o.y }, { x: o.x + w, y: o.y + h }], [{ x: o.x + w, y: o.y + h }, { x: o.x, y: o.y + h }], [{ x: o.x, y: o.y + h }, o]], "muted", { weight: 1 }));
+    return out;
+  }
+  function boxLayers(margin) {
+    const a = BOX.origin, b = { x: BOX.origin.x + BOX.width, y: BOX.origin.y + BOX.height };
+    const out = [segments([[a, { x: b.x, y: a.y }], [{ x: b.x, y: a.y }, b], [b, { x: a.x, y: b.y }], [{ x: a.x, y: b.y }, a]], "muted", { weight: 1 })];
+    const m = margin || 0;
+    if (m) out.push(segments([[{ x: a.x - m, y: a.y - m }, { x: b.x + m, y: a.y - m }], [{ x: b.x + m, y: a.y - m }, { x: b.x + m, y: b.y + m }], [{ x: b.x + m, y: b.y + m }, { x: a.x - m, y: b.y + m }], [{ x: a.x - m, y: b.y + m }, { x: a.x - m, y: a.y - m }]], "muted", { weight: 1, dashed: true }));
+    return out;
+  }
+  function steeringLayers(out, context, from) {
+    const style = resultStyle(context), text = resultLabel(context);
+    if (isPoint(context.expected)) out.push(arrow(from, add(from, context.expected), "expected", { dashed: true, weight: 2 }), label("expected", "expected", { at: add(add(from, context.expected), { x: 0.12, y: 0.22 }) }));
+    if (isPoint(context.actual)) out.push(arrow(from, add(from, context.actual), style, { weight: 3 }), label(text, style, { at: add(add(from, context.actual), { x: 0.12, y: -0.3 }) }));
+  }
+  function isBins(v) { return Array.isArray(v) && v.length > 0 && v.every(Number.isFinite); }
+  function isChainResult(v) { return Boolean(v) && typeof v === "object" && isPoint(v.pos) && Number.isFinite(v.angle); }
+  function isWrapResult(v) { return Boolean(v) && typeof v === "object" && isPoint(v.pos) && isPoint(v.offset); }
+  function isPathResult(v) { return Boolean(v) && typeof v === "object" && isPoint(v.future) && isPoint(v.normal) && isPoint(v.target); }
+  function isMover(v) { return Boolean(v) && typeof v === "object" && isPoint(v.pos) && isPoint(v.vel) && isPoint(v.acc); }
+  function histogramBars(counts, style, options) {
+    const opts = options || {};
+    const n = counts.length, left = -4.5, width = 9 / n, base = -1.6;
+    const peak = opts.peak || Math.max(1e-9, ...counts);
+    const pairs = counts.map((c, i) => { const x = left + (i + 0.5) * width + (opts.shift || 0); return [{ x, y: base }, { x, y: base + 3 * (c / peak) }]; });
+    return segments(pairs, style, { weight: opts.weight || 10, alpha: opts.alpha });
+  }
+  const natureScene = {
+    fixtures: {
+      accBefore: () => ({ x: 0.2, y: 0 }),
+      mover: (values) => ({ pos: { x: values.agent.x, y: values.agent.y }, vel: velocityOf(values), acc: { x: 0, y: -0.6 } }),
+      attractor: (values) => ({ pos: { x: values.attractor.x, y: values.attractor.y }, mass: 6 }),
+      moverBody: (values) => ({ pos: { x: values.mover.x, y: values.mover.y }, mass: 1 }),
+      boxPos: (values) => toBox(values.pos),
+      agent: agentOf,
+      agentUnit: agentUnitSpeed,
+      target: (values) => ({ pos: { x: values.target.x, y: values.target.y }, vel: { x: Math.cos(values.target.yaw) * values.targetSpeed, y: Math.sin(values.target.yaw) * values.targetSpeed } }),
+      field: () => NATURE_FIELD.field.map((v) => ({ x: v.x, y: v.y })),
+      fieldPos: (values) => ({ x: values.pos.x - NATURE_FIELD.origin.x, y: values.pos.y - NATURE_FIELD.origin.y }),
+      fieldAtAgent: (values) => { const cell = lookupField({ x: values.agent.x, y: values.agent.y }); return { x: cell.x, y: cell.y }; },
+      path: () => NATURE_PATH.map((p) => ({ x: p.x, y: p.y })),
+      others: () => NATURE_OTHERS.map((o) => ({ pos: { x: o.pos.x, y: o.pos.y }, vel: { x: o.vel.x, y: o.vel.y } })),
+      flockWeights: (values) => ({ separation: values.wSeparation, alignment: values.wAlignment, cohesion: values.wCohesion }),
+      flockParams: () => ({ separation: 1.2, neighbourRadius: 2.5, maxSpeed: 1.5, maxForce: 0.6 }),
+      binCount: (values) => Math.round(values.bins),
+      samples: () => NATURE_SAMPLES.slice(),
+      counts: (values) => NATURE_COUNTS.map((c, i) => (i === NATURE_COUNTS.length - 1 ? c + Math.round(values.boost) : c)),
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const values = context.values;
+      const out = laneLayers(context.puzzle, values);
+      const style = resultStyle(context), text = resultLabel(context);
+      const origin = { x: 0, y: 0 };
+      const cross = (a, b) => a.x * b.y - a.y * b.x;
+      const drawVector = (from, v, styleName, dashed, name) => out.push(arrow(from, add(from, v), styleName, { dashed, weight: dashed ? 2 : 3 }), label(name, styleName, { at: add(add(from, v), { x: 0.12, y: dashed ? 0.22 : -0.3 }) }));
+      if (view === "unary") {
+        out.push(ellipse(origin, [[1, 0], [0, 1]], "muted", { scale: 1, dashed: true, label: "unit circle" }));
+        drawVector(origin, values.v, "input", false, "v");
+        if (isPoint(context.expected)) drawVector(origin, context.expected, "expected", true, "expected");
+        if (isPoint(context.actual)) drawVector(origin, context.actual, style, false, text);
+      } else if (view === "binary") {
+        drawVector(origin, values.a, "input", false, "a");
+        drawVector(origin, values.b, "input", false, "b");
+        if (context.puzzle.id === "dot-product") {
+          if (Number.isFinite(context.expected)) out.push(label("expected a·b = " + fmt(context.expected), "expected", { at: { x: -5.2, y: 3.2 } }));
+          if (Number.isFinite(context.actual)) out.push(label(text + " a·b = " + fmt(context.actual), style, { at: { x: -5.2, y: 2.8 } }));
+        } else if (context.puzzle.id === "angle-between") {
+          const headingA = Math.atan2(values.a.y, values.a.x);
+          const sign = cross(values.a, values.b) >= 0 ? 1 : -1;
+          if (Number.isFinite(context.expected)) out.push(arc(origin, 1.1, headingA, headingA + sign * context.expected, "expected", { dashed: true, arrowhead: true }));
+          if (Number.isFinite(context.actual)) out.push(arc(origin, 0.8, headingA, headingA + sign * context.actual, style, { arrowhead: true }));
+        } else {
+          if (isPoint(context.expected)) { drawVector(origin, context.expected, "expected", true, "expected"); out.push(segments([[values.a, context.expected]], "expected", { weight: 1, dashed: true })); }
+          if (isPoint(context.actual)) { drawVector(origin, context.actual, style, false, text); out.push(segments([[values.a, context.actual]], style, { weight: 1, dashed: true })); }
+        }
+      } else if (view === "segment") {
+        out.push(segments([[values.a, values.b]], "input", { weight: 2 }), point(values.a, "a", "input"), point(values.b, "b", "input"), point(values.p, "p", "input"));
+        if (isPoint(context.expected)) out.push(point(context.expected, "expected", "expected", { dashed: true }), segments([[values.p, context.expected]], "expected", { weight: 1, dashed: true }));
+        if (isPoint(context.actual)) out.push(point(context.actual, text, style), segments([[values.p, context.actual]], style, { weight: 1, dashed: true }));
+      } else if (view === "apply-force") {
+        drawVector(origin, natureScene.fixtures.accBefore(), "muted", true, "acc before");
+        drawVector(origin, values.force, "input", false, "force");
+        if (isPoint(context.expected)) drawVector(origin, context.expected, "expected", true, "expected acc");
+        if (isPoint(context.actual)) drawVector(origin, context.actual, style, false, text);
+        out.push(label("mass " + fmt(values.mass) + " · acc += force / mass", "muted", { row: 3 }));
+      } else if (view === "step") {
+        const mover = natureScene.fixtures.mover(values);
+        out.push(glyph(values.agent, "mover", "input"));
+        drawVector(mover.pos, mover.vel, "input", false, "vel");
+        drawVector(mover.pos, mover.acc, "muted", true, "acc (gravity)");
+        if (isMover(context.expected)) { out.push(point(context.expected.pos, "expected pos", "expected", { dashed: true })); drawVector(context.expected.pos, context.expected.vel, "expected", true, "expected vel"); }
+        if (isMover(context.actual)) { out.push(point(context.actual.pos, text, style)); drawVector(context.actual.pos, context.actual.vel, style, false, text + " vel"); }
+        out.push(label("max speed " + fmt(values.maxSpeed) + " · one frame: vel += acc, limit, pos += vel, acc = 0", "muted", { row: 3 }));
+      } else if (view === "friction" || view === "drag") {
+        drawVector(origin, values.vel, "input", false, "vel");
+        if (isPoint(context.expected)) drawVector(origin, context.expected, "expected", true, "expected force");
+        if (isPoint(context.actual)) drawVector(origin, context.actual, style, false, text);
+        out.push(label(view === "friction" ? "μ " + fmt(values.mu) + " · normal force 2" : "c " + fmt(values.c) + " · |v|² = " + fmt(values.vel.x * values.vel.x + values.vel.y * values.vel.y), "muted", { row: 3 }));
+      } else if (view === "attract") {
+        out.push(point(values.attractor, "attractor (mass 6)", "input"), ellipse(values.attractor, [[1, 0], [0, 1]], "muted", { scale: 1, dashed: true, label: "d clamped below 1" }), ellipse(values.attractor, [[16, 0], [0, 16]], "muted", { scale: 1, dashed: true, label: "d clamped above 4" }), point(values.mover, "mover (mass 1)", "input"));
+        if (isPoint(context.expected)) drawVector(values.mover, context.expected, "expected", true, "expected force");
+        if (isPoint(context.actual)) drawVector(values.mover, context.actual, style, false, text);
+        out.push(label("G 1 · force = G·m₁·m₂ / d² toward the attractor", "muted", { row: 3 }));
+      } else if (view === "wrap" || view === "wrap-offset") {
+        out.push(...boxLayers(0.5), point(values.pos, "pos", "input"));
+        const expectedPos = view === "wrap" ? context.expected : (context.expected && context.expected.pos);
+        const actualPos = view === "wrap" ? context.actual : (context.actual && context.actual.pos);
+        if (isPoint(expectedPos)) out.push(point(fromBox(expectedPos), "expected", "expected", { dashed: true }));
+        if (isPoint(actualPos)) out.push(point(fromBox(actualPos), text, style));
+        if (view === "wrap-offset" && isWrapResult(context.actual) && (context.actual.offset.x !== 0 || context.actual.offset.y !== 0)) out.push(arrow(values.pos, add(values.pos, context.actual.offset), style, { dashed: true, weight: 1 }), label("offset " + fmtPoint(context.actual.offset) + " moves every follower too", style, { row: 4 }));
+        out.push(label("box 8 × 5 with margin 0.5 · drag past the dashed edge", "muted", { row: 3 }));
+      } else if (view === "steer") {
+        const agent = agentOf(values);
+        out.push(glyph(values.agent, "agent", "input"));
+        drawVector(agent.pos, agent.vel, "input", false, "vel");
+        if (context.puzzle.id === "pursue") {
+          const target = natureScene.fixtures.target(values);
+          out.push(glyph(values.target, "target", "input"));
+          drawVector(target.pos, target.vel, "input", false, "target vel");
+          out.push(point(add(target.pos, { x: target.vel.x * 2, y: target.vel.y * 2 }), "predicted (2 s ahead)", "muted", { dashed: true }));
+        } else {
+          out.push(point(values.target, context.puzzle.id === "flee" ? "threat" : "target", "input"));
+          if (context.puzzle.id === "arrive") out.push(ellipse(values.target, [[4, 0], [0, 4]], "muted", { scale: 1, dashed: true, label: "slow radius 2" }));
+        }
+        steeringLayers(out, context, agent.pos);
+        out.push(label("max speed 1.5 · max force 0.6 · arrows from the agent are steering forces", "muted", { row: 3 }));
+      } else if (view === "wander") {
+        const agent = agentOf(values);
+        const heading = normalizeJs(agent.vel);
+        const center = add(agent.pos, { x: heading.x * 2, y: heading.y * 2 });
+        out.push(glyph(values.agent, "agent", "input"));
+        drawVector(agent.pos, agent.vel, "input", false, "vel");
+        out.push(point(center, "circle centre (2 ahead)", "muted", { dashed: true }), ellipse(center, [[1, 0], [0, 1]], "muted", { scale: 1, dashed: true }));
+        if (isPoint(context.expected)) out.push(point(context.expected, "expected target", "expected", { dashed: true }), segments([[agent.pos, context.expected]], "expected", { weight: 1, dashed: true }));
+        if (isPoint(context.actual)) out.push(point(context.actual, text, style), segments([[agent.pos, context.actual]], style, { weight: 1, dashed: true }));
+        out.push(label("distance 2 · radius 1 · θ " + degrees(values.theta), "muted", { row: 3 }));
+      } else if (view === "field") {
+        out.push(...fieldLayers(), point(values.pos, "pos", "input"));
+        if (isPoint(context.expected)) drawVector(values.pos, context.expected, "expected", true, "expected cell");
+        if (isPoint(context.actual)) drawVector(values.pos, context.actual, style, false, text);
+        out.push(label("6 × 4 cells · resolution 1 · positions outside clamp to the edge cells", "muted", { row: 3 }));
+      } else if (view === "follow-field") {
+        const agent = agentOf(values);
+        out.push(...fieldLayers(), glyph(values.agent, "agent", "input"));
+        drawVector(agent.pos, agent.vel, "input", false, "vel");
+        drawVector(agent.pos, natureScene.fixtures.fieldAtAgent(values), "muted", true, "cell direction");
+        steeringLayers(out, context, agent.pos);
+        out.push(label("max speed 1.5 · max force 0.6", "muted", { row: 3 }));
+      } else if (view === "path") {
+        const agent = agentOf(values);
+        const pairs = [];
+        for (let i = 0; i < NATURE_PATH.length - 1; i += 1) pairs.push([NATURE_PATH[i], NATURE_PATH[i + 1]]);
+        out.push(segments(pairs, "muted", { weight: 14, alpha: 60 }), segments(pairs, "muted", { weight: 1 }), glyph(values.agent, "agent", "input"));
+        drawVector(agent.pos, agent.vel, "input", false, "vel");
+        const drawPath = (result, styleName, dashed, name) => {
+          out.push(point(result.future, name + " future", styleName, { dashed }), segments([[agent.pos, result.future], [result.future, result.normal]], styleName, { weight: 1, dashed: true }), point(result.normal, name + " normal", styleName, { dashed }), point(result.target, name + " target", styleName, { dashed }));
+        };
+        if (isPathResult(context.expected)) drawPath(context.expected, "expected", true, "expected");
+        if (isPathResult(context.actual)) drawPath(context.actual, style, false, text);
+        out.push(label("look ahead 1.5 · target 0.6 along the segment past the normal point", "muted", { row: 3 }));
+      } else if (view === "flock") {
+        const agent = context.puzzle.id === "flock" ? agentUnitSpeed(values) : agentOf(values);
+        const radius = context.puzzle.id === "separate" ? 1.2 : 2.5;
+        NATURE_OTHERS.forEach((other) => { out.push(glyph({ x: other.pos.x, y: other.pos.y, yaw: Math.atan2(other.vel.y, other.vel.x) }, "", "muted"), arrow(other.pos, add(other.pos, other.vel), "muted", { weight: 1 })); });
+        out.push(ellipse(agent.pos, [[radius * radius, 0], [0, radius * radius]], "muted", { scale: 1, dashed: true, label: context.puzzle.id === "flock" ? "neighbour radius 2.5 (separation 1.2)" : "radius " + fmt(radius) }), glyph(values.agent, "agent", "input"));
+        drawVector(agent.pos, agent.vel, "input", false, "vel");
+        steeringLayers(out, context, agent.pos);
+        out.push(label("max speed 1.5 · max force 0.6 · grey boids are the neighbours", "muted", { row: 3 }));
+      } else if (view === "angle") {
+        out.push(ellipse(origin, [[1, 0], [0, 1]], "muted", { scale: 2, dashed: true }), arrow(origin, { x: 2.4, y: 0 }, "muted", { weight: 1 }), label("0", "muted", { at: { x: 2.5, y: 0.1 } }));
+        out.push(arc(origin, 1.4, 0, values.angle, "input", { arrowhead: true }), label("angle " + fmt(values.angle) + " rad", "input", { at: { x: -5.2, y: 3.2 } }));
+        if (Number.isFinite(context.expected)) out.push(arc(origin, 1.9, 0, context.expected, "expected", { dashed: true, arrowhead: true }), label("expected " + fmt(context.expected), "expected", { at: { x: -5.2, y: 2.8 } }));
+        if (Number.isFinite(context.actual)) out.push(arc(origin, 1.0, 0, context.actual, style, { arrowhead: true }), label(text + " " + fmt(context.actual), style, { at: { x: -5.2, y: 2.4 } }));
+      } else if (view === "cone") {
+        out.push(ellipse(origin, [[1, 0], [0, 1]], "muted", { scale: 2, dashed: true }));
+        out.push(arrow(origin, direction(values.anchor, 2.2), "muted", { weight: 1 }), arc(origin, 1.6, values.anchor - values.constraint, values.anchor + values.constraint, "muted", { weight: 3 }), label("anchor ± constraint", "muted", { at: add(direction(values.anchor, 2.2), { x: 0.1, y: 0.2 }) }));
+        out.push(arrow(origin, direction(values.angle, 1.9), "input", { weight: 2 }), label("angle", "input", { at: add(direction(values.angle, 1.9), { x: 0.1, y: 0.2 }) }));
+        if (Number.isFinite(context.expected)) out.push(arrow(origin, direction(context.expected, 1.3), "expected", { dashed: true, weight: 2 }));
+        if (Number.isFinite(context.actual)) out.push(arrow(origin, direction(context.actual, 1.0), style, { weight: 3 }), label(text + " " + fmt(context.actual) + " rad", style, { row: 3 }));
+      } else if (view === "chain") {
+        out.push(point(values.anchor, "anchor", "input"), ellipse(values.anchor, [[2.25, 0], [0, 2.25]], "muted", { scale: 1, dashed: true, label: "link length 1.5" }));
+        out.push(arc(values.anchor, 1.1, values.prevAngle - values.constraint, values.prevAngle + values.constraint, "muted", { weight: 3 }), arrow(values.anchor, add(values.anchor, direction(values.prevAngle, 1.1)), "muted", { weight: 1, dashed: true }), point(values.joint, "joint (wants to be here)", "input"), segments([[values.anchor, values.joint]], "input", { weight: 1, dashed: true }));
+        if (isChainResult(context.expected)) out.push(point(context.expected.pos, "expected", "expected", { dashed: true }), segments([[values.anchor, context.expected.pos]], "expected", { weight: 2, dashed: true }));
+        if (isChainResult(context.actual)) out.push(point(context.actual.pos, text, style), segments([[values.anchor, context.actual.pos]], style, { weight: 3 }));
+        out.push(label("previous link angle " + degrees(values.prevAngle) + " · cone ± " + degrees(values.constraint), "muted", { row: 3 }));
+      } else if (view === "bins") {
+        const count = natureScene.fixtures.binCount(values);
+        const left = -4.5, width = 9 / count;
+        out.push(segments([[{ x: left, y: 0 }, { x: 4.5, y: 0 }]], "muted", { weight: 2 }));
+        for (let i = 0; i <= count; i += 1) out.push(marker({ x: left + i * width, y: 0 }, i < count ? String(i) : "", "muted", { height: 0.2 }));
+        out.push(marker({ x: left + values.value * 9, y: 0 }, "value " + fmt(values.value), "input", { height: 0.45 }));
+        if (Number.isFinite(context.expected)) out.push(shade({ x: left + context.expected * width, y: -0.7 }, { x: left + (context.expected + 1) * width, y: -0.3 }, "expected"), label("expected bin " + context.expected, "expected", { at: { x: left + context.expected * width, y: -0.9 } }));
+        if (Number.isFinite(context.actual)) out.push(shade({ x: left + context.actual * width, y: 0.3 }, { x: left + (context.actual + 1) * width, y: 0.7 }, style), label(text + " bin " + context.actual, style, { at: { x: left + context.actual * width, y: 1 } }));
+        out.push(label(count + " bins over [0, 1]", "muted", { row: 3 }));
+      } else if (view === "histogram") {
+        const count = natureScene.fixtures.binCount(values);
+        out.push(segments([[{ x: -4.5, y: -2 }, { x: 4.5, y: -2 }]], "muted", { weight: 1 }), pointsPrimitive(NATURE_SAMPLES.map((s) => ({ x: -4.5 + s * 9, y: -2 })), "input", { size: 6, label: "samples in [0, 1]" }));
+        if (isBins(context.expected)) out.push(histogramBars(context.expected, "expected", { shift: -0.12, alpha: 170 }));
+        if (isBins(context.actual)) out.push(histogramBars(context.actual, style, { shift: 0.12 }));
+        out.push(label(count + " bins · " + NATURE_SAMPLES.length + " samples", "muted", { row: 3 }));
+      } else if (view === "normalize-histogram") {
+        const counts = natureScene.fixtures.counts(values);
+        out.push(histogramBars(counts, "input", { shift: -0.25, weight: 8, alpha: 150 }), label("counts " + counts.join(" · "), "input", { row: 3 }));
+        if (isBins(context.expected)) out.push(histogramBars(context.expected, "expected", { shift: 0, weight: 8, alpha: 170, peak: 1 }));
+        if (isBins(context.actual)) out.push(histogramBars(context.actual, style, { shift: 0.25, weight: 8, peak: 1 }));
+      }
+      const plainNumber = (value) => typeof value === "number" && view !== "angle" && view !== "cone" && context.puzzle.id !== "angle-between";
+      const show = (value) => (plainNumber(value) ? fmt(value) : describe(value));
+      out.push(...notes(context, show(context.expected), show(context.actual)));
+      return out;
+    },
+  };
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -1745,6 +2006,7 @@
     "aisle": aisleScene,
     "estimation": estimationScene,
     "bayes": bayesScene,
+    "nature": natureScene,
   };
 
   function layers(context) {

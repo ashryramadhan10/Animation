@@ -1,15 +1,24 @@
 (function runPuzzleLab(root) {
   "use strict";
 
-  const puzzles = root.TF2_PUZZLES || [];
-  const stages = root.TF2_PUZZLE_STAGES || [];
-  const tracks = root.TF2_PUZZLE_TRACKS || [];
+  const config = Object.assign({
+    puzzles: root.TF2_PUZZLES || [],
+    tracks: root.TF2_PUZZLE_TRACKS || [],
+    storageKey: root.STORAGE_KEY,
+    title: "TF2 Puzzle Lab",
+    heading: "geometry builds",
+    resetNote: "The walkthrough is not affected.",
+    conceptLink: (puzzle) => ({ href: "index.html#" + puzzle.walkthroughChapter, label: "Review " + puzzle.walkthroughChapter.replaceAll("-", " ") + " ↗" }),
+  }, root.PUZZLE_LAB_CONFIG || {});
+  const puzzles = config.puzzles;
+  const tracks = config.tracks;
+  const stages = tracks.flatMap((track) => track.stages);
   const scenes = root.PuzzleScenes;
   const stageById = new Map(stages.map((stage) => [stage.id, stage]));
   const EDIT_DEBOUNCE_MS = 150;
   const READY_MESSAGE = "Drag the scene or edit the code. The canvas runs your function as you go. Check when it matches.";
 
-  let progress = root.loadProgress(root.localStorage);
+  let progress = root.loadProgress(root.localStorage, config.storageKey);
   let currentIndex = 0;
   let busy = false;
   let sketch = null;
@@ -33,7 +42,7 @@
   function escapeHtml(value) { const node = document.createElement("span"); node.textContent = value; return node.innerHTML; }
 
   function save() {
-    const saved = root.saveProgress(root.localStorage, progress);
+    const saved = root.saveProgress(root.localStorage, progress, config.storageKey);
     dom.saveStatus.textContent = saved ? "Saved locally" : "Storage unavailable";
     dom.saveStatus.classList.toggle("is-saving", !saved);
   }
@@ -234,8 +243,9 @@
     dom.puzzleGoal.textContent = puzzle.goal;
     dom.puzzleConcept.textContent = puzzle.concept;
     dom.puzzleSignature.textContent = puzzle.signature;
-    dom.walkthroughLink.href = "index.html#" + puzzle.walkthroughChapter;
-    dom.walkthroughLink.textContent = "Review " + puzzle.walkthroughChapter.replaceAll("-", " ") + " ↗";
+    const concept = config.conceptLink(puzzle);
+    dom.walkthroughLink.href = concept.href;
+    dom.walkthroughLink.textContent = concept.label;
     if (puzzle.reference) {
       dom.referenceLink.href = puzzle.reference.url;
       dom.referenceLink.textContent = puzzle.reference.label + " ↗";
@@ -256,7 +266,7 @@
       if (placeholderStart >= 0) dom.codeEditor.setSelectionRange(placeholderStart, placeholderStart + "return null;".length);
       if (editor) editor.refresh();
     }
-    document.title = twoDigits(puzzle.number) + " · " + puzzle.title + " — TF2 Puzzle Lab";
+    document.title = twoDigits(puzzle.number) + " · " + puzzle.title + " — " + config.title;
     values = scenes.initialValues(puzzle);
     live = null;
     renderMap();
@@ -424,8 +434,8 @@
   }
 
   function resetAllProgress() {
-    if (!root.confirm("Reset all " + puzzles.length + " puzzles, saved solutions, and hints? The walkthrough is not affected.")) return;
-    root.localStorage.removeItem(root.STORAGE_KEY);
+    if (!root.confirm("Reset all " + puzzles.length + " puzzles, saved solutions, and hints? " + config.resetNote)) return;
+    root.localStorage.removeItem(config.storageKey);
     progress = root.createProgress();
     currentIndex = 0;
     history.replaceState(null, "", "#" + puzzles[0].id);
@@ -474,7 +484,7 @@
       return;
     }
     session = root.createLiveSession({ workerUrl: "puzzle-worker.js" });
-    dom.curriculumHeading.textContent = puzzles.length + " geometry builds";
+    dom.curriculumHeading.textContent = puzzles.length + " " + config.heading;
     if (typeof root.createCodeEditor === "function") editor = root.createCodeEditor(dom.codeEditor);
     currentIndex = initialIndex();
     sketch = root.createPuzzleSketch(dom.canvasHost, {
