@@ -59,6 +59,12 @@ Track 4 (Pose Correction) adds puzzles 64 to 75, unlocked by the buffer finale, 
 
 Each puzzle links the matching demo under `p5sim/navigation`.
 
+Track 5 (Uncertainty & Estimation) adds puzzles 76 to 87, unlocked by the map → odom capstone, and follows PythonRobotics' localization examples:
+
+19. Kinematics: diffDriveTwist, integrateGyro, twistInSensorFrame (with the lever arm).
+20. Uncertainty: predictCovariance (F P Fᵀ + Q), composeUncertain, mahalanobisDistance, covarianceEllipse.
+21. Estimation: ekfPredict, ekfUpdatePosition, particleWeights, resampleLowVariance, ekfLocalizeStep.
+
 Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
 
 Puzzle code is plain JavaScript, but the p5 math vocabulary is available: `PI`, `TWO_PI`, `HALF_PI`, `sin`, `cos`, `atan2`, `sqrt`, `dist`, `radians`, `degrees`, `lerp`, `map`, `constrain`, and friends. Drawing and vector helpers such as `createVector` or `push` are not, because results must be plain `{ x, y }` objects. The editor colours syntax, indents on Enter, and handles Tab and Shift+Tab.

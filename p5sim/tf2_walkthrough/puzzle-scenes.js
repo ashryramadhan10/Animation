@@ -53,6 +53,7 @@
     }
     if (Array.isArray(value)) {
       if (value.every((item) => typeof item === "string")) return value.join(" → ");
+      if (value.length && value.every((item) => typeof item === "number")) return "[" + value.map(fmt).join(", ") + "]";
       if (value.length && value.every(isPoint)) return value.length + " points · first " + fmtPoint(value[0]);
       if (value.every((item) => item && typeof item === "object" && "from" in item)) return value.map((step) => (step.inverse ? "inv " : "") + step.from + "→" + step.to).join(", ");
       return JSON.stringify(value).slice(0, 64);
@@ -66,6 +67,10 @@
       if ("valid" in value) return value.valid ? "valid" : String(value.code);
       if ("beforeIndex" in value) return "before " + value.beforeIndex + " · after " + value.afterIndex + " · amount " + fmt(value.amount);
       if (Array.isArray(value.indexes) && Number.isFinite(value.error)) return "error " + fmt(value.error) + " · " + value.indexes.length + " pairs";
+      if (value.state && Array.isArray(value.P)) return "state " + fmtTransform(value.state) + " · σx " + fmt(Math.sqrt(Math.max(0, value.P[0][0]))) + " σy " + fmt(Math.sqrt(Math.max(0, value.P[1][1]))) + " σyaw " + fmt(Math.sqrt(Math.max(0, value.P[2][2])));
+      if (Number.isFinite(value.angle) && Number.isFinite(value.major) && Number.isFinite(value.minor)) return "angle " + degrees(value.angle) + " · major " + fmt(value.major) + " · minor " + fmt(value.minor);
+      if (value.transform && Array.isArray(value.covariance)) return fmtTransform(value.transform) + " · σx " + fmt(Math.sqrt(Math.max(0, value.covariance[0][0]))) + " σy " + fmt(Math.sqrt(Math.max(0, value.covariance[1][1])));
+      if (Number.isFinite(value.v) && Number.isFinite(value.omega)) return "v " + fmt(value.v) + " m/s · ω " + fmt(value.omega) + " rad/s";
       if (value.transform && Number.isFinite(value.error)) return fmtTransform(value.transform) + " · error " + fmt(value.error);
       if ("roll" in value && "pitch" in value && "yaw" in value) return "roll " + degrees(value.roll) + " · pitch " + degrees(value.pitch) + " · yaw " + degrees(value.yaw);
       if (value.axis && Number.isFinite(value.angle)) return "axis " + fmtVector3(value.axis) + " · " + degrees(value.angle);
@@ -778,6 +783,8 @@
       quatFromAxisAngle: (values) => quatFromAxisAngle(direction3(values.axisYaw, values.axisPitch), values.angle),
       urdfXyz: () => URDF_XYZ.slice(),
       rpyArray: (values) => [values.roll, values.pitch, values.yaw],
+      identityQuat: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      omegaFromSliders: (values) => ({ x: values.wx, y: values.wy, z: values.wz }),
     },
     layers(context) {
       const view = context.puzzle.scene.view;
@@ -843,6 +850,12 @@
         out.push(label("<origin xyz=\"" + xyz.join(" ") + "\" rpy=\"" + [context.values.roll, context.values.pitch, context.values.yaw].map((v) => v.toFixed(2)).join(" ") + "\"/>", "input", { row: 3 }));
         if (isSE3(context.expected)) out.push(axes3d(context.expected.translation, basisOf(context.expected.rotation), "expected mount", "expected", { dashed: true }));
         if (isSE3(context.actual)) out.push(axes3d(context.actual.translation, basisOf(context.actual.rotation), resultLabel(context), resultStyle(context)));
+      } else if (view === "gyro") {
+        const omega = se3Scene.fixtures.omegaFromSliders(context.values);
+        const rate = Math.hypot(omega.x, omega.y, omega.z);
+        if (rate > 1e-9) out.push(arrow3d(ORIGIN3, scaled3({ x: omega.x / rate, y: omega.y / rate, z: omega.z / rate }, 1.4), "ω axis · " + fmt(rate) + " rad/s × " + fmt(context.values.dt) + " s", "input"));
+        if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
+        if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
       } else {
         if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
         if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
@@ -1372,6 +1385,126 @@
       return out;
     },
   };
+  // ------------------------------------------------------------ uncertainty and estimation
+  const P_PRIOR = [[0.05, 0, 0], [0, 0.05, 0], [0, 0, 0.1]];
+  const Q_SMALL = [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 0.01]];
+  const P_UPDATE = [[0.5, 0, 0], [0, 0.5, 0], [0, 0, 0.2]];
+  const R_UPDATE = [[0.2, 0], [0, 0.2]];
+  const S_GATE = [[1.0, 0.4], [0.4, 0.5]];
+  const PARTICLES = (() => { const list = []; for (let i = 0; i < 4; i += 1) for (let j = 0; j < 3; j += 1) list.push({ x: -1.5 + i, y: -1 + j }); return list; })();
+  const RESAMPLE_PARTICLES = [{ x: -2, y: 0 }, { x: -1.2, y: 0.6 }, { x: -0.4, y: -0.3 }, { x: 0.4, y: 0.5 }, { x: 1.2, y: -0.4 }, { x: 2, y: 0.2 }];
+  const RESAMPLE_WEIGHTS = [0.05, 0.1, 0.35, 0.3, 0.15, 0.05];
+  function xyBlock(m) { return [[m[0][0], m[0][1]], [m[1][0], m[1][1]]]; }
+  function isMatrix3(m) { return isMatrix(m, 3); }
+  function isState(v) { return Boolean(v) && typeof v === "object" && isTransform(v.state) && isMatrix3(v.P); }
+  function isTwistLike(v) { return Boolean(v) && typeof v === "object" && Number.isFinite(v.v) && Number.isFinite(v.omega); }
+  function twistLayers(origin, twist, style, dashed, text) {
+    const velocity = rotate({ x: twist.vx, y: twist.vy }, origin.yaw);
+    return [
+      arrow(origin, add(origin, velocity), style, { dashed, weight: dashed ? 2 : 3 }),
+      arc(origin, 0.6, origin.yaw, origin.yaw + twist.wz, style, { dashed, arrowhead: true }),
+      label(text, style, { at: add(add(origin, velocity), { x: 0.15, y: 0.2 }) }),
+    ];
+  }
+  const estimationScene = {
+    fixtures: {
+      twistFromSliders: (values) => ({ vx: values.vx, vy: 0, wz: values.wz }),
+      priorP: () => P_PRIOR,
+      smallQ: () => Q_SMALL,
+      control: (values) => ({ v: values.v, omega: values.omega }),
+      uncertainA: () => ({ transform: { x: 0, y: 0, yaw: 0 }, covariance: [[0.02, 0, 0], [0, 0.02, 0], [0, 0, 0.05]] }),
+      uncertainB: (values) => ({ transform: values.b, covariance: [[0.03, 0, 0], [0, 0.01, 0], [0, 0, 0.02]] }),
+      gateCovariance: () => S_GATE,
+      ellipseCovariance: (values) => {
+        const c = Math.cos(values.angle), s = Math.sin(values.angle);
+        const l1 = values.major * values.major, l2 = values.minor * values.minor;
+        return [[c * c * l1 + s * s * l2, c * s * (l1 - l2)], [c * s * (l1 - l2), s * s * l1 + c * c * l2]];
+      },
+      updateP: () => P_UPDATE,
+      updateR: () => R_UPDATE,
+      particles: () => PARTICLES,
+      resampleParticles: () => RESAMPLE_PARTICLES,
+      resampleWeights: () => RESAMPLE_WEIGHTS,
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const values = context.values;
+      const out = laneLayers(context.puzzle, values);
+      const origin = { x: 0, y: 0, yaw: 0 };
+      if (view === "diffdrive") {
+        out.push(glyph(origin, "robot", "input"), segments([[{ x: -0.15, y: 0.25 }, { x: 0.15, y: 0.25 }], [{ x: -0.15, y: -0.25 }, { x: 0.15, y: -0.25 }]], "input", { weight: 4 }));
+        out.push(label("left " + fmt(values.vLeft) + " m/s · right " + fmt(values.vRight) + " m/s · wheelbase 0.5 m", "muted", { row: 3 }));
+        const trailOf = (twist) => { let pose = origin; const trail = []; for (let i = 0; i < 20; i += 1) { pose = stepMotion(pose, twist.v, twist.omega, 0.05); trail.push({ x: pose.x, y: pose.y }); } return trail; };
+        if (isTwistLike(context.expected)) { out.push(pointsPrimitive(trailOf(context.expected), "expected", { size: 5, label: "expected 1 s path" })); out.push(...twistLayers(origin, { vx: context.expected.v, vy: 0, wz: context.expected.omega }, "expected", true, "expected")); }
+        if (isTwistLike(context.actual)) { out.push(pointsPrimitive(trailOf(context.actual), resultStyle(context), { size: 3 })); out.push(...twistLayers(origin, { vx: context.actual.v, vy: 0, wz: context.actual.omega }, resultStyle(context), false, resultLabel(context))); }
+      } else if (view === "sensor-twist") {
+        const sensor = values.sensor;
+        out.push(glyph(origin, "base_link", "input"), ...twistLayers(origin, { vx: values.vx, vy: 0, wz: values.wz }, "input", false, "body twist"), frame(sensor, "sensor", "input", { size: 0.6 }));
+        const drawAt = (twist, style, dashed, text) => {
+          const velocity = rotate({ x: twist.vx, y: twist.vy }, sensor.yaw);
+          out.push(arrow(sensor, add(sensor, velocity), style, { dashed, weight: dashed ? 2 : 3 }), label(text, style, { at: add(add(sensor, velocity), { x: 0.15, y: 0.2 }) }));
+        };
+        if (isTwist(context.expected)) drawAt(context.expected, "expected", true, "expected sensor velocity");
+        if (isTwist(context.actual)) drawAt(context.actual, resultStyle(context), false, resultLabel(context));
+      } else if (view === "predict-cov" || view === "ekf-predict") {
+        const pose = values.pose;
+        const control = view === "predict-cov" ? { v: values.v, omega: 0 } : { v: values.v, omega: values.omega };
+        const predicted = stepMotion(pose, control.v, control.omega, view === "predict-cov" ? values.dt : 1);
+        out.push(glyph(pose, "pose", "input"), ellipse(pose, xyBlock(P_PRIOR), "muted", { label: "prior 2σ" }), arrow(pose, predicted, "muted", { dashed: true, weight: 1 }), glyph(predicted, "predicted", "muted", { dashed: true }));
+        const expectedP = view === "predict-cov" ? context.expected : (context.expected && context.expected.P);
+        const actualP = view === "predict-cov" ? context.actual : (context.actual && context.actual.P);
+        if (isMatrix3(expectedP)) out.push(ellipse(predicted, xyBlock(expectedP), "expected", { dashed: true, label: "expected 2σ" }));
+        if (isMatrix3(actualP)) out.push(ellipse(predicted, xyBlock(actualP), resultStyle(context), { label: resultLabel(context) }));
+        if (view === "ekf-predict") {
+          if (isState(context.expected)) out.push(glyph(context.expected.state, "expected state", "expected", { dashed: true }));
+          if (isState(context.actual)) out.push(glyph(context.actual.state, resultLabel(context), resultStyle(context)));
+        }
+      } else if (view === "compose-uncertain") {
+        const b = values.b;
+        out.push(frame(origin, "a", "muted"), ellipse(origin, xyBlock(estimationScene.fixtures.uncertainA().covariance), "muted", { label: "Σa 2σ" }), frame(b, "b", "input"), ellipse(b, xyBlock(estimationScene.fixtures.uncertainB(values).covariance), "input", { label: "Σb 2σ (in a)" }));
+        if (context.expected && isTransform(context.expected.transform) && isMatrix3(context.expected.covariance)) out.push(ellipse(context.expected.transform, xyBlock(context.expected.covariance), "expected", { dashed: true, label: "expected compound 2σ" }));
+        if (context.actual && isTransform(context.actual.transform) && isMatrix3(context.actual.covariance)) out.push(ellipse(context.actual.transform, xyBlock(context.actual.covariance), resultStyle(context), { label: resultLabel(context) }));
+      } else if (view === "mahalanobis") {
+        [1, 2, 3].forEach((k) => out.push(ellipse(origin, S_GATE, "muted", { scale: k, label: k + "σ" })));
+        out.push(point(values.point, "innovation", "input"), arrow(origin, values.point, "input", { weight: 1.5 }));
+        if (typeof context.expected === "number") out.push(label("expected d² = " + fmt(context.expected), "expected", { at: add(values.point, { x: 0.15, y: 0.3 }) }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(label(resultLabel(context) + " d² = " + fmt(context.actual), resultStyle(context), { at: add(values.point, { x: 0.15, y: -0.35 }) }));
+      } else if (view === "ellipse") {
+        out.push(ellipse(origin, estimationScene.fixtures.ellipseCovariance(values), "input", { scale: 1, label: "1σ ellipse from the sliders" }));
+        const axes = (result, style, dashed, text) => {
+          out.push(arrow(origin, direction(result.angle, result.major), style, { dashed, weight: dashed ? 2 : 3 }));
+          out.push(arrow(origin, direction(result.angle + Math.PI / 2, result.minor), style, { dashed, weight: dashed ? 2 : 3 }));
+          out.push(label(text, style, { at: add(direction(result.angle, result.major), { x: 0.15, y: 0.2 }) }));
+        };
+        if (context.expected && Number.isFinite(context.expected.angle)) axes(context.expected, "expected", true, "expected axes");
+        if (context.actual && Number.isFinite(context.actual.angle)) axes(context.actual, resultStyle(context), false, resultLabel(context));
+      } else if (view === "ekf-update" || view === "ekf-step") {
+        const state = values.state;
+        const prior = view === "ekf-step" ? P_PRIOR : P_UPDATE;
+        out.push(glyph(state, view === "ekf-step" ? "state before" : "prior state", "input"), ellipse(state, xyBlock(prior), "muted", { label: "prior 2σ" }), point(values.z, "measurement z", "input"), ellipse(values.z, R_UPDATE, "input", { label: "R 2σ" }));
+        if (view === "ekf-step") {
+          const predicted = stepMotion(state, values.v, values.omega, 1);
+          out.push(arrow(state, predicted, "muted", { dashed: true, weight: 1 }), glyph(predicted, "predicted", "muted", { dashed: true }));
+        }
+        if (isState(context.expected)) out.push(glyph(context.expected.state, "expected posterior", "expected", { dashed: true }), ellipse(context.expected.state, xyBlock(context.expected.P), "expected", { dashed: true }));
+        if (isState(context.actual)) out.push(glyph(context.actual.state, resultLabel(context), resultStyle(context)), ellipse(context.actual.state, xyBlock(context.actual.P), resultStyle(context)));
+      } else if (view === "particles") {
+        out.push(point(values.z, "measurement z", "input"), ellipse(values.z, [[values.sigma * values.sigma, 0], [0, values.sigma * values.sigma]], "input", { scale: 1, label: "σ" }));
+        const sized = (weights, style, base, gain) => { if (!Array.isArray(weights)) return; weights.forEach((w, i) => { if (PARTICLES[i] && Number.isFinite(w)) out.push(pointsPrimitive([PARTICLES[i]], style, { size: base + gain * w })); }); };
+        sized(context.expected, "expected", 4, 40);
+        sized(context.actual, resultStyle(context), 2, 28);
+        out.push(pointsPrimitive(PARTICLES, "muted", { size: 3, label: "particles" }));
+      } else if (view === "resample") {
+        RESAMPLE_WEIGHTS.forEach((w, i) => out.push(pointsPrimitive([RESAMPLE_PARTICLES[i]], "muted", { size: 4 + 40 * w })));
+        out.push(label("weights " + RESAMPLE_WEIGHTS.map(fmt).join(" · ") + " · u0 = " + fmt(values.u0), "muted", { row: 3 }));
+        const counts = (list) => { const map = new Map(); (list || []).forEach((p) => { const key = fmt(p.x) + "," + fmt(p.y); map.set(key, (map.get(key) || 0) + 1); }); return map; };
+        if (isCloud(context.expected)) { const c = counts(context.expected); RESAMPLE_PARTICLES.forEach((p) => { const n = c.get(fmt(p.x) + "," + fmt(p.y)) || 0; if (n) out.push(label("×" + n, "expected", { at: add(p, { x: 0.12, y: 0.3 }) })); }); }
+        if (isCloud(context.actual)) { const c = counts(context.actual); RESAMPLE_PARTICLES.forEach((p) => { const n = c.get(fmt(p.x) + "," + fmt(p.y)) || 0; if (n) out.push(label("×" + n, resultStyle(context), { at: add(p, { x: 0.12, y: -0.4 }) })); }); }
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -1401,6 +1534,7 @@
     "deskew": deskewScene,
     "buffer": bufferScene,
     "aisle": aisleScene,
+    "estimation": estimationScene,
   };
 
   function layers(context) {

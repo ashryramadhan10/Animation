@@ -211,14 +211,16 @@
     list.forEach((puzzle, index) => {
       assert(puzzle.number === index + 1, puzzle.id + " has number " + puzzle.number);
       assert(!seen.has(puzzle.id), "duplicate id " + puzzle.id);
-      assert(["tf2", "toolkit", "advanced", "correction"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
+      assert(["tf2", "toolkit", "advanced", "correction", "estimation"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
       puzzle.dependencies.forEach((dependency) => assert(seen.has(dependency), puzzle.id + " depends on unknown or later puzzle " + dependency));
       seen.add(puzzle.id);
       assert(api.getPuzzle(puzzle.id) === puzzle, "getPuzzle should resolve " + puzzle.id);
     });
     const stageIds = api.TF2_PUZZLE_TRACKS.flatMap((track) => track.stages.map((stage) => stage.id));
     list.forEach((puzzle) => assert(stageIds.includes(puzzle.stage), puzzle.id + " has unknown stage " + puzzle.stage));
-    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "correction"]);
+    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "correction", "estimation"]);
+    assert(api.TF2_PUZZLE_TRACKS[4].unlockAfter === "aisle-correction-step", "track 5 unlocks after the map → odom capstone");
+    assert(api.TF2_PUZZLE_TRACKS[4].stages.length === 3, "track 5 lists three stages");
     assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
     assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 5, "track 2 lists five stages");
     assert(api.TF2_PUZZLE_TRACKS[2].unlockAfter === "icp-match", "track 3 unlocks after the ICP finale");
@@ -360,12 +362,12 @@
     const list = puzzleList();
     const tracks = puzzlesApi().TF2_PUZZLE_TRACKS;
     let progress = api.createProgress();
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked", "locked", "locked"]);
     progress = api.completePuzzle(progress, list[0], "function headingVector(yaw) { return null; }", "2026-09-08T00:00:00Z", list);
     same(progress.highestUnlocked, 1);
     same(progress.currentPuzzleId, "heading-of");
     progress = api.completePuzzle(progress, list[26], "source", "2026-09-08T00:00:00Z", list);
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked", "locked", "locked"]);
     const reset = api.resetPuzzle(progress, list, "heading-vector");
     assert(!reset.progress.solved["heading-vector"] && reset.invalidated.includes("heading-vector"), "reset clears the puzzle");
   });
@@ -717,7 +719,7 @@
 
   test("catalog track 4 stage 18 contains the aisle correction ladder", () => {
     same(idsInRange(72, 75), ["centerline-from-racks", "single-rack-centerline", "corrected-pose", "aisle-correction-step"]);
-    assert(puzzleList().length === 75, "catalog should hold 75 puzzles");
+    assert(puzzleList().length >= 75, "catalog should hold at least 75 puzzles");
   });
 
   test("catalog stage 18 references pass their cases and diagnoses differ", () => {
@@ -735,6 +737,33 @@
     frame.leftPoints.forEach((p) => near(api.se2.applyPoint(result.mapFromOdom, api.se2.applyPoint(odomFromLaser, p)).y, 1.6));
     frame.rightPoints.forEach((p) => near(api.se2.applyPoint(result.mapFromOdom, api.se2.applyPoint(odomFromLaser, p)).y, -1.6));
     near(result.correctedPose.yaw, values.robot.yaw - values.aisle.yaw);
+  });
+
+  // ---------------------------------------------------------------- estimation track
+  test("catalog track 5 contains kinematics, uncertainty, and estimation ladders", () => {
+    same(idsInRange(76, 78), ["diff-drive-twist", "integrate-gyro", "twist-in-sensor-frame"]);
+    same(idsInRange(79, 82), ["covariance-propagate-motion", "compose-uncertain", "mahalanobis-distance", "covariance-ellipse"]);
+    same(idsInRange(83, 87), ["ekf-predict", "ekf-update-position", "particle-weights", "resample-particles", "ekf-localize-step"]);
+    assert(puzzleList().length === 87, "catalog should hold 87 puzzles");
+  });
+
+  test("catalog stages 19 to 21 references pass their cases and diagnoses differ", () => {
+    checkStageRange(76, 87);
+  });
+
+  test("scenes: estimation views build valid arguments and analytic checks hold", () => {
+    checkSceneKinds(["estimation", "se3"]);
+    const api = scenesApi();
+    const ellipsePuzzle = puzzlesApi().getPuzzle("covariance-ellipse");
+    const ellipseValues = api.initialValues(ellipsePuzzle);
+    const shape = referenceOutput(ellipsePuzzle, api.toArgs(ellipsePuzzle, ellipseValues));
+    near(shape.angle, ellipseValues.angle); near(shape.major, ellipseValues.major); near(shape.minor, ellipseValues.minor);
+    const update = puzzlesApi().getPuzzle("ekf-update-position");
+    const perfect = referenceOutput(update, [{ x: 0, y: 0, yaw: 0.3 }, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], { x: 2, y: -1 }, [[0, 0], [0, 0]]]);
+    near(perfect.state.x, 2); near(perfect.state.y, -1); near(perfect.P[0][0], 0); near(perfect.P[2][2], 1);
+    const resample = puzzlesApi().getPuzzle("resample-particles");
+    const list = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }];
+    same(referenceOutput(resample, [list, [0.25, 0.25, 0.25, 0.25], 0.1]), list);
   });
 
   async function runAllTests() {
