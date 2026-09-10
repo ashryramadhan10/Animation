@@ -23,6 +23,12 @@
     { id: "rigid-alignment", title: "Rigid Alignment", subtitle: "Recover a transform from two point clouds.", range: [45, 51] },
   ]);
 
+  const ADVANCED_STAGES = Object.freeze([
+    { id: "conversions", title: "Conversions", subtitle: "Rotation matrices and axis-angle, both directions.", range: [52, 55] },
+    { id: "sensors-motion", title: "Sensors & Motion", subtitle: "URDF mounts, body twists, and lidar de-skewing.", range: [56, 58] },
+    { id: "buffer-semantics", title: "Buffer Semantics", subtitle: "Latching, pruning, arrival, reparenting, lookup.", range: [59, 63] },
+  ]);
+
   const TRACKS = Object.freeze([
     Object.freeze({ id: "tf2", title: "Track 1 · TF2", stages: STAGES }),
     Object.freeze({
@@ -33,10 +39,17 @@
       stages: TOOLKIT_STAGES,
     }),
     Object.freeze({
-      id: "pose-correction",
-      title: "Track 3 · Pose Correction",
+      id: "advanced",
+      title: "Track 3 · Buffers & Sensors",
       unlockAfter: "icp-match",
-      note: "Unlocks after the ICP finale. Puzzles arrive with the next track.",
+      note: "Unlocks after the ICP finale.",
+      stages: ADVANCED_STAGES,
+    }),
+    Object.freeze({
+      id: "pose-correction",
+      title: "Track 4 · Pose Correction",
+      unlockAfter: "buffer-lookup",
+      note: "Unlocks after the buffer lookup finale. Puzzles arrive with the next track.",
       stages: Object.freeze([
         { id: "pointcloud-bricks", title: "Point-Cloud Bricks", subtitle: "Rack points, line fits, and distances.", range: [0, 0] },
         { id: "rack-filters", title: "Rack Filters", subtitle: "Accumulate, filter, smooth, and agree.", range: [0, 0] },
@@ -80,7 +93,7 @@
 
   function puzzle(config) {
     const track = config.track || "tf2";
-    const stageList = track === "toolkit" ? TOOLKIT_STAGES : STAGES;
+    const stageList = track === "toolkit" ? TOOLKIT_STAGES : (track === "advanced" ? ADVANCED_STAGES : STAGES);
     const stage = stageList.find((candidate) => config.number >= candidate.range[0] && config.number <= candidate.range[1]);
     if (!stage) throw new Error("Puzzle " + config.number + " has no stage");
     return Object.freeze({
@@ -1875,7 +1888,620 @@
     }),
   ];
 
-  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7, TOOLKIT_8, TOOLKIT_9, TOOLKIT_10, TOOLKIT_11, TOOLKIT_12));
+  const TF2_MATRIX3 = "https://docs.ros.org/en/rolling/p/tf2/generated/classtf2_1_1Matrix3x3.html";
+  const TF2_QUATERNION = "https://docs.ros.org/en/rolling/p/tf2/generated/classtf2_1_1Quaternion.html";
+  const IDENTITY_M3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const Z90_M3 = [[0, -1, 0], [1, 0, 0], [0, 0, 1]];
+  const Y90_M3 = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]];
+  const X90_M3 = [[1, 0, 0], [0, 0, -1], [0, 1, 0]];
+  const Z180_M3 = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]];
+  const AXIS_SLIDERS = [
+    { id: "axisYaw", type: "slider", label: "axis yaw", value: 0.8, min: -PI, max: PI },
+    { id: "axisPitch", type: "slider", label: "axis pitch", value: 0.5, min: -PI / 2, max: PI / 2 },
+    { id: "angle", type: "slider", label: "angle", value: 1.2, min: -PI, max: PI },
+  ];
+
+  const ADVANCED_13 = [
+    puzzle({
+      number: 52, id: "rotation-matrix-from-quaternion", track: "advanced", title: "Quaternion to Rotation Matrix",
+      goal: "Convert a quaternion into the 3×3 rotation matrix whose columns are the rotated axes.",
+      concept: "Eigen, tf2::Matrix3x3, and every SLAM paper switch between these forms constantly.",
+      functionName: "rotationMatrixFromQuaternion", signature: "rotationMatrixFromQuaternion(q) → 3×3",
+      starterSource: starter("rotationMatrixFromQuaternion", "q", "Normalize first; then the standard 1 − 2(y² + z²), 2(xy − wz), … formula."),
+      referenceSource: lines(
+        "function rotationMatrixFromQuaternion(q) {",
+        "  var n = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+        "  var x = q.x / n, y = q.y / n, z = q.z / n, w = q.w / n;",
+        "  return [",
+        "    [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],",
+        "    [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],",
+        "    [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],",
+        "  ];",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "se3",
+      reference: docref("tf2 · Matrix3x3::setRotation", TF2_MATRIX3),
+      scene: { kind: "se3", view: "rpy", handles: RPY_SLIDERS, args: [{ fixture: "quatFromRPY" }] },
+      diagnoses: [
+        diagnosis("transposed", "That is the transpose, the inverse rotation: the sign pattern is +wz in row 1 column 0 and −wz in row 0 column 1.", lines(
+          "function rotationMatrixFromQuaternion(q) {",
+          "  var n = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+          "  var x = q.x / n, y = q.y / n, z = q.z / n, w = q.w / n;",
+          "  return [[1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)], [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)], [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]];",
+          "}"
+        )),
+        diagnosis("not-normalized", "The quaternion was not normalized: a scaled quaternion produces a scaled, non-orthonormal matrix.", lines(
+          "function rotationMatrixFromQuaternion(q) {",
+          "  var x = q.x, y = q.y, z = q.z, w = q.w;",
+          "  return [[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]];",
+          "}"
+        )),
+      ],
+      hints: ["Each column is where one axis lands: R·(1,0,0), R·(0,1,0), R·(0,0,1).", "Diagonal: 1 − 2(sum of the other two squares); off-diagonal: 2(product ± w·other).", "Row 0: [1 − 2(y²+z²), 2(xy − wz), 2(xz + wy)]; then cycle."],
+      cases: [
+        example([IDENTITY_Q], IDENTITY_M3, "identity"),
+        example([Z90], Z90_M3, "Z quarter turn"),
+        example([Y90], Y90_M3, "Y quarter turn"),
+        example([X90], X90_M3, "X quarter turn"),
+        example([{ x: 0, y: 0, z: 2 * HALF, w: 2 * HALF }], Z90_M3, "non-unit input"),
+      ],
+    }),
+    puzzle({
+      number: 53, id: "quaternion-from-rotation-matrix", track: "advanced", title: "Rotation Matrix to Quaternion",
+      goal: "Recover a quaternion from a rotation matrix without losing precision at 180°.",
+      concept: "Pick the largest of the trace and the three diagonal entries so the division is never by a tiny number.",
+      functionName: "quaternionFromRotationMatrix", signature: "quaternionFromRotationMatrix(m) → quaternion",
+      starterSource: starter("quaternionFromRotationMatrix", "m"),
+      referenceSource: lines(
+        "function quaternionFromRotationMatrix(m) {",
+        "  var trace = m[0][0] + m[1][1] + m[2][2], s;",
+        "  if (trace > 0) {",
+        "    s = Math.sqrt(trace + 1) * 2;",
+        "    return { x: (m[2][1] - m[1][2]) / s, y: (m[0][2] - m[2][0]) / s, z: (m[1][0] - m[0][1]) / s, w: 0.25 * s };",
+        "  }",
+        "  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {",
+        "    s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;",
+        "    return { x: 0.25 * s, y: (m[0][1] + m[1][0]) / s, z: (m[0][2] + m[2][0]) / s, w: (m[2][1] - m[1][2]) / s };",
+        "  }",
+        "  if (m[1][1] > m[2][2]) {",
+        "    s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;",
+        "    return { x: (m[0][1] + m[1][0]) / s, y: 0.25 * s, z: (m[1][2] + m[2][1]) / s, w: (m[0][2] - m[2][0]) / s };",
+        "  }",
+        "  s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;",
+        "  return { x: (m[0][2] + m[2][0]) / s, y: (m[1][2] + m[2][1]) / s, z: 0.25 * s, w: (m[1][0] - m[0][1]) / s };",
+        "}"
+      ),
+      comparator: "quaternion", walkthroughChapter: "se3",
+      reference: docref("tf2 · Matrix3x3::getRotation", TF2_MATRIX3),
+      scene: { kind: "se3", view: "rpy", handles: RPY_SLIDERS, args: [{ fixture: "matrixFromRPY" }] },
+      diagnoses: [
+        diagnosis("trace-only", "Only the trace branch was used: at 180° the trace is −1 and the square root is zero, so the result blows up. Branch on the largest diagonal entry.", lines(
+          "function quaternionFromRotationMatrix(m) {",
+          "  var s = Math.sqrt(m[0][0] + m[1][1] + m[2][2] + 1) * 2;",
+          "  return { x: (m[2][1] - m[1][2]) / s, y: (m[0][2] - m[2][0]) / s, z: (m[1][0] - m[0][1]) / s, w: 0.25 * s };",
+          "}"
+        )),
+        diagnosis("conjugated", "The vector part has the wrong sign: x uses m21 − m12, not m12 − m21.", lines(
+          "function quaternionFromRotationMatrix(m) {",
+          "  var trace = m[0][0] + m[1][1] + m[2][2], s;",
+          "  if (trace > 0) { s = Math.sqrt(trace + 1) * 2; return { x: (m[1][2] - m[2][1]) / s, y: (m[2][0] - m[0][2]) / s, z: (m[0][1] - m[1][0]) / s, w: 0.25 * s }; }",
+          "  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) { s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2; return { x: -0.25 * s, y: -(m[0][1] + m[1][0]) / s, z: -(m[0][2] + m[2][0]) / s, w: (m[2][1] - m[1][2]) / s }; }",
+          "  if (m[1][1] > m[2][2]) { s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2; return { x: -(m[0][1] + m[1][0]) / s, y: -0.25 * s, z: -(m[1][2] + m[2][1]) / s, w: (m[0][2] - m[2][0]) / s }; }",
+          "  s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;",
+          "  return { x: -(m[0][2] + m[2][0]) / s, y: -(m[1][2] + m[2][1]) / s, z: -0.25 * s, w: (m[1][0] - m[0][1]) / s };",
+          "}"
+        )),
+      ],
+      hints: ["When the trace is positive, w = √(trace + 1) / 2 and the vector part comes from the antisymmetric entries.", "Otherwise pick the largest diagonal entry and solve for that component first.", "Four branches: trace, m00, m11, m22; each divides by s = 2·√(1 + chosen − others)."],
+      cases: [
+        example([IDENTITY_M3], IDENTITY_Q, "identity"),
+        example([Z90_M3], Z90, "Z quarter turn"),
+        example([Z180_M3], { x: 0, y: 0, z: 1, w: 0 }, "Z half turn (trace −1)"),
+        example([X90_M3], X90, "X quarter turn"),
+        example([Y90_M3], Y90, "Y quarter turn"),
+      ],
+    }),
+    puzzle({
+      number: 54, id: "quaternion-from-axis-angle", track: "advanced", title: "Axis-Angle to Quaternion",
+      goal: "Build the quaternion for a rotation of angle about an axis.",
+      concept: "A quaternion is literally (axis · sin(θ/2), cos(θ/2)); yaw quaternions were the Z-axis special case.",
+      functionName: "quaternionFromAxisAngle", signature: "quaternionFromAxisAngle(axis, angle) → quaternion",
+      starterSource: starter("quaternionFromAxisAngle", "axis, angle", "Normalize the axis; multiply it by sin(angle/2); w = cos(angle/2)."),
+      referenceSource: lines(
+        "function quaternionFromAxisAngle(axis, angle) {",
+        "  var n = Math.sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);",
+        "  var s = Math.sin(angle / 2);",
+        "  return { x: axis.x / n * s, y: axis.y / n * s, z: axis.z / n * s, w: Math.cos(angle / 2) };",
+        "}"
+      ),
+      comparator: "quaternion", walkthroughChapter: "se3",
+      reference: docref("tf2 · Quaternion::setRotation(axis, angle)", TF2_QUATERNION),
+      scene: { kind: "se3", view: "axis-angle", handles: AXIS_SLIDERS, args: [{ fixture: "axisFromSliders" }, { handle: "angle" }] },
+      diagnoses: [
+        diagnosis("full-angle", "Used the full angle: quaternions store half angles.", "function quaternionFromAxisAngle(axis, angle) { var n = Math.sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z); var s = Math.sin(angle); return { x: axis.x / n * s, y: axis.y / n * s, z: axis.z / n * s, w: Math.cos(angle) }; }"),
+        diagnosis("axis-not-normalized", "The axis was not normalized, so the quaternion length depends on the axis length.", "function quaternionFromAxisAngle(axis, angle) { var s = Math.sin(angle / 2); return { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: Math.cos(angle / 2) }; }"),
+      ],
+      hints: ["The axis must be a unit vector.", "Vector part = axis · sin(angle/2); scalar part = cos(angle/2).", "Divide the axis by its length before scaling by sin(angle/2)."],
+      cases: [
+        example([{ x: 0, y: 0, z: 1 }, PI / 2], Z90, "Z quarter turn"),
+        example([{ x: 1, y: 0, z: 0 }, PI / 2], X90, "X quarter turn"),
+        example([{ x: 0, y: 0, z: 2 }, PI], { x: 0, y: 0, z: 1, w: 0 }, "non-unit axis"),
+        example([{ x: 1, y: 1, z: 0 }, PI], { x: HALF, y: HALF, z: 0, w: 0 }, "diagonal axis"),
+        example([{ x: 0, y: 1, z: 0 }, 0], IDENTITY_Q, "zero angle"),
+      ],
+    }),
+    puzzle({
+      number: 55, id: "axis-angle-from-quaternion", track: "advanced", title: "Quaternion to Axis-Angle",
+      goal: "Recover the rotation axis and the angle in [0, π] from a quaternion.",
+      concept: "q and −q are the same rotation, so flip the sign when w is negative to get the short angle.",
+      functionName: "axisAngleFromQuaternion", signature: "axisAngleFromQuaternion(q) → { axis, angle }",
+      starterSource: starter("axisAngleFromQuaternion", "q", "Normalize; flip q if w < 0; angle = 2·atan2(|v|, w); axis = v / |v| (or +Z when |v| ≈ 0)."),
+      referenceSource: lines(
+        "function axisAngleFromQuaternion(q) {",
+        "  var n = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+        "  var x = q.x / n, y = q.y / n, z = q.z / n, w = q.w / n;",
+        "  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }",
+        "  var s = Math.sqrt(x * x + y * y + z * z);",
+        "  if (s < 1e-9) return { axis: { x: 0, y: 0, z: 1 }, angle: 0 };",
+        "  return { axis: { x: x / s, y: y / s, z: z / s }, angle: 2 * Math.atan2(s, w) };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "se3",
+      reference: docref("tf2 · Quaternion::getAxis / getAngle", TF2_QUATERNION),
+      scene: { kind: "se3", view: "axis-angle", handles: AXIS_SLIDERS, args: [{ fixture: "quatFromAxisAngle" }] },
+      diagnoses: [
+        diagnosis("no-flip", "A negative w gives the long way around (angle > π) and a flipped axis: negate the whole quaternion first.", lines(
+          "function axisAngleFromQuaternion(q) {",
+          "  var n = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+          "  var x = q.x / n, y = q.y / n, z = q.z / n, w = q.w / n;",
+          "  var s = Math.sqrt(x * x + y * y + z * z);",
+          "  if (s < 1e-9) return { axis: { x: 0, y: 0, z: 1 }, angle: 0 };",
+          "  return { axis: { x: x / s, y: y / s, z: z / s }, angle: 2 * Math.atan2(s, w) };",
+          "}"
+        )),
+        diagnosis("axis-unnormalized", "The axis is the vector part divided by its length, not the raw vector part.", lines(
+          "function axisAngleFromQuaternion(q) {",
+          "  var n = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);",
+          "  var x = q.x / n, y = q.y / n, z = q.z / n, w = q.w / n;",
+          "  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }",
+          "  var s = Math.sqrt(x * x + y * y + z * z);",
+          "  if (s < 1e-9) return { axis: { x: 0, y: 0, z: 1 }, angle: 0 };",
+          "  return { axis: { x: x, y: y, z: z }, angle: 2 * Math.atan2(s, w) };",
+          "}"
+        )),
+      ],
+      hints: ["|v| = sin(θ/2) and w = cos(θ/2) for a unit quaternion.", "angle = 2·atan2(|v|, w); axis = v / |v|.", "Negate q when w < 0 so the angle stays within [0, π]; return +Z with angle 0 for the identity."],
+      cases: [
+        example([Z90], { axis: { x: 0, y: 0, z: 1 }, angle: PI / 2 }, "Z quarter turn"),
+        example([X90], { axis: { x: 1, y: 0, z: 0 }, angle: PI / 2 }, "X quarter turn"),
+        example([{ x: 0, y: 0, z: 1, w: 0 }], { axis: { x: 0, y: 0, z: 1 }, angle: PI }, "half turn"),
+        example([IDENTITY_Q], { axis: { x: 0, y: 0, z: 1 }, angle: 0 }, "identity"),
+        example([{ x: 0, y: 0, z: -HALF, w: -HALF }], { axis: { x: 0, y: 0, z: 1 }, angle: PI / 2 }, "negated quaternion"),
+      ],
+    }),
+  ];
+
+  const ADVANCED_14 = [
+    puzzle({
+      number: 56, id: "static-from-urdf", track: "advanced", title: "Static Mount from URDF",
+      goal: "Turn a URDF <origin xyz rpy> into the SE(3) transform a static broadcaster publishes.",
+      concept: "Every sensor mount on a real robot is specified exactly this way; robot_state_publisher turns it into a static TF.",
+      functionName: "staticFromUrdf", signature: "staticFromUrdf(xyz, rpy) → { translation, rotation }",
+      starterSource: starter("staticFromUrdf", "xyz, rpy", "xyz is [x, y, z] metres; rpy is [roll, pitch, yaw] radians."),
+      referenceSource: lines(
+        "function staticFromUrdf(xyz, rpy) {",
+        "  return { translation: { x: xyz[0], y: xyz[1], z: xyz[2] }, rotation: quaternionFromRPY(rpy[0], rpy[1], rpy[2]) };",
+        "}"
+      ),
+      comparator: "se3", walkthroughChapter: "broadcasters",
+      dependencies: ["quaternion-from-rpy"],
+      reference: docref("URDF · <joint> <origin xyz rpy>", "https://wiki.ros.org/urdf/XML/joint"),
+      scene: { kind: "se3", view: "urdf", handles: [
+        { id: "roll", type: "slider", label: "roll", value: 0.2, min: -PI, max: PI },
+        { id: "pitch", type: "slider", label: "pitch", value: -0.1, min: -PI / 2, max: PI / 2 },
+        { id: "yaw", type: "slider", label: "yaw", value: 1.2, min: -PI, max: PI },
+      ], args: [{ fixture: "urdfXyz" }, { fixture: "rpyArray" }] },
+      diagnoses: [
+        diagnosis("degrees-assumed", "URDF angles are radians already; converting from degrees shrinks them.", "function staticFromUrdf(xyz, rpy) { return { translation: { x: xyz[0], y: xyz[1], z: xyz[2] }, rotation: quaternionFromRPY(rpy[0] * Math.PI / 180, rpy[1] * Math.PI / 180, rpy[2] * Math.PI / 180) }; }"),
+        diagnosis("rpy-order-swapped", "The array is [roll, pitch, yaw]; it was read as [yaw, pitch, roll].", "function staticFromUrdf(xyz, rpy) { return { translation: { x: xyz[0], y: xyz[1], z: xyz[2] }, rotation: quaternionFromRPY(rpy[2], rpy[1], rpy[0]) }; }"),
+      ],
+      hints: ["Translation is the xyz triple as is.", "Rotation is quaternionFromRPY(roll, pitch, yaw) with the array in that order.", "Return { translation: { x: xyz[0], y: xyz[1], z: xyz[2] }, rotation: quaternionFromRPY(rpy[0], rpy[1], rpy[2]) }."],
+      cases: [
+        example([[0.2, 0, 0.1], [0, 0, PI / 2]], { translation: { x: 0.2, y: 0, z: 0.1 }, rotation: Z90 }, "laser mount"),
+        example([[0, 0, 0], [PI / 2, 0, 0]], { translation: { x: 0, y: 0, z: 0 }, rotation: X90 }, "roll only"),
+        example([[1, 2, 3], [0, 0, 0]], { translation: { x: 1, y: 2, z: 3 }, rotation: IDENTITY_Q }, "translation only"),
+        example([[0, 0, 0], [-PI / 2, 0, -PI / 2]], { translation: { x: 0, y: 0, z: 0 }, rotation: { x: -0.5, y: 0.5, z: -0.5, w: 0.5 } }, "camera optical mount"),
+      ],
+    }),
+    puzzle({
+      number: 57, id: "twist-from-poses", track: "advanced", title: "Twist from Two Poses",
+      goal: "Estimate the body-frame velocity between two stamped poses.",
+      concept: "Odometry messages carry a twist in the child frame; it is relativeTransform divided by dt.",
+      functionName: "twistFromPoses", signature: "twistFromPoses(a, b, dt) → { vx, vy, wz }",
+      starterSource: starter("twistFromPoses", "a, b, dt", "relativeTransform(a, b) is the motion seen from a; divide by dt."),
+      referenceSource: lines(
+        "function twistFromPoses(a, b, dt) {",
+        "  var relative = relativeTransform(a, b);",
+        "  return { vx: relative.x / dt, vy: relative.y / dt, wz: relative.yaw / dt };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      dependencies: ["relative-transform"],
+      reference: docref("nav_msgs/Odometry · twist is expressed in the child frame", "https://docs.ros.org/en/rolling/p/nav_msgs/msg/Odometry.html"),
+      scene: { kind: "twist", handles: [
+        { id: "a", type: "pose", label: "a", value: { x: -2, y: -0.5, yaw: 0.3 } },
+        { id: "b", type: "pose", label: "b", value: { x: 0.5, y: 0.8, yaw: 0.9 } },
+        { id: "dt", type: "slider", label: "dt (s)", value: 1.0, min: 0.1, max: 2 },
+      ] },
+      diagnoses: [
+        diagnosis("world-frame-delta", "That is the world-frame displacement: a twist is expressed in a's body frame, so use relativeTransform first.", "function twistFromPoses(a, b, dt) { return { vx: (b.x - a.x) / dt, vy: (b.y - a.y) / dt, wz: wrapAngle(b.yaw - a.yaw) / dt }; }"),
+        diagnosis("no-dt", "Not divided by dt: a twist is a rate, not a displacement.", "function twistFromPoses(a, b, dt) { var relative = relativeTransform(a, b); return { vx: relative.x, vy: relative.y, wz: relative.yaw }; }"),
+      ],
+      hints: ["Where is b as seen from a? That is relativeTransform(a, b).", "Divide each component by dt.", "Return { vx: rel.x / dt, vy: rel.y / dt, wz: rel.yaw / dt }."],
+      cases: [
+        example([{ x: 0, y: 0, yaw: 0 }, { x: 1, y: 0, yaw: 0 }, 0.5], { vx: 2, vy: 0, wz: 0 }, "forward"),
+        example([{ x: 0, y: 0, yaw: PI / 2 }, { x: 0, y: 1, yaw: PI / 2 }, 1], { vx: 1, vy: 0, wz: 0 }, "forward while facing +y"),
+        example([{ x: 0, y: 0, yaw: 0 }, { x: 0, y: 0, yaw: 0.2 }, 0.1], { vx: 0, vy: 0, wz: 2 }, "turn in place"),
+        example([{ x: 1, y: 1, yaw: PI }, { x: 0, y: 1, yaw: PI }, 1], { vx: 1, vy: 0, wz: 0 }, "forward while facing −x"),
+      ],
+    }),
+    puzzle({
+      number: 58, id: "deskew-scan", track: "advanced", title: "De-skew a Lidar Scan",
+      goal: "Re-express every scan point, measured at its own time, in the sensor frame at the end of the scan.",
+      concept: "A spinning lidar moves while it scans; without de-skewing, a straight wall bends.",
+      functionName: "deskewScan", signature: "deskewScan(points, times, samples, endTime) → points",
+      starterSource: starter("deskewScan", "points, times, samples, endTime"),
+      referenceSource: lines(
+        "function deskewScan(points, times, samples, endTime) {",
+        "  var toEnd = invert(sampleEdge({ samples: samples }, endTime));",
+        "  var out = [];",
+        "  for (var i = 0; i < points.length; i += 1) {",
+        "    var poseAtTime = sampleEdge({ samples: samples }, times[i]);",
+        "    out.push(transformPoint(compose(toEnd, poseAtTime), points[i]));",
+        "  }",
+        "  return out;",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      dependencies: ["sample-edge", "compose", "invert", "transform-point"],
+      reference: docref("laser_geometry · LaserProjection::transformLaserScanToPointCloud", "https://docs.ros.org/en/rolling/p/laser_geometry/"),
+      scene: { kind: "deskew", handles: [{ id: "end", type: "pose", label: "sensor at t=1", value: { x: 1.2, y: 0.3, yaw: 0.4 } }], args: [{ fixture: "rawPoints" }, { fixture: "times" }, { fixture: "samples" }, 1] },
+      diagnoses: [
+        diagnosis("no-interpolation", "Every point used the end pose, so nothing moved: sample the pose at each point's own time.", lines(
+          "function deskewScan(points, times, samples, endTime) {",
+          "  var endPose = sampleEdge({ samples: samples }, endTime);",
+          "  var toEnd = invert(endPose);",
+          "  return points.map(function (point) { return transformPoint(compose(toEnd, endPose), point); });",
+          "}"
+        )),
+        diagnosis("inverse-direction", "The composition is backwards: go from the point's frame up to odom, then down into the end frame: compose(invert(endPose), poseAtTime).", lines(
+          "function deskewScan(points, times, samples, endTime) {",
+          "  var endPose = sampleEdge({ samples: samples }, endTime);",
+          "  var out = [];",
+          "  for (var i = 0; i < points.length; i += 1) {",
+          "    var poseAtTime = sampleEdge({ samples: samples }, times[i]);",
+          "    out.push(transformPoint(compose(invert(poseAtTime), endPose), points[i]));",
+          "  }",
+          "  return out;",
+          "}"
+        )),
+      ],
+      hints: ["Each point lives in the sensor frame at its own time.", "Go up to odom with the pose at that time, then down into the end frame with the inverse of the end pose.", "T = compose(invert(pose(endTime)), pose(times[i])); apply it to points[i]."],
+      cases: [
+        example([[{ x: 3, y: 0 }, { x: 3, y: 1 }], [0, 0.5], [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 1, transform: { x: 0, y: 0, yaw: 0 } }], 1], [{ x: 3, y: 0 }, { x: 3, y: 1 }], "stationary sensor"),
+        example([[{ x: 3, y: 0 }, { x: 2.5, y: 0 }, { x: 2, y: 0 }], [0, 0.5, 1], [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 1, transform: { x: 1, y: 0, yaw: 0 } }], 1], [{ x: 2, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 0 }], "moving forward"),
+        example([[{ x: 1, y: 0 }, { x: 0.5, y: 0 }], [0, 1], [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 1, transform: { x: 0, y: 0, yaw: PI / 2 } }], 1], [{ x: 0, y: -1 }, { x: 0.5, y: 0 }], "turning in place"),
+        example([[], [], [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 1, transform: { x: 1, y: 0, yaw: 0 } }], 1], [], "empty scan"),
+      ],
+    }),
+  ];
+
+  const TF2_BUFFER_CORE = "https://docs.ros.org/en/rolling/p/tf2/generated/classtf2_1_1BufferCore.html";
+  const TF2_ROS_BUFFER = "https://docs.ros.org/en/rolling/p/tf2_ros/generated/classtf2__ros_1_1Buffer.html";
+  const EMPTY_BUFFER = { duration: 10, edges: {} };
+  const LASER_STATIC_EDGE = { isStatic: true, samples: [{ time: 0, parent: "base_link", transform: { x: 1, y: 0, yaw: 0 } }] };
+  const ODOM_TWO = { isStatic: false, samples: [{ time: 0, parent: "map", transform: { x: 0, y: 0, yaw: 0 } }, { time: 5, parent: "map", transform: { x: 5, y: 0, yaw: 0 } }] };
+  const CHAIN_BUFFER = { duration: 10, edges: {
+    odom: { isStatic: false, samples: [{ time: 0, parent: "map", transform: { x: 0, y: 0, yaw: 0 } }, { time: 10, parent: "map", transform: { x: 10, y: 0, yaw: 0 } }] },
+    base_link: { isStatic: false, samples: [{ time: 2, parent: "odom", transform: { x: 0, y: 0, yaw: 0 } }, { time: 9, parent: "odom", transform: { x: 7, y: 0, yaw: 0 } }] },
+    laser: LASER_STATIC_EDGE,
+    camera: { isStatic: false, samples: [{ time: 8, parent: "base_link", transform: { x: 0, y: 0.3, yaw: 0 } }, { time: 9, parent: "base_link", transform: { x: 0, y: 0.3, yaw: 0 } }] },
+  } };
+  const REPARENT_BUFFER = { duration: 10, edges: {
+    odom: { isStatic: false, samples: [{ time: 0, parent: "map", transform: { x: 2, y: 0, yaw: 0 } }, { time: 10, parent: "map", transform: { x: 2, y: 0, yaw: 0 } }] },
+    base_link: { isStatic: false, samples: [{ time: 0, parent: "odom", transform: { x: 1, y: 0, yaw: 0 } }, { time: 6, parent: "map", transform: { x: 5, y: 0, yaw: 0 } }, { time: 9, parent: "map", transform: { x: 5, y: 0, yaw: 0 } }] },
+    laser: LASER_STATIC_EDGE,
+  } };
+  const ARRIVALS = [{ time: 0, arrival: 0.2 }, { time: 1, arrival: 1.3 }, { time: 2, arrival: 2.1 }, { time: 3, arrival: 3.6 }, { time: 4, arrival: 4.2 }];
+
+  const ADVANCED_15 = [
+    puzzle({
+      number: 59, id: "insert-transform", track: "advanced", title: "Insert into a TF Buffer",
+      goal: "Latch a static transform, or append a dynamic one and prune history older than the buffer duration.",
+      concept: "This is the whole static-versus-dynamic difference: one latched sample forever, versus a sliding window of stamped samples.",
+      functionName: "insertTransform", signature: "insertTransform(buffer, sample, isStatic) → newBuffer",
+      starterSource: starter("insertTransform", "buffer, sample, isStatic", "sample is { child, parent, time, transform }. Return a new buffer; do not mutate."),
+      referenceSource: lines(
+        "function insertTransform(buffer, sample, isStatic) {",
+        "  var edges = Object.assign({}, buffer.edges);",
+        "  var entry = { time: sample.time, parent: sample.parent, transform: sample.transform };",
+        "  if (isStatic) {",
+        "    edges[sample.child] = { isStatic: true, samples: [entry] };",
+        "    return { duration: buffer.duration, edges: edges };",
+        "  }",
+        "  var existing = edges[sample.child] && !edges[sample.child].isStatic ? edges[sample.child].samples : [];",
+        "  var samples = existing.concat([entry]).sort(function (a, b) { return a.time - b.time; });",
+        "  var newest = samples[samples.length - 1].time;",
+        "  samples = samples.filter(function (s) { return s.time >= newest - buffer.duration; });",
+        "  edges[sample.child] = { isStatic: false, samples: samples };",
+        "  return { duration: buffer.duration, edges: edges };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "broadcasters",
+      reference: docref("tf2 · BufferCore::setTransform and TimeCache pruning", TF2_BUFFER_CORE),
+      scene: { kind: "buffer", view: "insert", handles: [
+        { id: "time", type: "timeline", label: "sample time", value: 14, start: 0, end: 20 },
+        { id: "kind", type: "selector", label: "edge", value: "dynamic", options: ["dynamic", "static"] },
+      ], args: [{ fixture: "buffer" }, { fixture: "insertedSample" }, { fixture: "insertIsStatic" }] },
+      diagnoses: [
+        diagnosis("no-pruning", "Old samples were kept: a dynamic edge only holds samples newer than newest − duration.", lines(
+          "function insertTransform(buffer, sample, isStatic) {",
+          "  var edges = Object.assign({}, buffer.edges);",
+          "  var entry = { time: sample.time, parent: sample.parent, transform: sample.transform };",
+          "  if (isStatic) { edges[sample.child] = { isStatic: true, samples: [entry] }; return { duration: buffer.duration, edges: edges }; }",
+          "  var existing = edges[sample.child] && !edges[sample.child].isStatic ? edges[sample.child].samples : [];",
+          "  var samples = existing.concat([entry]).sort(function (a, b) { return a.time - b.time; });",
+          "  edges[sample.child] = { isStatic: false, samples: samples };",
+          "  return { duration: buffer.duration, edges: edges };",
+          "}"
+        )),
+        diagnosis("static-appended", "A static transform was appended like a dynamic sample: static edges are latched, one sample that replaces the previous one.", lines(
+          "function insertTransform(buffer, sample, isStatic) {",
+          "  var edges = Object.assign({}, buffer.edges);",
+          "  var entry = { time: sample.time, parent: sample.parent, transform: sample.transform };",
+          "  var existing = edges[sample.child] ? edges[sample.child].samples : [];",
+          "  var samples = existing.concat([entry]).sort(function (a, b) { return a.time - b.time; });",
+          "  if (!isStatic) { var newest = samples[samples.length - 1].time; samples = samples.filter(function (s) { return s.time >= newest - buffer.duration; }); }",
+          "  edges[sample.child] = { isStatic: isStatic, samples: samples };",
+          "  return { duration: buffer.duration, edges: edges };",
+          "}"
+        )),
+      ],
+      hints: ["Copy buffer.edges; never modify the input.", "Static: edges[child] = { isStatic: true, samples: [entry] }.", "Dynamic: append, sort by time, then keep only samples with time ≥ newest − buffer.duration."],
+      cases: [
+        example([EMPTY_BUFFER, { child: "laser", parent: "base_link", time: 0, transform: { x: 1, y: 0, yaw: 0 } }, true], { duration: 10, edges: { laser: { isStatic: true, samples: [{ time: 0, parent: "base_link", transform: { x: 1, y: 0, yaw: 0 } }] } } }, "latch a static edge"),
+        example([{ duration: 10, edges: { odom: ODOM_TWO } }, { child: "odom", parent: "map", time: 14, transform: { x: 14, y: 0, yaw: 0 } }, false], { duration: 10, edges: { odom: { isStatic: false, samples: [{ time: 5, parent: "map", transform: { x: 5, y: 0, yaw: 0 } }, { time: 14, parent: "map", transform: { x: 14, y: 0, yaw: 0 } }] } } }, "append and prune"),
+        example([{ duration: 10, edges: { laser: LASER_STATIC_EDGE } }, { child: "laser", parent: "base_link", time: 3, transform: { x: 2, y: 0, yaw: 0 } }, true], { duration: 10, edges: { laser: { isStatic: true, samples: [{ time: 3, parent: "base_link", transform: { x: 2, y: 0, yaw: 0 } }] } } }, "republish a static edge"),
+        example([{ duration: 10, edges: { odom: { isStatic: false, samples: [{ time: 0, parent: "map", transform: { x: 0, y: 0, yaw: 0 } }, { time: 8, parent: "map", transform: { x: 8, y: 0, yaw: 0 } }] } } }, { child: "odom", parent: "map", time: 4, transform: { x: 4, y: 0, yaw: 0 } }, false], { duration: 10, edges: { odom: { isStatic: false, samples: [{ time: 0, parent: "map", transform: { x: 0, y: 0, yaw: 0 } }, { time: 4, parent: "map", transform: { x: 4, y: 0, yaw: 0 } }, { time: 8, parent: "map", transform: { x: 8, y: 0, yaw: 0 } }] } } }, "out-of-order arrival"),
+      ],
+    }),
+    puzzle({
+      number: 60, id: "parent-at", track: "advanced", title: "Parent at a Time",
+      goal: "Find a frame's parent at a given time, and refuse to interpolate across a reparenting.",
+      concept: "TF2 allows a child's parent to change over time; the two samples around a lookup must agree.",
+      functionName: "parentAt", signature: "parentAt(buffer, child, time) → parent | null",
+      starterSource: starter("parentAt", "buffer, child, time"),
+      referenceSource: lines(
+        "function parentAt(buffer, child, time) {",
+        "  var edge = buffer.edges[child];",
+        "  if (!edge || !edge.samples.length) return null;",
+        "  if (edge.isStatic) return edge.samples[0].parent;",
+        "  var b = bracketSamples(edge.samples, time);",
+        "  var before = edge.samples[b.beforeIndex], after = edge.samples[b.afterIndex];",
+        "  if (b.amount === 0) return before.parent;",
+        "  return before.parent === after.parent ? before.parent : null;",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "tree",
+      dependencies: ["bracket-samples"],
+      reference: docref("tf2 · TimeCache::getParent", "https://docs.ros.org/en/rolling/p/tf2/generated/classtf2_1_1TimeCache.html"),
+      scene: { kind: "buffer", view: "parents", handles: [{ id: "time", type: "timeline", label: "time", value: 3, start: -1, end: 11 }], args: [{ fixture: "reparentBuffer" }, "base_link", { handle: "time" }] },
+      diagnoses: [
+        diagnosis("latest-only", "Always returned the newest sample's parent: the parent must be read at the requested time.", lines(
+          "function parentAt(buffer, child, time) {",
+          "  var edge = buffer.edges[child];",
+          "  if (!edge || !edge.samples.length) return null;",
+          "  return edge.samples[edge.samples.length - 1].parent;",
+          "}"
+        )),
+        diagnosis("ignores-change", "Returned the earlier sample's parent even when the later one differs: interpolating across a reparenting is not allowed, return null.", lines(
+          "function parentAt(buffer, child, time) {",
+          "  var edge = buffer.edges[child];",
+          "  if (!edge || !edge.samples.length) return null;",
+          "  if (edge.isStatic) return edge.samples[0].parent;",
+          "  var b = bracketSamples(edge.samples, time);",
+          "  return edge.samples[b.beforeIndex].parent;",
+          "}"
+        )),
+      ],
+      hints: ["Static edges have one parent for all time.", "Bracket the dynamic samples with bracketSamples; an exact hit (amount 0) uses that sample's parent.", "If the two bracketing samples name different parents, return null."],
+      cases: [
+        example([REPARENT_BUFFER, "base_link", 7], "map", "after the reparenting"),
+        example([REPARENT_BUFFER, "base_link", 3], null, "across the reparenting"),
+        example([REPARENT_BUFFER, "base_link", -1], "odom", "before the history"),
+        example([REPARENT_BUFFER, "laser", 42], "base_link", "static edge"),
+        example([REPARENT_BUFFER, "camera", 1], null, "unknown child"),
+        example([REPARENT_BUFFER, "base_link", 0], "odom", "exactly on a sample"),
+      ],
+    }),
+    puzzle({
+      number: 61, id: "buffer-can-transform", track: "advanced", title: "Can the Buffer Answer?",
+      goal: "Decide whether a lookup is answerable: connected path, every dynamic edge on it covers the time, no reparenting in between.",
+      concept: "Static edges never limit a lookup; only the dynamic edges on the actual path do.",
+      functionName: "canTransform", signature: "canTransform(buffer, target, source, time) → { ok } | { ok: false, code }",
+      starterSource: starter("canTransform", "buffer, target, source, time", "Codes: DISCONNECTED, PAST_EXTRAPOLATION, FUTURE_EXTRAPOLATION, PARENT_CHANGE."),
+      referenceSource: lines(
+        "function canTransform(buffer, target, source, time) {",
+        "  var tree = {};",
+        "  Object.keys(buffer.edges).forEach(function (child) {",
+        "    var edge = buffer.edges[child];",
+        "    tree[child] = { parent: parentAt(buffer, child, time) || edge.samples[edge.samples.length - 1].parent };",
+        "  });",
+        "  var steps = directedPath(tree, target, source);",
+        "  if (steps === null) return { ok: false, code: \"DISCONNECTED\" };",
+        "  for (var i = 0; i < steps.length; i += 1) {",
+        "    var edge = buffer.edges[steps[i].child];",
+        "    if (edge.isStatic) continue;",
+        "    var start = edge.samples[0].time, end = edge.samples[edge.samples.length - 1].time;",
+        "    if (time < start) return { ok: false, code: \"PAST_EXTRAPOLATION\" };",
+        "    if (time > end) return { ok: false, code: \"FUTURE_EXTRAPOLATION\" };",
+        "    if (parentAt(buffer, steps[i].child, time) === null) return { ok: false, code: \"PARENT_CHANGE\" };",
+        "  }",
+        "  return { ok: true };",
+        "}"
+      ),
+      comparator: "error", walkthroughChapter: "time-buffer",
+      dependencies: ["parent-at", "directed-path"],
+      reference: docref("tf2_ros · Buffer::canTransform", TF2_ROS_BUFFER),
+      scene: { kind: "buffer", view: "can", handles: [
+        { id: "time", type: "timeline", label: "time", value: 5, start: -1, end: 12 },
+        { id: "target", type: "selector", label: "target", value: "map", options: CHAIN_OPTIONS },
+        { id: "source", type: "selector", label: "source", value: "laser", options: CHAIN_OPTIONS },
+      ], args: [{ fixture: "buffer" }, { handle: "target" }, { handle: "source" }, { handle: "time" }] },
+      diagnoses: [
+        diagnosis("static-ranged", "A static edge was treated as a range around its latch time: static edges are valid at every time.", lines(
+          "function canTransform(buffer, target, source, time) {",
+          "  var tree = {};",
+          "  Object.keys(buffer.edges).forEach(function (child) { var edge = buffer.edges[child]; tree[child] = { parent: parentAt(buffer, child, time) || edge.samples[edge.samples.length - 1].parent }; });",
+          "  var steps = directedPath(tree, target, source);",
+          "  if (steps === null) return { ok: false, code: \"DISCONNECTED\" };",
+          "  for (var i = 0; i < steps.length; i += 1) {",
+          "    var edge = buffer.edges[steps[i].child];",
+          "    var start = edge.samples[0].time, end = edge.samples[edge.samples.length - 1].time;",
+          "    if (time < start) return { ok: false, code: \"PAST_EXTRAPOLATION\" };",
+          "    if (time > end) return { ok: false, code: \"FUTURE_EXTRAPOLATION\" };",
+          "    if (parentAt(buffer, steps[i].child, time) === null) return { ok: false, code: \"PARENT_CHANGE\" };",
+          "  }",
+          "  return { ok: true };",
+          "}"
+        )),
+        diagnosis("whole-buffer-range", "Every dynamic edge in the buffer was checked: only the edges on the path between target and source matter.", lines(
+          "function canTransform(buffer, target, source, time) {",
+          "  var tree = {};",
+          "  Object.keys(buffer.edges).forEach(function (child) { var edge = buffer.edges[child]; tree[child] = { parent: parentAt(buffer, child, time) || edge.samples[edge.samples.length - 1].parent }; });",
+          "  var steps = directedPath(tree, target, source);",
+          "  if (steps === null) return { ok: false, code: \"DISCONNECTED\" };",
+          "  var children = Object.keys(buffer.edges);",
+          "  for (var i = 0; i < children.length; i += 1) {",
+          "    var edge = buffer.edges[children[i]];",
+          "    if (edge.isStatic) continue;",
+          "    var start = edge.samples[0].time, end = edge.samples[edge.samples.length - 1].time;",
+          "    if (time < start) return { ok: false, code: \"PAST_EXTRAPOLATION\" };",
+          "    if (time > end) return { ok: false, code: \"FUTURE_EXTRAPOLATION\" };",
+          "    if (parentAt(buffer, children[i], time) === null) return { ok: false, code: \"PARENT_CHANGE\" };",
+          "  }",
+          "  return { ok: true };",
+          "}"
+        )),
+      ],
+      hints: ["Build a plain tree of parents at the requested time, then reuse directedPath.", "Only the edges on the path matter, and static ones always pass.", "For each dynamic step: PAST if time < first sample, FUTURE if time > last sample, PARENT_CHANGE if parentAt is null."],
+      cases: [
+        example([CHAIN_BUFFER, "map", "laser", 5], { ok: true }, "inside every range"),
+        example([CHAIN_BUFFER, "map", "laser", 1], { ok: false, code: "PAST_EXTRAPOLATION" }, "before base_link history"),
+        example([CHAIN_BUFFER, "map", "base_link", 9.5], { ok: false, code: "FUTURE_EXTRAPOLATION" }, "after base_link history"),
+        example([CHAIN_BUFFER, "map", "nowhere", 5], { ok: false, code: "DISCONNECTED" }, "unknown frame"),
+        example([CHAIN_BUFFER, "laser", "base_link", 100], { ok: true }, "static-only path at any time"),
+        example([CHAIN_BUFFER, "map", "base_link", 2], { ok: true }, "off-path camera edge does not matter"),
+        example([REPARENT_BUFFER, "map", "base_link", 3], { ok: false, code: "PARENT_CHANGE" }, "across a reparenting"),
+      ],
+    }),
+    puzzle({
+      number: 62, id: "wait-for-transform", track: "advanced", title: "When Does the Answer Arrive?",
+      goal: "Given when each sample reached the buffer, find the earliest wall time a lookup at a stamp becomes answerable.",
+      concept: "Transforms arrive late. A lookup needs the sample *after* the stamp too, so nodes wait or time out.",
+      functionName: "waitForTransform", signature: "waitForTransform(samples, stamp) → wallTime | null",
+      starterSource: starter("waitForTransform", "samples, stamp", "samples are { time, arrival } sorted by time. Bracket the stamp; the answer is the later arrival."),
+      referenceSource: lines(
+        "function waitForTransform(samples, stamp) {",
+        "  if (!samples.length || stamp < samples[0].time || stamp > samples[samples.length - 1].time) return null;",
+        "  var b = bracketSamples(samples, stamp);",
+        "  if (b.amount === 0) return samples[b.beforeIndex].arrival;",
+        "  return Math.max(samples[b.beforeIndex].arrival, samples[b.afterIndex].arrival);",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "time-buffer",
+      dependencies: ["bracket-samples"],
+      reference: docref("tf2_ros · Buffer::canTransform(…, timeout) and waitForTransform", TF2_ROS_BUFFER),
+      scene: { kind: "buffer", view: "wait", handles: [{ id: "stamp", type: "timeline", label: "requested stamp", value: 1.5, start: -0.5, end: 4.5 }], args: [{ fixture: "arrivals" }, { handle: "stamp" }] },
+      diagnoses: [
+        diagnosis("before-only", "Only the earlier sample's arrival was used: interpolation also needs the sample after the stamp.", lines(
+          "function waitForTransform(samples, stamp) {",
+          "  if (!samples.length || stamp < samples[0].time || stamp > samples[samples.length - 1].time) return null;",
+          "  var b = bracketSamples(samples, stamp);",
+          "  return samples[b.beforeIndex].arrival;",
+          "}"
+        )),
+        diagnosis("stamp-not-arrival", "The sample's stamp was returned instead of its arrival time.", lines(
+          "function waitForTransform(samples, stamp) {",
+          "  if (!samples.length || stamp < samples[0].time || stamp > samples[samples.length - 1].time) return null;",
+          "  var b = bracketSamples(samples, stamp);",
+          "  return Math.max(samples[b.beforeIndex].time, samples[b.afterIndex].time);",
+          "}"
+        )),
+      ],
+      hints: ["No bracket, no answer: return null outside the stamped history.", "An exact stamp needs only that one sample's arrival.", "Otherwise the lookup waits for the later of the two bracketing arrivals."],
+      cases: [
+        example([ARRIVALS, 0.5], 1.3, "between samples"),
+        example([ARRIVALS, 1], 1.3, "exact stamp"),
+        example([ARRIVALS, 2.5], 3.6, "late arrival dominates"),
+        example([ARRIVALS, 4], 4.2, "last stamp"),
+        example([ARRIVALS, 4.5], null, "not yet answerable"),
+        example([ARRIVALS, -1], null, "before the history"),
+      ],
+    }),
+    puzzle({
+      number: 63, id: "buffer-lookup", track: "advanced", title: "Buffer-Aware Lookup",
+      goal: "Answer a lookup from a real buffer: check availability, sample every edge at the time with the right parent, then traverse.",
+      concept: "Static edges pass their latched transform through; dynamic edges interpolate; parents come from parentAt.",
+      functionName: "bufferLookup", signature: "bufferLookup(buffer, target, source, time) → { ok: true, transform } | { ok: false, code }",
+      starterSource: starter("bufferLookup", "buffer, target, source, time"),
+      referenceSource: lines(
+        "function bufferLookup(buffer, target, source, time) {",
+        "  var availability = canTransform(buffer, target, source, time);",
+        "  if (!availability.ok) return availability;",
+        "  var tree = {};",
+        "  Object.keys(buffer.edges).forEach(function (child) {",
+        "    var edge = buffer.edges[child];",
+        "    var parent = parentAt(buffer, child, time) || edge.samples[edge.samples.length - 1].parent;",
+        "    var transform = edge.isStatic ? edge.samples[0].transform : sampleEdge({ samples: edge.samples }, time);",
+        "    tree = storeEdge(tree, { parent: parent, child: child, transform: transform });",
+        "  });",
+        "  return { ok: true, transform: lookupTransform(tree, target, source) };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sandbox",
+      dependencies: ["buffer-can-transform", "parent-at", "sample-edge", "store-edge", "lookup-transform"],
+      reference: docref("tf2 · BufferCore::lookupTransform", TF2_BUFFER_CORE),
+      scene: { kind: "buffer", view: "lookup", handles: [
+        { id: "time", type: "timeline", label: "time", value: 4, start: -1, end: 12 },
+        { id: "target", type: "selector", label: "target", value: "map", options: CHAIN_OPTIONS },
+        { id: "source", type: "selector", label: "source", value: "laser", options: CHAIN_OPTIONS },
+      ], args: [{ fixture: "buffer" }, { handle: "target" }, { handle: "source" }, { handle: "time" }] },
+      diagnoses: [diagnosis("skips-availability", "The lookup never asked canTransform, so it answers with clamped data at times the buffer cannot cover.", lines(
+        "function bufferLookup(buffer, target, source, time) {",
+        "  var tree = {};",
+        "  Object.keys(buffer.edges).forEach(function (child) {",
+        "    var edge = buffer.edges[child];",
+        "    var parent = parentAt(buffer, child, time) || edge.samples[edge.samples.length - 1].parent;",
+        "    var transform = edge.isStatic ? edge.samples[0].transform : sampleEdge({ samples: edge.samples }, time);",
+        "    tree = storeEdge(tree, { parent: parent, child: child, transform: transform });",
+        "  });",
+        "  var transform = lookupTransform(tree, target, source);",
+        "  return transform === null ? { ok: false, code: \"DISCONNECTED\" } : { ok: true, transform: transform };",
+        "}"
+      ))],
+      hints: ["canTransform first; return its error object unchanged.", "Static edges contribute samples[0].transform; dynamic edges contribute sampleEdge({ samples }, time).", "storeEdge each child with parentAt's answer, then lookupTransform(tree, target, source)."],
+      cases: [
+        example([CHAIN_BUFFER, "map", "laser", 5], { ok: true, transform: { x: 9, y: 0, yaw: 0 } }, "interpolated chain"),
+        example([CHAIN_BUFFER, "map", "laser", 1], { ok: false, code: "PAST_EXTRAPOLATION" }, "unavailable time"),
+        example([CHAIN_BUFFER, "laser", "base_link", 100], { ok: true, transform: { x: -1, y: 0, yaw: 0 } }, "static-only path"),
+        example([REPARENT_BUFFER, "map", "base_link", 8], { ok: true, transform: { x: 5, y: 0, yaw: 0 } }, "after reparenting to map"),
+        example([REPARENT_BUFFER, "map", "base_link", 2], { ok: false, code: "PARENT_CHANGE" }, "across the reparenting"),
+      ],
+    }),
+  ];
+
+  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7, TOOLKIT_8, TOOLKIT_9, TOOLKIT_10, TOOLKIT_11, TOOLKIT_12, ADVANCED_13, ADVANCED_14, ADVANCED_15));
   const byId = new Map(PUZZLES.map((entry) => [entry.id, entry]));
 
   function getPuzzle(id) {

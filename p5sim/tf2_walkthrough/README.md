@@ -43,7 +43,15 @@ Track 2 (Transform Toolkit) adds puzzles 28 to 51, unlocked by the capstone, and
 
 Every toolkit puzzle links the PythonRobotics file and function it mirrors (a local copy lives under `references/PythonRobotics`) or the ROS REP / tf2 document for tf2-only material. Two deliberate differences from PythonRobotics: nearestNeighbors sums nearest distances rather than index-order residuals, and icpMatch accumulates by left-multiplication.
 
-Track 3 (Pose Correction) is listed in the map and unlocks after the ICP finale. Its puzzles, built from the warehouse rack pipeline in `p5sim/navigation`, arrive with the next track.
+Track 3 (Buffers & Sensors) adds puzzles 52 to 63, unlocked by the ICP finale:
+
+13. Conversions: rotationMatrixFromQuaternion, quaternionFromRotationMatrix, quaternionFromAxisAngle, axisAngleFromQuaternion.
+14. Sensors and motion: staticFromUrdf, twistFromPoses, deskewScan.
+15. Buffer semantics: insertTransform (latch versus sliding window), parentAt (reparenting), canTransform, waitForTransform (arrival latency), bufferLookup.
+
+Stage 15 is where the static-versus-dynamic difference actually lives: a static edge is one latched sample that answers any time, a dynamic edge is a pruned history that only answers inside its range, and only the dynamic edges on the lookup path constrain it.
+
+Track 4 (Pose Correction) is listed in the map and unlocks after the buffer lookup finale. Its puzzles, built from the warehouse rack pipeline in `p5sim/navigation`, arrive with the next track.
 
 Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
 

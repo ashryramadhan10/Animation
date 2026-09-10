@@ -211,18 +211,20 @@
     list.forEach((puzzle, index) => {
       assert(puzzle.number === index + 1, puzzle.id + " has number " + puzzle.number);
       assert(!seen.has(puzzle.id), "duplicate id " + puzzle.id);
-      assert(["tf2", "toolkit"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
+      assert(["tf2", "toolkit", "advanced"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
       puzzle.dependencies.forEach((dependency) => assert(seen.has(dependency), puzzle.id + " depends on unknown or later puzzle " + dependency));
       seen.add(puzzle.id);
       assert(api.getPuzzle(puzzle.id) === puzzle, "getPuzzle should resolve " + puzzle.id);
     });
     const stageIds = api.TF2_PUZZLE_TRACKS.flatMap((track) => track.stages.map((stage) => stage.id));
     list.forEach((puzzle) => assert(stageIds.includes(puzzle.stage), puzzle.id + " has unknown stage " + puzzle.stage));
-    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "pose-correction"]);
+    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "pose-correction"]);
     assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
     assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 5, "track 2 lists five stages");
     assert(api.TF2_PUZZLE_TRACKS[2].unlockAfter === "icp-match", "track 3 unlocks after the ICP finale");
-    assert(api.TF2_PUZZLE_TRACKS[2].stages.length === 4, "track 3 lists four placeholder stages");
+    assert(api.TF2_PUZZLE_TRACKS[2].stages.length === 3, "track 3 lists three stages");
+    assert(api.TF2_PUZZLE_TRACKS[3].unlockAfter === "buffer-lookup", "track 4 unlocks after the buffer finale");
+    assert(api.TF2_PUZZLE_TRACKS[3].stages.length === 4, "track 4 lists four placeholder stages");
   });
 
   // ---------------------------------------------------------------- worker
@@ -358,12 +360,12 @@
     const list = puzzleList();
     const tracks = puzzlesApi().TF2_PUZZLE_TRACKS;
     let progress = api.createProgress();
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "locked", "locked", "locked"]);
     progress = api.completePuzzle(progress, list[0], "function headingVector(yaw) { return null; }", "2026-09-08T00:00:00Z", list);
     same(progress.highestUnlocked, 1);
     same(progress.currentPuzzleId, "heading-of");
     progress = api.completePuzzle(progress, list[26], "source", "2026-09-08T00:00:00Z", list);
-    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked"]);
+    same(api.trackStates(tracks, progress).map((entry) => entry.state), ["available", "available", "locked", "locked"]);
     const reset = api.resetPuzzle(progress, list, "heading-vector");
     assert(!reset.progress.solved["heading-vector"] && reset.invalidated.includes("heading-vector"), "reset clears the puzzle");
   });
@@ -517,7 +519,7 @@
   });
 
   // ---------------------------------------------------------------- toolkit track
-  function toolkitPuzzles() { return puzzleList().filter((puzzle) => puzzle.track === "toolkit"); }
+  function toolkitPuzzles() { return puzzleList().filter((puzzle) => puzzle.track !== "tf2"); }
 
   test("catalog track 2 stage 8 contains the matrix bricks and every toolkit puzzle links a reference", () => {
     same(idsInRange(28, 33), ["rot-mat-2d", "homogeneous-from-pose", "mat-mul-3", "apply-homogeneous", "pose-from-homogeneous", "invert-homogeneous"]);
@@ -614,6 +616,75 @@
     const matched = referenceOutput(icp, api.toArgs(icp, icpValues));
     near(matched.transform.x, icpValues.motion.x, 1e-3); near(matched.transform.y, icpValues.motion.y, 1e-3); near(matched.transform.yaw, icpValues.motion.yaw, 1e-3);
     assert(matched.error < 1e-3, "ICP should converge on the clean cloud");
+  });
+
+  // ---------------------------------------------------------------- advanced track
+  test("catalog track 3 stage 13 contains the conversion bricks", () => {
+    same(idsInRange(52, 55), ["rotation-matrix-from-quaternion", "quaternion-from-rotation-matrix", "quaternion-from-axis-angle", "axis-angle-from-quaternion"]);
+  });
+
+  test("catalog stage 13 references pass their cases and diagnoses differ", () => {
+    checkStageRange(52, 55);
+  });
+
+  test("scenes: conversion views round-trip the slider rotation", () => {
+    const api = scenesApi();
+    const toMatrix = puzzlesApi().getPuzzle("rotation-matrix-from-quaternion");
+    const toQuaternion = puzzlesApi().getPuzzle("quaternion-from-rotation-matrix");
+    const values = api.initialValues(toMatrix);
+    const q = api.toArgs(toMatrix, values)[0];
+    const matrix = referenceOutput(toMatrix, [q]);
+    const back = referenceOutput(toQuaternion, [matrix]);
+    assert(valuesMatch("quaternion", back, q), "matrix → quaternion should recover the slider quaternion");
+    const fromAxis = puzzlesApi().getPuzzle("quaternion-from-axis-angle");
+    const toAxis = puzzlesApi().getPuzzle("axis-angle-from-quaternion");
+    const axisValues = api.initialValues(fromAxis);
+    const built = referenceOutput(fromAxis, api.toArgs(fromAxis, axisValues));
+    const recovered = referenceOutput(toAxis, [built]);
+    near(recovered.angle, Math.abs(axisValues.angle));
+  });
+
+  test("catalog track 3 stage 14 contains the sensor and motion bricks", () => {
+    same(idsInRange(56, 58), ["static-from-urdf", "twist-from-poses", "deskew-scan"]);
+  });
+
+  test("catalog stage 14 references pass their cases and diagnoses differ", () => {
+    checkStageRange(56, 58);
+  });
+
+  test("scenes: twist and deskew kinds build valid arguments, and de-skewing straightens the wall", () => {
+    checkSceneKinds(["twist", "deskew"]);
+    const api = scenesApi();
+    const puzzle = puzzlesApi().getPuzzle("deskew-scan");
+    const values = api.initialValues(puzzle);
+    const args = api.toArgs(puzzle, values);
+    const deskewed = referenceOutput(puzzle, args);
+    assert(deskewed.length === 12, "twelve de-skewed points");
+    deskewed.forEach((point, i) => {
+      const world = api.se2.applyPoint(values.end, point);
+      near(world.x, 3);
+      near(world.y, -1.5 + 3 * i / 11);
+    });
+  });
+
+  test("catalog track 3 stage 15 contains the buffer semantics ladder", () => {
+    same(idsInRange(59, 63), ["insert-transform", "parent-at", "buffer-can-transform", "wait-for-transform", "buffer-lookup"]);
+    assert(puzzleList().length === 63, "catalog should hold 63 puzzles");
+  });
+
+  test("catalog stage 15 references pass their cases and diagnoses differ", () => {
+    checkStageRange(59, 63);
+  });
+
+  test("scenes: buffer views build valid arguments and the lookup view answers at the cursor time", () => {
+    checkSceneKinds(["buffer"]);
+    const api = scenesApi();
+    const puzzle = puzzlesApi().getPuzzle("buffer-lookup");
+    const values = api.initialValues(puzzle);
+    const result = referenceOutput(puzzle, api.toArgs(puzzle, values));
+    assert(result.ok && Number.isFinite(result.transform.x), "default buffer lookup should succeed");
+    const past = referenceOutput(puzzle, api.toArgs(puzzle, { ...values, time: 1 }));
+    same(past, { ok: false, code: "PAST_EXTRAPOLATION" });
   });
 
   async function runAllTests() {

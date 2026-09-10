@@ -386,7 +386,7 @@
       if (!COMPARATORS.includes(puzzle.comparator)) return { valid: false, message: puzzle.id + " uses unknown comparator " + puzzle.comparator };
       if (!puzzle.scene.kind || !Array.isArray(puzzle.scene.handles)) return { valid: false, message: puzzle.id + " has an invalid scene." };
       if (Array.isArray(sceneKinds) && !sceneKinds.includes(puzzle.scene.kind)) return { valid: false, message: puzzle.id + " uses unknown scene kind " + puzzle.scene.kind };
-      if (puzzle.track === "toolkit" && !(puzzle.reference && typeof puzzle.reference.url === "string")) return { valid: false, message: puzzle.id + " needs a reference link." };
+      if (puzzle.track !== "tf2" && !(puzzle.reference && typeof puzzle.reference.url === "string")) return { valid: false, message: puzzle.id + " needs a reference link." };
       const invalidDependency = puzzle.dependencies.find((id) => !seen.has(id));
       if (invalidDependency) return { valid: false, message: puzzle.id + " has an unknown or forward dependency: " + invalidDependency };
       seen.add(puzzle.id);

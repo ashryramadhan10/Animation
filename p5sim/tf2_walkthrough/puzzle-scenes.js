@@ -53,6 +53,7 @@
     }
     if (Array.isArray(value)) {
       if (value.every((item) => typeof item === "string")) return value.join(" → ");
+      if (value.length && value.every(isPoint)) return value.length + " points · first " + fmtPoint(value[0]);
       if (value.every((item) => item && typeof item === "object" && "from" in item)) return value.map((step) => (step.inverse ? "inv " : "") + step.from + "→" + step.to).join(", ");
       return JSON.stringify(value).slice(0, 64);
     }
@@ -67,6 +68,9 @@
       if (Array.isArray(value.indexes) && Number.isFinite(value.error)) return "error " + fmt(value.error) + " · " + value.indexes.length + " pairs";
       if (value.transform && Number.isFinite(value.error)) return fmtTransform(value.transform) + " · error " + fmt(value.error);
       if ("roll" in value && "pitch" in value && "yaw" in value) return "roll " + degrees(value.roll) + " · pitch " + degrees(value.pitch) + " · yaw " + degrees(value.yaw);
+      if (value.axis && Number.isFinite(value.angle)) return "axis " + fmtVector3(value.axis) + " · " + degrees(value.angle);
+      if (Number.isFinite(value.vx) && Number.isFinite(value.vy) && Number.isFinite(value.wz)) return "vx " + fmt(value.vx) + " · vy " + fmt(value.vy) + " · wz " + fmt(value.wz);
+      if (value.edges && Number.isFinite(value.duration)) return Object.keys(value.edges).map((child) => child + ": " + (value.edges[child].isStatic ? "static" : (value.edges[child].samples || []).map((s) => fmt(s.time)).join("/"))).join(" · ");
       if (value.translation && value.rotation) return "t=" + fmtVector3(value.translation) + " q=" + fmtQuaternion(value.rotation);
       if (isQuaternion(value)) return fmtQuaternion(value);
       if (isTransform(value)) return fmtTransform(value);
@@ -732,6 +736,26 @@
   const IDENTITY_BASIS = basisOf({ x: 0, y: 0, z: 0, w: 1 });
   function isSE3(t) { return Boolean(t) && typeof t === "object" && isVector3(t.translation) && isQuaternion(t.rotation); }
   function isRPY(v) { return Boolean(v) && typeof v === "object" && ["roll", "pitch", "yaw"].every((key) => Number.isFinite(v[key])); }
+  function matrixFromQuaternion(q) {
+    const u = qnormalize(q);
+    const x = u.x, y = u.y, z = u.z, w = u.w;
+    return [
+      [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+      [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+      [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ];
+  }
+  function basisFromMatrix(m) {
+    return { x: { x: m[0][0], y: m[1][0], z: m[2][0] }, y: { x: m[0][1], y: m[1][1], z: m[2][1] }, z: { x: m[0][2], y: m[1][2], z: m[2][2] } };
+  }
+  function quatFromAxisAngle(axis, angle) {
+    const n = Math.hypot(axis.x, axis.y, axis.z) || 1;
+    const s = Math.sin(angle / 2);
+    return { x: axis.x / n * s, y: axis.y / n * s, z: axis.z / n * s, w: Math.cos(angle / 2) };
+  }
+  function scaled3(v, k) { return { x: v.x * k, y: v.y * k, z: v.z * k }; }
+  function isAxisAngle(v) { return Boolean(v) && typeof v === "object" && isVector3(v.axis) && Number.isFinite(v.angle); }
+  const URDF_XYZ = [0.6, 0.2, 0.4];
   const se3Scene = {
     fixtures: {
       quatA: (values) => axisAngle(AXIS_Z, values.yawA),
@@ -746,6 +770,11 @@
       aFromBSliders: (values) => ({ translation: { x: 1, y: 0, z: 0.5 }, rotation: qmul(axisAngle(AXIS_Z, values.yaw), axisAngle(AXIS_Y, values.pitch)) }),
       point3: () => ({ x: 1, y: 0.4, z: 0.2 }),
       opticalRay: (values) => bodyToOptical(direction3(values.yaw, values.pitch)),
+      matrixFromRPY: (values) => matrixFromQuaternion(qFromRPY(values.roll, values.pitch, values.yaw)),
+      axisFromSliders: (values) => direction3(values.axisYaw, values.axisPitch),
+      quatFromAxisAngle: (values) => quatFromAxisAngle(direction3(values.axisYaw, values.axisPitch), values.angle),
+      urdfXyz: () => URDF_XYZ.slice(),
+      rpyArray: (values) => [values.roll, values.pitch, values.yaw],
     },
     layers(context) {
       const view = context.puzzle.scene.view;
@@ -770,6 +799,8 @@
         if (isRPY(context.actual)) drawBasis(qFromRPY(context.actual.roll, context.actual.pitch, context.actual.yaw), resultLabel(context), resultStyle(context), false);
         if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
         if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
+        if (isMatrix(context.expected, 3)) out.push(axes3d(ORIGIN3, basisFromMatrix(context.expected), "expected", "expected", { dashed: true }));
+        if (isMatrix(context.actual, 3)) out.push(axes3d(ORIGIN3, basisFromMatrix(context.actual), resultLabel(context), resultStyle(context)));
       } else if (view === "slerp") {
         out.push(axes3d(ORIGIN3, basisOf(se3Scene.fixtures.slerpA(context.values)), "a", "muted", { size: 0.8 }));
         out.push(axes3d(ORIGIN3, basisOf(se3Scene.fixtures.slerpB(context.values)), "b", "muted", { size: 0.8 }));
@@ -797,6 +828,18 @@
         out.push(axes3d(ORIGIN3, OPTICAL_BASIS, "optical: x right, y down, z fwd", "input", { size: 0.8 }), arrow3d(ORIGIN3, body, "ray (given in optical coords)", "input"));
         if (isVector3(context.expected)) out.push(arrow3d(ORIGIN3, context.expected, "expected in body", "expected", { dashed: true }));
         if (isVector3(context.actual)) out.push(arrow3d(ORIGIN3, context.actual, resultLabel(context), resultStyle(context)));
+      } else if (view === "axis-angle") {
+        const axis = se3Scene.fixtures.axisFromSliders(context.values);
+        out.push(arrow3d(ORIGIN3, scaled3(axis, 1.4), "axis · angle " + degrees(context.values.angle), "input"));
+        if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
+        if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
+        if (isAxisAngle(context.expected)) out.push(arrow3d(ORIGIN3, scaled3(context.expected.axis, 1.2), "expected axis · " + degrees(context.expected.angle), "expected", { dashed: true }));
+        if (isAxisAngle(context.actual)) out.push(arrow3d(ORIGIN3, scaled3(context.actual.axis, 1.0), resultLabel(context) + " · " + degrees(context.actual.angle), resultStyle(context)));
+      } else if (view === "urdf") {
+        const xyz = se3Scene.fixtures.urdfXyz();
+        out.push(label("<origin xyz=\"" + xyz.join(" ") + "\" rpy=\"" + [context.values.roll, context.values.pitch, context.values.yaw].map((v) => v.toFixed(2)).join(" ") + "\"/>", "input", { row: 3 }));
+        if (isSE3(context.expected)) out.push(axes3d(context.expected.translation, basisOf(context.expected.rotation), "expected mount", "expected", { dashed: true }));
+        if (isSE3(context.actual)) out.push(axes3d(context.actual.translation, basisOf(context.actual.rotation), resultLabel(context), resultStyle(context)));
       } else {
         if (isQuaternion(context.expected)) drawBasis(context.expected, "expected", "expected", true);
         if (isQuaternion(context.actual)) drawBasis(context.actual, resultLabel(context), resultStyle(context), false);
@@ -1048,6 +1091,143 @@
       return out;
     },
   };
+  // ------------------------------------------------------------ sensors and motion
+  function isTwist(v) { return Boolean(v) && typeof v === "object" && ["vx", "vy", "wz"].every((key) => Number.isFinite(v[key])); }
+  const twistScene = {
+    fixtures: {},
+    layers(context) {
+      const a = context.values.a;
+      const b = context.values.b;
+      const out = [arrow(a, b, "muted", { dashed: true, weight: 1 }), glyph(a, "a (t)", "input"), glyph(b, "b (t + dt)", "input"), ...laneLayers(context.puzzle, context.values)];
+      const drawTwist = (twist, style, dashed, text) => {
+        const velocity = rotate({ x: twist.vx, y: twist.vy }, a.yaw);
+        out.push(arrow(a, add(a, velocity), style, { dashed, weight: dashed ? 2 : 3 }));
+        out.push(arc(a, 0.7, a.yaw, a.yaw + twist.wz, style, { dashed, arrowhead: true }));
+        out.push(label(text, style, { at: add(add(a, velocity), { x: 0.15, y: 0.2 }) }));
+      };
+      if (isTwist(context.expected)) drawTwist(context.expected, "expected", true, "expected · one second of motion");
+      if (isTwist(context.actual)) drawTwist(context.actual, resultStyle(context), false, resultLabel(context));
+      out.push(...notes(context, describe(context.expected), describe(context.actual), ["dt = " + fmt(context.values.dt) + " s · arrows show one second of the twist in a's body frame"]));
+      return out;
+    },
+  };
+  const WALL_POINTS = (() => {
+    const list = [];
+    for (let i = 0; i < 12; i += 1) list.push({ x: 3, y: -1.5 + 3 * i / 11 });
+    return list;
+  })();
+  const SCAN_TIMES = WALL_POINTS.map((point, i) => i / 11);
+  function scanSamples(values) { return [{ time: 0, transform: { x: 0, y: 0, yaw: 0 } }, { time: 1, transform: values.end }]; }
+  function scanPoseAt(values, time) { return lerpTransform({ x: 0, y: 0, yaw: 0 }, values.end, time); }
+  function rawScan(values) { return WALL_POINTS.map((point, i) => applyPoint(invert(scanPoseAt(values, SCAN_TIMES[i])), point)); }
+  const deskewScene = {
+    fixtures: { rawPoints: rawScan, times: () => SCAN_TIMES.slice(), samples: scanSamples },
+    layers(context) {
+      const end = context.values.end;
+      const raw = rawScan(context.values);
+      const out = [
+        pointsPrimitive(WALL_POINTS, "muted", { size: 6, label: "wall (odom)" }),
+        glyph({ x: 0, y: 0, yaw: 0 }, "sensor at t=0", "muted"),
+        glyph(end, "sensor at t=1", "input"),
+        pointsPrimitive(raw.map((p) => applyPoint(end, p)), "input", { size: 5, label: "raw scan drawn at t=1 (bent)" }),
+      ];
+      if (isCloud(context.expected)) out.push(pointsPrimitive(context.expected.map((p) => applyPoint(end, p)), "expected", { size: 4, label: "expected de-skewed" }));
+      if (isCloud(context.actual)) out.push(pointsPrimitive(context.actual.map((p) => applyPoint(end, p)), resultStyle(context), { size: 4, label: resultLabel(context) }));
+      out.push(...notes(context, describe(context.expected), describe(context.actual), ["all points are drawn in odom by applying the t=1 sensor pose"]));
+      return out;
+    },
+  };
+  // ------------------------------------------------------------ buffer semantics
+  const BUFFER_SCENE = { duration: 10, edges: {
+    odom: { isStatic: false, samples: [{ time: 0, parent: "map", transform: { x: -2, y: -0.5, yaw: 0 } }, { time: 5, parent: "map", transform: { x: 0, y: 0.5, yaw: 0.4 } }, { time: 10, parent: "map", transform: { x: 2, y: 1, yaw: 0.8 } }] },
+    base_link: { isStatic: false, samples: [{ time: 2, parent: "odom", transform: { x: 1, y: 0, yaw: 0 } }, { time: 6, parent: "odom", transform: { x: 2, y: 0.5, yaw: 0.5 } }, { time: 9, parent: "odom", transform: { x: 2.5, y: 1, yaw: 1.0 } }] },
+    laser: { isStatic: true, samples: [{ time: 0, parent: "base_link", transform: LASER_MOUNT }] },
+  } };
+  const REPARENT_SCENE = { duration: 10, edges: {
+    odom: BUFFER_SCENE.edges.odom,
+    base_link: { isStatic: false, samples: [{ time: 0, parent: "odom", transform: { x: 1, y: 0, yaw: 0 } }, { time: 6, parent: "map", transform: { x: 3, y: 1, yaw: 0.3 } }, { time: 9, parent: "map", transform: { x: 3.5, y: 1.5, yaw: 0.5 } }] },
+    laser: BUFFER_SCENE.edges.laser,
+  } };
+  const ARRIVAL_SCENE = [{ time: 0, arrival: 0.2 }, { time: 1, arrival: 1.3 }, { time: 2, arrival: 2.1 }, { time: 3, arrival: 3.6 }, { time: 4, arrival: 4.2 }];
+  function sampleBufferEdge(edge, time) {
+    if (edge.isStatic) return edge.samples[0].transform;
+    const b = bracket(edge.samples, time);
+    return lerpTransform(edge.samples[b.beforeIndex].transform, edge.samples[b.afterIndex].transform, b.amount);
+  }
+  function bufferLane(handle, y, text, samples, style, options) {
+    const settings = options || {};
+    const out = [lane({ x: LANE_LEFT, y }, { x: LANE_RIGHT, y }, "muted", { label: text })];
+    samples.forEach((sample) => out.push(marker({ x: laneX(handle, sample.time), y }, settings.labelParent ? sample.parent : "", style, { height: settings.height || 0.16, dashed: settings.dashed })));
+    return out;
+  }
+  const bufferScene = {
+    fixtures: {
+      buffer: () => BUFFER_SCENE,
+      reparentBuffer: () => REPARENT_SCENE,
+      arrivals: () => ARRIVAL_SCENE,
+      insertedSample: (values) => (values.kind === "static"
+        ? { child: "laser", parent: "base_link", time: values.time, transform: { x: 0.8, y: 0, yaw: 0.2 } }
+        : { child: "odom", parent: "map", time: values.time, transform: { x: 3, y: 1.5, yaw: 1.0 } }),
+      insertIsStatic: (values) => values.kind === "static",
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const out = laneLayers(context.puzzle, context.values);
+      if (view === "insert") {
+        const handle = findHandle(context.puzzle, "time");
+        ["odom", "base_link", "laser"].forEach((child, index) => {
+          const y = 1.9 - index * 0.6;
+          const edge = BUFFER_SCENE.edges[child];
+          out.push(...bufferLane(handle, y, child + (edge.isStatic ? " (static, latched)" : " (dynamic, 10 s window)"), edge.samples, "muted"));
+          const expectedEdge = context.expected && context.expected.edges ? context.expected.edges[child] : null;
+          const actualEdge = context.actual && context.actual.edges ? context.actual.edges[child] : null;
+          if (expectedEdge && Array.isArray(expectedEdge.samples)) out.push(...bufferLane(handle, y + 0.18, "", expectedEdge.samples, "expected", { dashed: true, height: 0.12 }));
+          if (actualEdge && Array.isArray(actualEdge.samples)) out.push(...bufferLane(handle, y - 0.18, "", actualEdge.samples, resultStyle(context), { height: 0.12 }));
+        });
+        out.push(label("grey: current samples · dashed above: expected result · below: yours · samples older than newest − 10 s must go", "muted", { row: 3 }));
+      } else if (view === "parents") {
+        const handle = findHandle(context.puzzle, "time");
+        out.push(...bufferLane(handle, 1.6, "base_link samples, labelled by parent", REPARENT_SCENE.edges.base_link.samples, "input", { labelParent: true, height: 0.2 }));
+        const edges = [{ parent: "map", child: "odom", style: "muted" }];
+        if (typeof context.expected === "string") edges.push({ parent: context.expected, child: "base_link", style: "expected", dashed: true });
+        if (typeof context.actual === "string") edges.push({ parent: context.actual, child: "base_link", style: resultStyle(context) });
+        out.push(treePrimitive([{ id: "map", style: "muted" }, { id: "odom", style: "muted" }, { id: "base_link", style: "input" }], edges, [], { caption: "parent of base_link at the cursor; null means the bracket spans a parent change" }));
+      } else if (view === "can") {
+        const handle = findHandle(context.puzzle, "time");
+        ["odom", "base_link", "laser"].forEach((child, index) => {
+          const edge = BUFFER_SCENE.edges[child];
+          const y = 1.9 - index * 0.6;
+          if (edge.isStatic) out.push(...bufferLane(handle, y, child + " (static: valid at any time)", edge.samples, "muted"));
+          else out.push(...rangeLane(handle, { start: edge.samples[0].time, end: edge.samples[edge.samples.length - 1].time }, y, child + " history"));
+        });
+        out.push(label("canTransform(" + context.values.target + ", " + context.values.source + ") at t = " + fmt(context.values.time), "muted", { row: 3 }));
+      } else if (view === "wait") {
+        const handle = findHandle(context.puzzle, "stamp");
+        out.push(...bufferLane(handle, 1.6, "stamps (when each pose was true)", ARRIVAL_SCENE, "muted"));
+        out.push(...bufferLane(handle, 0.8, "arrivals (when the buffer received each one)", ARRIVAL_SCENE.map((sample) => ({ time: sample.arrival })), "input"));
+        out.push(segments(ARRIVAL_SCENE.map((sample) => [{ x: laneX(handle, sample.time), y: 1.6 }, { x: laneX(handle, sample.arrival), y: 0.8 }]), "muted", { dashed: true }));
+        if (typeof context.expected === "number") out.push(marker({ x: laneX(handle, context.expected), y: 0.8 }, "expected: answerable at " + fmt(context.expected), "expected", { height: 0.35, dashed: true }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(marker({ x: laneX(handle, context.actual), y: 0.8 }, resultLabel(context) + " " + fmt(context.actual), resultStyle(context), { height: 0.3 }));
+      } else {
+        const handle = findHandle(context.puzzle, "time");
+        const time = Math.max(2, Math.min(9, context.values.time));
+        const chainValues = { odom: sampleBufferEdge(BUFFER_SCENE.edges.odom, time), base_link: sampleBufferEdge(BUFFER_SCENE.edges.base_link, time) };
+        out.push(...chainLayers(chainValues, "input"));
+        ["odom", "base_link"].forEach((child, index) => {
+          const edge = BUFFER_SCENE.edges[child];
+          out.push(...rangeLane(handle, { start: edge.samples[0].time, end: edge.samples[edge.samples.length - 1].time }, -1.2 - index * 0.6, child === "odom" ? "map → odom" : "odom → base_link"));
+        });
+        out.push(label("chain drawn at t = " + fmt(time) + " · laser is static", "muted", { at: { x: LANE_LEFT, y: -0.6 } }));
+        const expectedTransform = context.expected && context.expected.ok ? context.expected.transform : null;
+        const actualTransform = context.actual && context.actual.ok ? context.actual.transform : null;
+        out.push(...lookupLayers(context, (name) => chainWorld(chainValues, name), context.values.target, context.values.source, expectedTransform, actualTransform));
+        if (context.expected && context.expected.ok === false) out.push(label("expected error: " + context.expected.code, "expected", { row: 4 }));
+        if (context.actual && context.actual.ok === false) out.push(label("your error: " + String(context.actual.code), resultStyle(context), { row: 5 }));
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -1073,6 +1253,9 @@
     "motion-trail": motionTrailScene,
     "covariance": covarianceScene,
     "cloud-align": cloudAlignScene,
+    "twist": twistScene,
+    "deskew": deskewScene,
+    "buffer": bufferScene,
   };
 
   function layers(context) {
