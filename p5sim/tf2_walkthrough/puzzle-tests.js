@@ -211,20 +211,20 @@
     list.forEach((puzzle, index) => {
       assert(puzzle.number === index + 1, puzzle.id + " has number " + puzzle.number);
       assert(!seen.has(puzzle.id), "duplicate id " + puzzle.id);
-      assert(["tf2", "toolkit", "advanced"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
+      assert(["tf2", "toolkit", "advanced", "correction"].includes(puzzle.track), puzzle.id + " has unknown track " + puzzle.track);
       puzzle.dependencies.forEach((dependency) => assert(seen.has(dependency), puzzle.id + " depends on unknown or later puzzle " + dependency));
       seen.add(puzzle.id);
       assert(api.getPuzzle(puzzle.id) === puzzle, "getPuzzle should resolve " + puzzle.id);
     });
     const stageIds = api.TF2_PUZZLE_TRACKS.flatMap((track) => track.stages.map((stage) => stage.id));
     list.forEach((puzzle) => assert(stageIds.includes(puzzle.stage), puzzle.id + " has unknown stage " + puzzle.stage));
-    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "pose-correction"]);
+    same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "correction"]);
     assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
     assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 5, "track 2 lists five stages");
     assert(api.TF2_PUZZLE_TRACKS[2].unlockAfter === "icp-match", "track 3 unlocks after the ICP finale");
     assert(api.TF2_PUZZLE_TRACKS[2].stages.length === 3, "track 3 lists three stages");
     assert(api.TF2_PUZZLE_TRACKS[3].unlockAfter === "buffer-lookup", "track 4 unlocks after the buffer finale");
-    assert(api.TF2_PUZZLE_TRACKS[3].stages.length === 4, "track 4 lists four placeholder stages");
+    assert(api.TF2_PUZZLE_TRACKS[3].stages.length === 3, "track 4 lists three stages");
   });
 
   // ---------------------------------------------------------------- worker
@@ -524,7 +524,7 @@
   test("catalog track 2 stage 8 contains the matrix bricks and every toolkit puzzle links a reference", () => {
     same(idsInRange(28, 33), ["rot-mat-2d", "homogeneous-from-pose", "mat-mul-3", "apply-homogeneous", "pose-from-homogeneous", "invert-homogeneous"]);
     toolkitPuzzles().forEach((puzzle) => {
-      assert(puzzle.reference && typeof puzzle.reference.label === "string" && /^https:\/\//.test(puzzle.reference.url), puzzle.id + " needs a reference link");
+      assert(puzzle.reference && typeof puzzle.reference.label === "string" && /^(https:\/\/|\.\.\/)/.test(puzzle.reference.url), puzzle.id + " needs a reference link");
     });
   });
 
@@ -669,7 +669,7 @@
 
   test("catalog track 3 stage 15 contains the buffer semantics ladder", () => {
     same(idsInRange(59, 63), ["insert-transform", "parent-at", "buffer-can-transform", "wait-for-transform", "buffer-lookup"]);
-    assert(puzzleList().length === 63, "catalog should hold 63 puzzles");
+    assert(puzzleList().length >= 63, "catalog should hold at least 63 puzzles");
   });
 
   test("catalog stage 15 references pass their cases and diagnoses differ", () => {
@@ -685,6 +685,56 @@
     assert(result.ok && Number.isFinite(result.transform.x), "default buffer lookup should succeed");
     const past = referenceOutput(puzzle, api.toArgs(puzzle, { ...values, time: 1 }));
     same(past, { ok: false, code: "PAST_EXTRAPOLATION" });
+  });
+
+  // ---------------------------------------------------------------- correction track
+  test("catalog track 4 stage 16 contains the point-cloud bricks", () => {
+    same(idsInRange(64, 67), ["points-to-odom", "fit-line", "signed-line-distance", "heading-from-line"]);
+  });
+
+  test("catalog stage 16 references pass their cases and diagnoses differ", () => {
+    checkStageRange(64, 67);
+  });
+
+  test("scenes: aisle views for stage 16 build valid arguments and finite layers", () => {
+    checkSceneKinds(["aisle"]);
+    const api = scenesApi();
+    const fit = puzzlesApi().getPuzzle("fit-line");
+    const values = api.initialValues(fit);
+    const line = referenceOutput(fit, api.toArgs(fit, values));
+    near(Math.hypot(line.a, line.b), 1);
+    assert(line.b > 0, "fitLine normalizes the sign so b > 0");
+    near(-line.a / line.b, Math.tan(values.aisle.yaw));
+  });
+
+  test("catalog track 4 stage 17 contains the rack filters", () => {
+    same(idsInRange(68, 71), ["inlier-refit", "face-filter", "smooth-line", "consensus-heading"]);
+  });
+
+  test("catalog stage 17 references pass their cases and diagnoses differ", () => {
+    checkStageRange(68, 71);
+  });
+
+  test("catalog track 4 stage 18 contains the aisle correction ladder", () => {
+    same(idsInRange(72, 75), ["centerline-from-racks", "single-rack-centerline", "corrected-pose", "aisle-correction-step"]);
+    assert(puzzleList().length === 75, "catalog should hold 75 puzzles");
+  });
+
+  test("catalog stage 18 references pass their cases and diagnoses differ", () => {
+    checkStageRange(72, 75);
+  });
+
+  test("scenes: the correction capstone puts the observed racks on the map rack lines", () => {
+    const api = scenesApi();
+    const puzzle = puzzlesApi().getPuzzle("aisle-correction-step");
+    const values = api.initialValues(puzzle);
+    const frame = api.toArgs(puzzle, values)[0];
+    const result = referenceOutput(puzzle, [frame, 0.3]);
+    near(result.heading, values.aisle.yaw);
+    const odomFromLaser = api.se2.compose(values.robot, { x: 0.5, y: 0, yaw: 0 });
+    frame.leftPoints.forEach((p) => near(api.se2.applyPoint(result.mapFromOdom, api.se2.applyPoint(odomFromLaser, p)).y, 1.6));
+    frame.rightPoints.forEach((p) => near(api.se2.applyPoint(result.mapFromOdom, api.se2.applyPoint(odomFromLaser, p)).y, -1.6));
+    near(result.correctedPose.yaw, values.robot.yaw - values.aisle.yaw);
   });
 
   async function runAllTests() {

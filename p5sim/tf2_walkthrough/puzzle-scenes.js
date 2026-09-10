@@ -71,6 +71,9 @@
       if (value.axis && Number.isFinite(value.angle)) return "axis " + fmtVector3(value.axis) + " · " + degrees(value.angle);
       if (Number.isFinite(value.vx) && Number.isFinite(value.vy) && Number.isFinite(value.wz)) return "vx " + fmt(value.vx) + " · vy " + fmt(value.vy) + " · wz " + fmt(value.wz);
       if (value.edges && Number.isFinite(value.duration)) return Object.keys(value.edges).map((child) => child + ": " + (value.edges[child].isStatic ? "static" : (value.edges[child].samples || []).map((s) => fmt(s.time)).join("/"))).join(" · ");
+      if (value.mapFromOdom && value.correctedPose) return "map→odom " + fmtTransform(value.mapFromOdom) + " · heading " + degrees(value.heading) + " · corrected " + fmtTransform(value.correctedPose);
+      if (value.line && Array.isArray(value.inliers)) return "line a " + fmt(value.line.a) + " b " + fmt(value.line.b) + " c " + fmt(value.line.c) + " · " + value.inliers.length + " inliers";
+      if (["a", "b", "c"].every((key) => Number.isFinite(value[key])) && Object.keys(value).length === 3) return "line a " + fmt(value.a) + " b " + fmt(value.b) + " c " + fmt(value.c);
       if (value.translation && value.rotation) return "t=" + fmtVector3(value.translation) + " q=" + fmtQuaternion(value.rotation);
       if (isQuaternion(value)) return fmtQuaternion(value);
       if (isTransform(value)) return fmtTransform(value);
@@ -1228,6 +1231,147 @@
       return out;
     },
   };
+  // ------------------------------------------------------------ pose correction (aisle)
+  const RACK_HALF_WIDTH = 1.6;
+  const RACK_XS = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2];
+  const AISLE_LASER = { x: 0.5, y: 0, yaw: 0 };
+  const DEFAULT_AISLE = { x: 0, y: 0, yaw: 0 };
+  function rackFace(aisle, side) {
+    const sign = side === "left" ? 1 : -1;
+    return RACK_XS.map((x) => applyPoint(aisle, { x, y: sign * RACK_HALF_WIDTH }));
+  }
+  function rackWithInterior(aisle, side) {
+    const sign = side === "left" ? 1 : -1;
+    const interior = [-1.5, -0.5, 0.5, 1.5].map((x) => applyPoint(aisle, { x, y: sign * (RACK_HALF_WIDTH + 0.3) }));
+    return rackFace(aisle, side).concat(interior);
+  }
+  function lineOf(aisle, side) {
+    const sign = side === "left" ? 1 : -1;
+    const a = -Math.sin(aisle.yaw);
+    const b = Math.cos(aisle.yaw);
+    const foot = applyPoint(aisle, { x: 0, y: sign * RACK_HALF_WIDTH });
+    return { a, b, c: -(a * foot.x + b * foot.y) };
+  }
+  function isLine(v) { return Boolean(v) && typeof v === "object" && ["a", "b", "c"].every((key) => Number.isFinite(v[key])); }
+  function lineLayers(line, style, text, dashed) {
+    if (!isLine(line)) return [];
+    const scale = Math.hypot(line.a, line.b) || 1;
+    const a = line.a / scale, b = line.b / scale, c = line.c / scale;
+    const foot = { x: -a * c, y: -b * c };
+    const dir = { x: -b, y: a };
+    const p = { x: foot.x - dir.x * 6, y: foot.y - dir.y * 6 };
+    const q = { x: foot.x + dir.x * 6, y: foot.y + dir.y * 6 };
+    return [segments([[p, q]], style, { dashed, weight: dashed ? 2 : 2.5 }), label(text, style, { at: add(foot, { x: 0.15, y: 0.25 }) })];
+  }
+  function lineNormalArrow(line, style) {
+    const foot = { x: -line.a * line.c, y: -line.b * line.c };
+    return arrow(foot, add(foot, { x: line.a * 0.6, y: line.b * 0.6 }), style, { weight: 1.5 });
+  }
+  const aisleScene = {
+    fixtures: {
+      odomFromLaser: (values) => compose(values.robot, AISLE_LASER),
+      leftPointsInLaser: (values) => { const toLaser = invert(compose(values.robot, AISLE_LASER)); return rackFace(DEFAULT_AISLE, "left").map((p) => applyPoint(toLaser, p)); },
+      leftFace: (values) => rackFace(values.aisle, "left"),
+      leftLine: (values) => lineOf(values.aisle, "left"),
+      fixedLeftLine: () => lineOf(DEFAULT_AISLE, "left"),
+      pointsWithOutlier: (values) => rackFace(DEFAULT_AISLE, "left").concat([values.outlier]),
+      leftWithInterior: (values) => rackWithInterior(values.aisle, "left"),
+      aisleHeading: (values) => values.aisle.yaw,
+      previousLine: () => ({ a: 0, b: 1, c: -2 }),
+      newLine: (values) => ({ a: 0, b: 1, c: values.newC }),
+      beams: (values) => [{ heading: values.beamA, inlierCount: 3 }, { heading: values.beamB, inlierCount: 1 }],
+      leftOffsetLine: (values) => ({ a: 0, b: 1, c: -values.leftOffset }),
+      rightOffsetLine: (values) => ({ a: 0, b: 1, c: -values.rightOffset }),
+      visibleLine: (values) => lineOf(DEFAULT_AISLE, values.rack),
+      mapCenterline: () => ({ a: 0, b: 1, c: 0 }),
+      correctionFrame: (values) => {
+        const toLaser = invert(compose(values.robot, AISLE_LASER));
+        return { odomFromBase: values.robot, baseFromLaser: AISLE_LASER, leftPoints: rackFace(values.aisle, "left").map((p) => applyPoint(toLaser, p)), rightPoints: rackFace(values.aisle, "right").map((p) => applyPoint(toLaser, p)) };
+      },
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const out = laneLayers(context.puzzle, context.values);
+      const drawRacks = (aisle, style) => {
+        out.push(pointsPrimitive(rackFace(aisle, "left"), style, { size: 5, label: "left rack" }), pointsPrimitive(rackFace(aisle, "right"), style, { size: 5, label: "right rack" }));
+      };
+      if (view === "cloud") {
+        drawRacks(DEFAULT_AISLE, "muted");
+        out.push(frame(identity(), "odom", "muted"), glyph(context.values.robot, "base_link", "input"), frame(compose(context.values.robot, AISLE_LASER), "laser", "input", { size: 0.5, alpha: 170 }));
+        if (isCloud(context.expected)) out.push(pointsPrimitive(context.expected, "expected", { size: 7, label: "expected in odom" }));
+        if (isCloud(context.actual)) out.push(pointsPrimitive(context.actual, resultStyle(context), { size: 4, label: resultLabel(context) }));
+      } else if (view === "fit" || view === "heading") {
+        out.push(frame(context.values.aisle, "aisle", "input"), pointsPrimitive(rackFace(context.values.aisle, "left"), "input", { size: 5, label: "left rack points" }));
+        if (view === "fit") {
+          out.push(...lineLayers(context.expected, "expected", "expected line", true));
+          out.push(...lineLayers(context.actual, resultStyle(context), resultLabel(context), false));
+        } else {
+          const line = lineOf(context.values.aisle, "left");
+          out.push(...lineLayers(line, "muted", "rack line", false));
+          const foot = { x: -line.a * line.c, y: -line.b * line.c };
+          if (typeof context.expected === "number") out.push(arrow(foot, add(foot, direction(context.expected, 1.6)), "expected", { dashed: true }));
+          if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(arrow(foot, add(foot, direction(context.actual, 1.3)), resultStyle(context), { weight: 3 }));
+        }
+      } else if (view === "distance") {
+        const line = lineOf(DEFAULT_AISLE, "left");
+        const p = context.values.point;
+        out.push(...lineLayers(line, "muted", "rack line (normal points up)", false), lineNormalArrow(line, "muted"), point(p, "p", "input"));
+        const foot = { x: p.x - line.a * (line.a * p.x + line.b * p.y + line.c), y: p.y - line.b * (line.a * p.x + line.b * p.y + line.c) };
+        out.push(segments([[p, foot]], "expected", { dashed: true }));
+        if (typeof context.expected === "number") out.push(label("expected " + fmt(context.expected), "expected", { at: add(foot, { x: 0.15, y: 0.25 }) }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(label(resultLabel(context) + " " + fmt(context.actual), resultStyle(context), { at: add(foot, { x: 0.15, y: -0.35 }) }));
+      } else if (view === "refit") {
+        const all = rackFace(DEFAULT_AISLE, "left").concat([context.values.outlier]);
+        out.push(pointsPrimitive(all, "muted", { size: 5, label: "points" }), point(context.values.outlier, "outlier", "input"));
+        const inlierPoints = (value) => (value && Array.isArray(value.inliers) ? value.inliers.map((index) => all[index]).filter(Boolean) : []);
+        if (context.expected) { out.push(...lineLayers(context.expected.line, "expected", "expected line", true)); out.push(pointsPrimitive(inlierPoints(context.expected), "expected", { size: 8, label: "expected inliers" })); }
+        if (context.actual) { out.push(...lineLayers(context.actual.line, resultStyle(context), resultLabel(context), false)); out.push(pointsPrimitive(inlierPoints(context.actual), resultStyle(context), { size: 4, label: "your inliers" })); }
+      } else if (view === "face") {
+        out.push(frame(context.values.aisle, "aisle", "input"), pointsPrimitive(rackWithInterior(context.values.aisle, "left"), "muted", { size: 5, label: "rack face + interior" }));
+        if (isCloud(context.expected)) out.push(pointsPrimitive(context.expected, "expected", { size: 8, label: "expected kept" }));
+        if (isCloud(context.actual)) out.push(pointsPrimitive(context.actual, resultStyle(context), { size: 4, label: resultLabel(context) }));
+      } else if (view === "smooth") {
+        out.push(...lineLayers({ a: 0, b: 1, c: -2 }, "muted", "previous", false), ...lineLayers({ a: 0, b: 1, c: context.values.newC }, "input", "new", false));
+        out.push(...lineLayers(context.expected, "expected", "expected smoothed", true), ...lineLayers(context.actual, resultStyle(context), resultLabel(context), false));
+      } else if (view === "consensus") {
+        const beamA = context.values.beamA, beamB = context.values.beamB;
+        out.push(segments([[direction(beamA, -2.6), direction(beamA, 2.6)], [direction(beamB, -2.0), direction(beamB, 2.0)]], "muted", { dashed: true }));
+        out.push(arrow({ x: 0, y: 0 }, direction(beamA, 2.6), "input", { weight: 3 }), label("beam A ×3 " + degrees(beamA), "input", { at: direction(beamA, 2.9) }));
+        out.push(arrow({ x: 0, y: 0 }, direction(beamB, 2.0), "input", { weight: 1.5 }), label("beam B ×1 " + degrees(beamB), "input", { at: direction(beamB, 2.3) }));
+        out.push(arrow({ x: 0, y: 0 }, direction(0.1, 1.0), "muted", { dashed: true, weight: 1 }), label("previous 0.1", "muted", { at: direction(0.1, 1.2) }));
+        if (typeof context.expected === "number") out.push(arrow({ x: 0, y: 0 }, direction(context.expected, 1.8), "expected", { dashed: true }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(arrow({ x: 0, y: 0 }, direction(context.actual, 1.5), resultStyle(context), { weight: 3 }));
+      } else if (view === "centerline") {
+        out.push(...lineLayers({ a: 0, b: 1, c: -context.values.leftOffset }, "input", "left rack", false), ...lineLayers({ a: 0, b: 1, c: -context.values.rightOffset }, "input", "right rack", false));
+        out.push(...lineLayers(context.expected, "expected", "expected centerline", true), ...lineLayers(context.actual, resultStyle(context), resultLabel(context), false));
+      } else if (view === "single") {
+        drawRacks(DEFAULT_AISLE, "muted");
+        out.push(glyph(context.values.robot, "robot", "input"), ...lineLayers(lineOf(DEFAULT_AISLE, context.values.rack), "input", context.values.rack + " rack (visible)", false));
+        out.push(...lineLayers(context.expected, "expected", "expected centerline", true), ...lineLayers(context.actual, resultStyle(context), resultLabel(context), false));
+      } else if (view === "correct") {
+        out.push(...lineLayers({ a: 0, b: 1, c: 0 }, "muted", "centerline", false), glyph(context.values.robot, "robot", "input"));
+        if (isTransform(context.expected)) out.push(glyph(context.expected, "expected", "expected", { dashed: true }));
+        if (isTransform(context.actual)) { out.push(glyph(context.actual, resultLabel(context), resultStyle(context))); out.push(...errorArrow(context, context.actual, context.expected)); }
+      } else {
+        out.push(...lineLayers({ a: 0, b: 1, c: -RACK_HALF_WIDTH }, "muted", "map left rack", false), ...lineLayers({ a: 0, b: 1, c: RACK_HALF_WIDTH }, "muted", "map right rack", false), frame(identity(), "map", "muted"));
+        out.push(frame(context.values.aisle, "aisle drift (odom)", "input"), glyph(context.values.robot, "robot (odom)", "input"));
+        const observed = rackFace(context.values.aisle, "left").concat(rackFace(context.values.aisle, "right"));
+        out.push(pointsPrimitive(observed, "input", { size: 4, label: "racks seen in odom" }));
+        const pushed = (transform) => observed.map((p) => applyPoint(transform, p));
+        if (context.expected && isTransform(context.expected.mapFromOdom)) {
+          out.push(pointsPrimitive(pushed(context.expected.mapFromOdom), "expected", { size: 7, label: "racks through expected map→odom" }));
+          if (isTransform(context.expected.correctedPose)) out.push(glyph(context.expected.correctedPose, "expected corrected", "expected", { dashed: true }));
+        }
+        if (context.actual && isTransform(context.actual.mapFromOdom)) {
+          out.push(pointsPrimitive(pushed(context.actual.mapFromOdom), resultStyle(context), { size: 4, label: "racks through your map→odom" }));
+          if (isTransform(context.actual.correctedPose)) out.push(glyph(context.actual.correctedPose, resultLabel(context), resultStyle(context)));
+        }
+        out.push(label("your map→odom must put the observed racks on the map rack lines", "muted", { row: 3 }));
+      }
+      out.push(...notes(context, describe(context.expected), describe(context.actual)));
+      return out;
+    },
+  };
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -1256,6 +1400,7 @@
     "twist": twistScene,
     "deskew": deskewScene,
     "buffer": bufferScene,
+    "aisle": aisleScene,
   };
 
   function layers(context) {

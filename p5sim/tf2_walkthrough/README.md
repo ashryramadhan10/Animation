@@ -51,7 +51,13 @@ Track 3 (Buffers & Sensors) adds puzzles 52 to 63, unlocked by the ICP finale:
 
 Stage 15 is where the static-versus-dynamic difference actually lives: a static edge is one latched sample that answers any time, a dynamic edge is a pruned history that only answers inside its range, and only the dynamic edges on the lookup path constrain it.
 
-Track 4 (Pose Correction) is listed in the map and unlocks after the buffer lookup finale. Its puzzles, built from the warehouse rack pipeline in `p5sim/navigation`, arrive with the next track.
+Track 4 (Pose Correction) adds puzzles 64 to 75, unlocked by the buffer finale, and is the warehouse rack pipeline from `p5sim/navigation` rebuilt brick by brick:
+
+16. Point-cloud bricks: pointsToOdom, fitLine (total least squares), signedLineDistance, headingFromLine.
+17. Rack filters: refitInliers, faceFilter, smoothLine, consensusHeading.
+18. Aisle correction: centerlineFromRacks, centerlineFromOneRack, correctedPose, aisleCorrectionStep, which produces the `map -> odom` transform that keeps `odom -> base_link` untouched.
+
+Each puzzle links the matching demo under `p5sim/navigation`.
 
 Every puzzle has a live scene. Drag frame origins, rotation grips, points, dials, sliders, and timeline cursors; your function runs on every change and the canvas draws your result in red next to the dashed reference until they match and turn green. Known mistakes such as a mirrored rotation, a reversed composition, or translate-before-rotate are named in the feedback panel. `Run` re-evaluates the current input; `Check` runs the hidden cases and unlocks the next puzzle.
 
