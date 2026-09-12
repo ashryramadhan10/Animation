@@ -325,6 +325,72 @@
     near(cfg.ema_alpha, 0.05); near(cfg.jump_threshold_m, 0.25); assert(cfg.jump_confirm_frames === 3, "confirm"); near(cfg.jump_cluster_threshold_m, 0.08); near(cfg.max_step_m, 0.04);
   });
 
+  // ── heading.js ────────────────────────────────────────────────────────────
+  test("Consensus excludes a heading outlier from accepted tracks", () => {
+    const H = requireApi(headingApi, "heading.js");
+    const r = H.selectConsensusHeadingSamples([
+      { trackId: 294, headingRad: 65 * DEG, weight: 65 },
+      { trackId: 538, headingRad: 32 * DEG, weight: 30000 },
+    ], 10 * DEG);
+    assert(r.valid, "valid"); near(r.headingRad, 32 * DEG, 1e-6);
+    assert(r.acceptedTrackIds.length === 1 && r.acceptedTrackIds[0] === 538, "accepted 538");
+    assert(r.rejectedSamples.length === 1 && r.rejectedSamples[0].trackId === 294, "rejected 294");
+  });
+  test("Consensus keeps all tracks when headings agree", () => {
+    const H = requireApi(headingApi, "heading.js");
+    const r = H.selectConsensusHeadingSamples([
+      { trackId: 1, headingRad: 30 * DEG, weight: 100 }, { trackId: 2, headingRad: 34 * DEG, weight: 200 },
+    ], 10 * DEG);
+    assert(r.valid && r.acceptedTrackIds.length === 2 && r.rejectedSamples.length === 0, "all kept");
+  });
+  test("Consensus with two equal beams 8 deg apart under a 3 deg gate rejects both", () => {
+    const H = requireApi(headingApi, "heading.js");
+    const r = H.selectConsensusHeadingSamples([
+      { trackId: 1, headingRad: 0, weight: 600 }, { trackId: 2, headingRad: 8 * DEG, weight: 600 },
+    ], 3 * DEG);
+    assert(!r.valid && r.rejectedSamples.length === 2, "both rejected, no consensus");
+  });
+  test("Single beam correction gate rejects weak and accepts strong", () => {
+    const H = requireApi(headingApi, "heading.js");
+    assert(!H.isSingleBeamCorrectionReliable(458, 0.342, 800, 0.55), "weak 1");
+    assert(!H.isSingleBeamCorrectionReliable(832, 0.353, 800, 0.55), "weak 2");
+    assert(H.isSingleBeamCorrectionReliable(29002, 0.945, 800, 0.55), "strong");
+  });
+  test("isBeamReliableForHeading names every failed gate", () => {
+    const H = requireApi(headingApi, "heading.js"), C = requireApi(configApi, "config.js");
+    const bad = H.isBeamReliableForHeading({ lineExtentM: 1.2, inlierCount: 320, inlierRatio: 0.2 }, C.Config.beam_pointcloud);
+    assert(!bad.valid, "invalid");
+    assert(bad.reason === "extent 1.20m < 2.00m, inliers 320 < 500, ratio 20.0% < 35.0%", bad.reason);
+    const good = H.isBeamReliableForHeading({ lineExtentM: 3.1, inlierCount: 640, inlierRatio: 0.76 }, C.Config.beam_pointcloud);
+    assert(good.valid && good.reason === "", "valid with empty reason");
+  });
+  test("rateLimitHeading clamps the step to max rate times dt", () => {
+    const H = requireApi(headingApi, "heading.js");
+    const state = { lastPublishedHeading: 0, lastHeadingRateLimitStamp: 10.0 };
+    const r = H.rateLimitHeading(state, 10 * DEG, 11.0, 0.75 * DEG);
+    near(r.heading, 0.75 * DEG, 1e-9); assert(r.limited, "limited"); near(state.lastHeadingRateLimitStamp, 11.0, 0);
+  });
+  test("rateLimitHeading falls back to 1/30 s when dt is out of range", () => {
+    const H = requireApi(headingApi, "heading.js");
+    const state = { lastPublishedHeading: 0, lastHeadingRateLimitStamp: 10.0 };
+    const r = H.rateLimitHeading(state, 10 * DEG, 13.0, 0.75 * DEG);
+    near(r.heading, 0.75 * DEG / 30, 1e-9);
+  });
+  test("rateLimitHeading passes through without a last heading", () => {
+    const H = requireApi(headingApi, "heading.js");
+    const state = { lastPublishedHeading: null, lastHeadingRateLimitStamp: null };
+    const r = H.rateLimitHeading(state, 10 * DEG, 5.0, 0.75 * DEG);
+    near(r.heading, 10 * DEG, 1e-12); assert(!r.limited, "not limited"); near(state.lastHeadingRateLimitStamp, 5.0, 0);
+  });
+  test("shouldResetForHeadingJump honours threshold and cooldown", () => {
+    const H = requireApi(headingApi, "heading.js");
+    assert(!H.shouldResetForHeadingJump(null, 1.0, 5 * DEG, true), "no last heading");
+    assert(!H.shouldResetForHeadingJump(0, 4 * DEG, 5 * DEG, true), "below threshold");
+    assert(H.shouldResetForHeadingJump(0, 6 * DEG, 5 * DEG, true), "above threshold");
+    assert(!H.shouldResetForHeadingJump(0, 6 * DEG, 5 * DEG, false), "cooldown blocks");
+    assert(H.resetCooldownPassed(null, 5, 0.7) && H.resetCooldownPassed(4.0, 5.0, 0.7) && !H.resetCooldownPassed(4.5, 5.0, 0.7), "cooldown");
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
