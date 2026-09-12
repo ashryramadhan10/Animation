@@ -53,6 +53,56 @@
     assert(Config.beam_pointcloud.heading_min_inliers === 500, "original untouched");
   });
 
+  // ── geometry.js ───────────────────────────────────────────────────────────
+  test("normalizeAngle wraps into [-pi, pi]", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    near(G.normalizeAngle(3 * Math.PI), Math.PI, 1e-9);
+    near(G.normalizeAngle(-3 * Math.PI), -Math.PI, 1e-9);
+    near(G.normalizeAngle(0.3), 0.3, 1e-12);
+  });
+  test("blendAngleCircular is continuous across the +/-pi boundary", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    const blended = G.blendAngleCircular(179 * DEG, -179 * DEG, 0.5);
+    near(Math.abs(blended), Math.PI, 1e-9);
+    near(G.blendAngleCircular(10 * DEG, 20 * DEG, 0.5), 15 * DEG, 1e-9);
+  });
+  test("resolveHeadingToReference: no reference returns input", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    near(G.resolveHeadingToReference(0.3, null), 0.3, 1e-9);
+  });
+  test("resolveHeadingToReference: same direction unchanged", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    near(G.resolveHeadingToReference(12 * DEG, 10 * DEG), 12 * DEG, 1e-6);
+  });
+  test("resolveHeadingToReference: flipped heading corrected", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    const ref = 10 * DEG, h = 190 * DEG;
+    const result = G.resolveHeadingToReference(h, ref);
+    assert(Math.abs(result - ref) < Math.abs(h - ref), "closer to reference than input");
+  });
+  test("computeHeadingFromLineCoefficients points along +x half-plane", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    const h = 33.5 * DEG;
+    const line = { a: -Math.sin(h), b: Math.cos(h), c: 0.4 };
+    near(G.computeHeadingFromLineCoefficients(line), h, 1e-9);
+    const flipped = { a: Math.sin(h), b: -Math.cos(h), c: -0.4 };
+    near(G.computeHeadingFromLineCoefficients(flipped), h, 1e-9);
+  });
+  test("alignLineToHeading flips the normal toward (-sin, cos) and renormalizes", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    const h = 33.5 * DEG;
+    const aligned = G.alignLineToHeading({ a: 2 * Math.sin(h), b: -2 * Math.cos(h), c: -0.8 }, h);
+    near(aligned.a, -Math.sin(h), 1e-9); near(aligned.b, Math.cos(h), 1e-9); near(aligned.c, 0.4, 1e-9);
+  });
+  test("makeRng is deterministic and randNormal has the requested mean", () => {
+    const G = requireApi(geometryApi, "geometry.js");
+    const a = G.makeRng(7), b = G.makeRng(7);
+    near(a(), b(), 0);
+    const rng = G.makeRng(3); let sum = 0;
+    for (let i = 0; i < 4000; i += 1) sum += G.randNormal(rng, 1.5, 0.1);
+    near(sum / 4000, 1.5, 0.01);
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
