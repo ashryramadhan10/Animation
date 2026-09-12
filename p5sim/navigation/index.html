@@ -11,7 +11,7 @@
       <section class="topbar">
         <div>
           <h1>Vision Pointcloud Pipeline</h1>
-          <p>Synthetic p5js simulations for the C++ correction pipeline stages.</p>
+          <p>p5js walkthrough of warehouse_pose_corrector_vision_based, stage by stage, on a synthetic aisle with a fault schedule.</p>
         </div>
         <div class="controls">
           <label for="demoSelect">Demo</label>
@@ -24,7 +24,16 @@
     </main>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
-    <script src="scripts/core.js"></script>
+    <script src="scripts/config.js"></script>
+    <script src="scripts/geometry.js"></script>
+    <script src="scripts/line_fitter.js"></script>
+    <script src="scripts/aisle_state.js"></script>
+    <script src="scripts/lateral_drift_filter.js"></script>
+    <script src="scripts/heading.js"></script>
+    <script src="scripts/x_offset.js"></script>
+    <script src="scripts/correction_transform.js"></script>
+    <script src="scripts/pose_corrector.js"></script>
+    <script src="scripts/synthetic_world.js"></script>
     <script src="scripts/renderer.js"></script>
     <script src="scripts/demos.js"></script>
     <script src="scripts/sketch.js"></script>

@@ -118,6 +118,8 @@
 
     trace.calibration = Object.assign({}, state.aisleCalib);
     trace.aisleState = Object.assign({}, state.aisleState);
+    trace.headingJumpCount = state.headingJumpCount;
+    trace.lastPublishedHeading = state.lastPublishedHeading;
     trace.xOffsetState = Object.assign({}, state.xOffset);
     trace.outputs = snapshotStored(state);
     state.currentTrace = null;
