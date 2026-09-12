@@ -280,6 +280,51 @@
     assert(!m.valid && m.side === A.RackSide.UNKNOWN && m.trackId === -1 && m.inlierCount === 0, "defaults");
   });
 
+  // ── lateral_drift_filter.js ───────────────────────────────────────────────
+  test("LateralDriftFilter low-passes normal measurements", () => {
+    const F = requireApi(lateralApi, "lateral_drift_filter.js");
+    const f = new F.LateralDriftFilter({ ema_alpha: 0.5, jump_threshold_m: 0.25, max_step_m: 0.0 });
+    const first = f.update(1.0);
+    assert(first.initialized, "initialized"); near(first.filteredM, 1.0, 1e-9);
+    const second = f.update(1.1);
+    assert(!second.held, "not held"); near(second.filteredM, 1.05, 1e-9);
+  });
+  test("LateralDriftFilter holds an isolated jump and keeps previous output", () => {
+    const F = requireApi(lateralApi, "lateral_drift_filter.js");
+    const f = new F.LateralDriftFilter({ ema_alpha: 0.5, jump_threshold_m: 0.25, jump_confirm_frames: 3, jump_cluster_threshold_m: 0.08, max_step_m: 0.04 });
+    f.update(0.0);
+    const jump = f.update(0.5);
+    assert(jump.jumpDetected && jump.held && !jump.jumpConfirmed, "held");
+    near(jump.filteredM, 0.0, 1e-9);
+  });
+  test("LateralDriftFilter confirmed jump moves by step limit instead of snapping", () => {
+    const F = requireApi(lateralApi, "lateral_drift_filter.js");
+    const f = new F.LateralDriftFilter({ ema_alpha: 1.0, jump_threshold_m: 0.25, jump_confirm_frames: 3, jump_cluster_threshold_m: 0.08, max_step_m: 0.04 });
+    f.update(0.0); f.update(0.50); f.update(0.53);
+    const confirmed = f.update(0.52);
+    assert(confirmed.jumpConfirmed && !confirmed.held, "confirmed");
+    near(confirmed.filteredM, 0.04, 1e-9);
+  });
+  test("LateralDriftFilter unstable jump cluster keeps holding", () => {
+    const F = requireApi(lateralApi, "lateral_drift_filter.js");
+    const f = new F.LateralDriftFilter({ ema_alpha: 1.0, jump_threshold_m: 0.25, jump_confirm_frames: 2, jump_cluster_threshold_m: 0.05, max_step_m: 0.04 });
+    f.update(0.0); f.update(0.50);
+    const unstable = f.update(0.70);
+    assert(unstable.jumpDetected && unstable.held && !unstable.jumpConfirmed, "still held");
+    near(unstable.filteredM, 0.0, 1e-9);
+  });
+  test("droneYToCenterlineFromSignedError negates the signed error", () => {
+    const F = requireApi(lateralApi, "lateral_drift_filter.js");
+    near(F.droneYToCenterlineFromSignedError(-0.3), 0.3, 1e-9);
+    near(F.droneYToCenterlineFromSignedError(0.2), -0.2, 1e-9);
+    near(F.droneYToCenterlineFromSignedError(0.0), 0.0, 1e-9);
+  });
+  test("lateralFilterConfigFromYaml maps the beam_pointcloud keys", () => {
+    const F = requireApi(lateralApi, "lateral_drift_filter.js"), C = requireApi(configApi, "config.js");
+    const cfg = F.lateralFilterConfigFromYaml(C.Config.beam_pointcloud);
+    near(cfg.ema_alpha, 0.05); near(cfg.jump_threshold_m, 0.25); assert(cfg.jump_confirm_frames === 3, "confirm"); near(cfg.jump_cluster_threshold_m, 0.08); near(cfg.max_step_m, 0.04);
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
