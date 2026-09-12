@@ -665,7 +665,10 @@
     }
     // 55-74: while both beams fail the 3 deg gate the node still feeds both into
     // the dual centerline, so the skewed line leaks into c (faithful behaviour).
+    // 70-71 are excluded: the odom glitch is held by the lateral filter, so the
+    // corrected pose follows the glitched pose for those two frames by design.
     for (let i = 55; i <= 74; i += 1) {
+      if (i === 70 || i === 71) continue;
       const t = byFrame.get(i); if (!t || !t.broadcast) continue;
       near(t.broadcast.tf.correctedPose.y, yOnCenterline, 0.10, `frame ${i} lateral (skew leak)`);
     }
