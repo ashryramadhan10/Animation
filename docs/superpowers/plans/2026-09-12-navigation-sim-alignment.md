@@ -1029,7 +1029,7 @@ Port notes (read the C++ ranges before writing each):
   - `buildWorld(options = {}) -> world` with defaults `{seed: 73, headingDeg: 33.5, halfWidth: 1.6, uprightSpacing: 2.8, frameCount: 150, dt: 0.1, odomAlongOffsetM: 0.6, odomLateralOffsetM: 0.2}` and fields `{seed, headingRad, halfWidth, uprightSpacing, frameCount, dt, odomOffset:{along, lateral, vec:{x,y}}, missionUprights:[{id, type:2, start, end}] (map), trueCenterlineMap:{a,b,c:0}, trueCenterlineOdom:{a,b,c}, faults:[{id, label, from, to}], frames:[frame|null], truth:[{mapPose:{x,y,z,yaw}, along, lateral}]}`.
   - `faultAt(world, frameIndex) -> fault|null`, `mapToOdom(world, p)`, `odomToMap(world, p)`, `poseAtTime(world, tSec) -> odom pose {x,y,z,yaw,stamp}` linearly interpolated between the truth poses (yaw via `blendAngleCircular`).
   - Fault ids and windows exactly as the spec table: `none` (0-29, 72-74, 110-149), `missing-right` (30-44), `short-both` (45-54), `skew-right` (55-69), `glitch-lateral` (70-71), `displacement` (75-89), `dropout` (90-99, `frames[i] = null`), `id-switch` (100-109). Frames 72-74 are `none`.
-  - Frame content per spec Section 3: 640 face points (`sigma 0.018`) over +/-1.6 m along, 200 interior points 0.06-0.25 m behind; `short-both` keeps only |t| <= 0.6 m; `skew-right` rotates the right rack's points by +20 deg about their centre and uses 520 face points while the left uses 1000; `glitch-lateral` shifts the reported odom pose AND the odom rack/upright points by +0.35 m along the aisle normal (an odom jump); `displacement` adds +0.35 m to the drone's true lateral; `id-switch` gives the left track id 3. Vertical detections: uprights within [-2.5, +4] m of the drone along the aisle, each `+ randNormal(0.05)`, plus one spurious point 0.9 m along-aisle off the nearest upright on every frame where `frameIndex % 17 === 0`. Everything is generated in map and converted with `mapToOdom`.
+  - Frame content per spec Section 3: 800 face points (`sigma 0.018`) over +/-1.6 m along, 200 interior points 0.06-0.25 m behind; `short-both` keeps only |t| <= 0.6 m; `skew-right` rotates the right rack's points by +20 deg about their centre and uses 660 face points while the left uses 1000; `glitch-lateral` shifts the reported odom pose AND the odom rack/upright points by +0.35 m along the aisle normal (an odom jump); `displacement` adds +0.35 m to the drone's true lateral; `id-switch` gives the left track id 3. Vertical detections: uprights within [-2.5, +4] m of the drone along the aisle, each `+ randNormal(0.05)`, plus one spurious point 0.9 m along-aisle off the nearest upright on every frame where `frameIndex % 17 === 0`. Everything is generated in map and converted with `mapToOdom`.
 
 - [ ] **Step 1: Append failing tests**
 
@@ -1054,7 +1054,7 @@ Port notes (read the C++ ranges before writing each):
     assert(w.frames[90] === null && w.frames[99] === null && w.frames[100] !== null, "dropout frames are null");
     assert(w.frames[30].tracks.length === 1 && w.frames[30].tracks[0].side === "left", "right missing");
     assert(w.frames[100].tracks.find(t => t.side === "left").trackId === 3, "id switch");
-    assert(w.frames[0].tracks.find(t => t.side === "left").points.length === 840, "640 face + 200 interior");
+    assert(w.frames[0].tracks.find(t => t.side === "left").points.length === 1000, "800 face + 200 interior");
   });
   test("poseAtTime interpolates between frames and carries a stamp", () => {
     const W = requireApi(worldApi, "synthetic_world.js");

@@ -626,7 +626,7 @@
     assert(w.frames[90] === null && w.frames[99] === null && w.frames[100] !== null, "dropout frames are null");
     assert(w.frames[30].tracks.length === 1 && w.frames[30].tracks[0].side === "left", "right missing");
     assert(w.frames[100].tracks.find(t => t.side === "left").trackId === 3, "id switch");
-    assert(w.frames[0].tracks.find(t => t.side === "left").points.length === 840, "640 face + 200 interior");
+    assert(w.frames[0].tracks.find(t => t.side === "left").points.length === 1000, "800 face + 200 interior");
   });
   test("poseAtTime interpolates between frames and carries a stamp", () => {
     const W = requireApi(worldApi, "synthetic_world.js");
@@ -647,6 +647,54 @@
       if (proj.some(u => Math.abs(u.s - s) < 0.2)) close += 1;
     }
     assert(close >= f.verticalDetections.length - 1, "all but a spurious one are within 0.2 m of an upright");
+  });
+
+  // ── pipeline smoke test ───────────────────────────────────────────────────
+  test("runTimeline reproduces the spec's end-to-end behaviour on the synthetic world", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), W = requireApi(worldApi, "synthetic_world.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const world = W.buildWorld();
+    const { ticks } = N.runTimeline(world, C.Config);
+    const traces = ticks.filter(k => k.trace).map(k => k.trace);
+    const byFrame = new Map(traces.map(t => [t.frameIndex, t]));
+    // The corrected pose lives in the aisle-aligned frame (odom rotated by -aisle yaw):
+    // "on the centerline" means y == -c_odom; x is the along-aisle position.
+    const yOnCenterline = -world.trueCenterlineOdom.c;
+    for (let i = 21; i <= 54; i += 1) {
+      const t = byFrame.get(i); if (!t || !t.broadcast) continue;
+      near(t.broadcast.tf.correctedPose.y, yOnCenterline, 0.05, `frame ${i} lateral`);
+    }
+    // 55-74: while both beams fail the 3 deg gate the node still feeds both into
+    // the dual centerline, so the skewed line leaks into c (faithful behaviour).
+    for (let i = 55; i <= 74; i += 1) {
+      const t = byFrame.get(i); if (!t || !t.broadcast) continue;
+      near(t.broadcast.tf.correctedPose.y, yOnCenterline, 0.10, `frame ${i} lateral (skew leak)`);
+    }
+    near(byFrame.get(149).broadcast.tf.correctedPose.y, yOnCenterline, 0.05, "frame 149 lateral settled");
+    for (let i = 60; i <= 149; i += 1) {
+      const t = byFrame.get(i); if (!t || !t.broadcast) continue;
+      near(t.broadcast.tf.correctedPose.x, world.truth[i].along, 0.1, `frame ${i} along`);
+    }
+    near(byFrame.get(60).xOffsetState.xOffsetFiltered, 0.6, 0.1, "x offset by frame 60");
+    const m20 = byFrame.get(20).measurement;
+    near(-m20.c / m20.b, -world.trueCenterlineOdom.c / world.trueCenterlineOdom.b, 0.05, "intercept at frame 20");
+    for (let i = 45; i <= 54; i += 1) {
+      const t = byFrame.get(i);
+      assert(!t.freshHeading, `frame ${i} heading should be held`);
+      assert(t.stages[0].beamResult && t.stages[0].beamResult.headingRejectReason.startsWith("extent"), `frame ${i} reason: ${t.stages[0].beamResult && t.stages[0].beamResult.headingRejectReason}`);
+    }
+    for (let i = 55; i <= 69; i += 1) {
+      const t = byFrame.get(i);
+      near(G.normalizeAngle(t.aisleState.headingRad - world.headingRad), 0, 1.5 * DEG, `frame ${i} heading`);
+    }
+    assert(byFrame.get(70).broadcast.lateral.held, "frame 70 held");
+    assert(byFrame.get(77).broadcast.lateral.jumpConfirmed, "frame 77 confirmed");
+    const frozen = byFrame.get(89).outputs.stamp;
+    for (const k of ticks.filter(x => x.frameIndex >= 90 && x.frameIndex <= 99)) {
+      assert(k.trace === null && k.tick.published && !k.tick.isIdentity, `dropout tick ${k.k} publishes the held correction`);
+      near(k.tick.measurement.stamp, frozen, 1e-9, `dropout tick ${k.k} stamp`);
+    }
+    const t100 = byFrame.get(100);
+    assert(t100.stages.find(s => s.trackId === 3).beamResult.smoothingRestarted, "id 3 restarts the coefficient EMA");
   });
 
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────

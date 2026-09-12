@@ -117,9 +117,11 @@ subtracting a constant odom offset: `odomAlongOffsetM = 0.6` along the aisle
 and `odomLateralOffsetM = 0.2` across it. So odom lags map by 0.6 m along the
 aisle (the x-offset stage must recover +0.6) and the map centerline, which is
 `c = 0` in map, has `c = +0.2` in odom (the intercept output is non-zero).
-Each rack per frame: 640 face points along +/-1.6 m (extent 3.2 m, above the
+Each rack per frame: 800 face points along +/-1.6 m (extent 3.2 m, above the
 2.0 m heading gate) with sigma 0.018 m, plus 200 interior points 0.06 to
-0.25 m behind the face. Uprights every 2.8 m along each rack at the face
+0.25 m behind the face. The recursive fit only ever shrinks its inlier set,
+so the interior-biased first pass drops about 15% of the face for good; 800
+leaves ~680 inliers, clearly above the 500 gate, where 640 sat on the edge. Uprights every 2.8 m along each rack at the face
 line. The mission map holds the true upright positions in the map frame.
 
 Because relative camera geometry is preserved, a constant odom offset shifts
@@ -146,7 +148,7 @@ absorb a 0.35 m displacement, so the run is long enough to show it settle):
 | 0-29 | none | dual, calibration on first dual |
 | 30-44 | right rack missing | single mode with calibrated half width |
 | 45-54 | both beams short (extent 1.2 m) | no heading-qualified beam: heading held, lateral still updates from both |
-| 55-69 | right beam skewed +20 deg with 520 face points; left 1000 face points | consensus rejects the skewed beam at the 3 deg gate once its coefficient EMA drifts past it; if both fall outside the gate the heading is held. Published heading stays within 1.5 deg of truth throughout |
+| 55-69 | right beam skewed +20 deg with 660 face points; left 1000 face points | consensus rejects the skewed beam at the 3 deg gate once its coefficient EMA drifts past it; if both fall outside the gate the heading is held. Published heading stays within 1.5 deg of truth throughout |
 | 70-71 | odom pose glitch: reported odom shifts 0.35 m laterally for two frames, pose and rack points together | isolated jump: lateral filter holds. (A shift of rack points alone never reaches the filter: the aisle-state EMA absorbs it. An odom jump does, because the state lags the pose.) |
 | 75-89 | true lateral displacement 0.35 m (drone really moves, odom tracks it) | sustained jump: confirmed on the third frame, then EMA and step limit |
 | 90-99 | perception dropout: no frame delivered, timer only | identity never returns; held correction republished; measurement stamp frozen at frame 89 |
@@ -202,7 +204,9 @@ nearest gate, median rejects a 0.9 m outlier, raw accumulates and EMA follows.
 Pipeline smoke test on the synthetic world, 150 frames. The node's corrected
 pose is expressed in the aisle-aligned frame (odom rotated by minus the aisle
 yaw), so "on the centerline" means its y equals minus the odom intercept c.
-Frames 21-69 and the final frame have that y within 0.05 m; from frame 60 the
+Frames 21-54 and the final frame have that y within 0.05 m, and frames 55-74
+within 0.10 m (while both beams fail the 3 deg gate the node feeds both into
+the dual centerline, so the skewed line leaks into c: a real node trait); from frame 60 the
 along-aisle x is within 0.1 m of the true map position; `x_offset_filtered` is within 0.1 m of +0.6 by frame 60; the
 measurement intercept is within 0.05 m of the true odom intercept by frame
 20; frames 45-54 report a held heading with a reason naming the extent;

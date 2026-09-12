@@ -660,8 +660,34 @@
     state.resets.push({ stamp: nowSec, reason, preserveLateral });
   }
 
+
+  // ── sim: the combined app's clock ───────────────────────────────────────────
+  // A perception frame every third sim tick (10 Hz frames, 30 Hz ticks), a
+  // propagation tick every sim tick. Dropout frames (null) skip processFrame and
+  // let the timer republish the held correction against the moving pose.
+  function runTimeline(world, cfg = Config) {
+    const state = makeNodeState(cfg);
+    loadBeamUprightMap(state, world.missionUprights);
+    const ticks = [];
+    const tickCount = world.frameCount * 3;
+    for (let k = 0; k < tickCount; k += 1) {
+      const t = k * world.dt / 3;
+      const frameIndex = Math.floor(k / 3);
+      let trace = null;
+      if (k % 3 === 0 && world.frames[frameIndex]) trace = processFrame(state, world.frames[frameIndex]);
+      const pose = world.poseAtTime ? world.poseAtTime(t) : sim_poseAtTime(world, t);
+      const tick = propagationTick(state, pose, t);
+      ticks.push({ k, t, frameIndex, trace, tick, pose });
+    }
+    return { state, ticks };
+  }
+  function sim_poseAtTime(world, t) {
+    const W = inNode ? require("./synthetic_world.js") : sim.syntheticWorld;
+    return W.poseAtTime(world, t);
+  }
+
   const api = {
-    makeNodeState, loadBeamUprightMap, processFrame, propagationTick, resetTrackingState,
+    runTimeline, makeNodeState, loadBeamUprightMap, processFrame, propagationTick, resetTrackingState,
     processBeamClouds, buildBeamResultFromFit, computeConsensus, processBeamResults, processPerScanData,
     holdIfWeakSingleBeam, lastStableHeading, buildCenterlineMeasurement, computeDualCenterline,
     tryInitialCalibration, tryInitialCalibrationSingle, applyVisionCorrection, broadcastVisionCorrectedTF,

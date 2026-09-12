@@ -111,10 +111,12 @@
       const sides = id === "missing-right" ? ["left"] : ["left", "right"];
       for (const side of sides) {
         const sideSign = side === "left" ? 1 : -1;
-        let faceCount = 640, interiorCount = 200, skew = 0;
+        // 800 face points survive the recursive fit's monotone shrink with ~680
+        // inliers, clearly above the 500 heading gate; 640 sat at the edge.
+        let faceCount = 800, interiorCount = 200, skew = 0;
         if (id === "skew-right") {
           if (side === "left") { faceCount = 1000; interiorCount = 300; }
-          else { faceCount = 520; interiorCount = 160; skew = 20 * DEG; }
+          else { faceCount = 660; interiorCount = 160; skew = 20 * DEG; }
         }
         const pts = rackPoints(rng, dir, normal, along, sideSign, o.halfWidth, halfExtent, faceCount, interiorCount, skew)
           .map(p => Object.assign(toOdom(p), { kind: p.kind }));
