@@ -192,6 +192,94 @@
     assert(result.points.length === 150, "yaml fine threshold 0.5 keeps everything within 0.5 m: " + result.points.length);
   });
 
+  // ── aisle_state.js ────────────────────────────────────────────────────────
+  function makeCl(A, headingRad, c, halfW, dual, conf = 1.0) {
+    const m = A.makeCenterlineMeasurement();
+    m.valid = true; m.headingRad = headingRad; m.c = c; m.halfWidthM = halfW; m.dualSide = dual; m.confidence = conf;
+    return m;
+  }
+  test("AisleState default constructed is uninitialized", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    assert(A.makeAisleState().initialized === false, "initialized");
+  });
+  test("AisleState first update initializes directly", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const s = A.makeAisleState(); const h = 15 * DEG;
+    A.updateAisleState(s, makeCl(A, h, 0.5, 1.6, true), 0.4, 0.1);
+    assert(s.initialized, "initialized"); near(s.headingRad, h, 1e-9); near(s.centerlineC, 0.5, 1e-9);
+  });
+  test("AisleState second update blends with dual gain (circular blend)", () => {
+    // The C++ gtest test_aisle_state.cpp expects the LINEAR blend 0.6*h1+0.4*h2
+    // at 1e-9, but aisle_types.hpp blends circularly (blend_angle_circular),
+    // which differs by ~4e-5 rad here. The port mirrors the header, so this
+    // test asserts the circular value exactly and the linear one loosely.
+    const A = requireApi(aisleStateApi, "aisle_state.js"), G = requireApi(geometryApi, "geometry.js");
+    const s = A.makeAisleState(); const h1 = 15 * DEG, h2 = 25 * DEG;
+    A.updateAisleState(s, makeCl(A, h1, 0, 1.6, true), 0.4, 0.1);
+    A.updateAisleState(s, makeCl(A, h2, 0, 1.6, true), 0.4, 0.1);
+    near(s.headingRad, G.blendAngleCircular(h1, h2, 0.4), 1e-12);
+    near(s.headingRad, 0.6 * h1 + 0.4 * h2, 1e-4);
+  });
+  test("AisleState single side uses lower gain (circular blend)", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js"), G = requireApi(geometryApi, "geometry.js");
+    const s = A.makeAisleState(); const h1 = 15 * DEG, h2 = 25 * DEG;
+    A.updateAisleState(s, makeCl(A, h1, 0, 1.6, false), 0.4, 0.1);
+    A.updateAisleState(s, makeCl(A, h2, 0, 1.6, false), 0.4, 0.1);
+    near(s.headingRad, G.blendAngleCircular(h1, h2, 0.1), 1e-12);
+    near(s.headingRad, 0.9 * h1 + 0.1 * h2, 1e-4);
+  });
+  test("AisleState single side does not update half width", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const s = A.makeAisleState();
+    A.updateAisleState(s, makeCl(A, 0, 0, 1.6, true), 0.4, 0.1);
+    A.updateAisleState(s, makeCl(A, 0, 0, 2.0, false), 0.4, 0.1);
+    near(s.halfWidthM, 1.6, 1e-6);
+  });
+  test("AisleState invalid measurement does not update", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const s = A.makeAisleState();
+    A.updateAisleState(s, makeCl(A, 15 * DEG, 0.5, 1.6, true), 0.4, 0.1);
+    const before = s.headingRad;
+    A.updateAisleState(s, A.makeCenterlineMeasurement(), 0.4, 0.1);
+    near(s.headingRad, before, 1e-9);
+  });
+  test("AisleState reset clears initialized flag", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const s = A.makeAisleState();
+    A.updateAisleState(s, makeCl(A, 0.1, 0, 1.6, true), 0.4, 0.1);
+    A.resetAisleState(s);
+    assert(!s.initialized && !s.lateralValid, "cleared");
+  });
+  test("AisleState after reset next update reinitializes directly", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const s = A.makeAisleState();
+    A.updateAisleState(s, makeCl(A, 15 * DEG, 0, 1.6, true), 0.4, 0.1);
+    A.resetAisleState(s);
+    A.updateAisleState(s, makeCl(A, 30 * DEG, 0, 1.6, true), 0.4, 0.1);
+    near(s.headingRad, 30 * DEG, 1e-9);
+  });
+  test("AisleState heading-only reset preserves and blends centerline_c", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const s = A.makeAisleState();
+    A.updateAisleState(s, makeCl(A, 15 * DEG, 0.5, 1.6, true), 0.4, 0.1);
+    A.resetAisleHeading(s);
+    assert(!s.initialized && s.lateralValid, "heading cleared, lateral kept");
+    A.updateAisleState(s, makeCl(A, 30 * DEG, 1.0, 1.6, true), 0.4, 0.1);
+    near(s.headingRad, 30 * DEG, 1e-9);
+    near(s.centerlineC, 0.6 * 0.5 + 0.4 * 1.0, 1e-9);
+  });
+  test("CenterlineMeasurement default is invalid and dual confidence exceeds single", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const c = A.makeCenterlineMeasurement();
+    assert(!c.valid && !c.dualSide, "defaults");
+    assert(A.kDualConfidence > A.kSingleConfidence, "confidence order");
+  });
+  test("BeamMeasurement default is invalid", () => {
+    const A = requireApi(aisleStateApi, "aisle_state.js");
+    const m = A.makeBeamMeasurement();
+    assert(!m.valid && m.side === A.RackSide.UNKNOWN && m.trackId === -1 && m.inlierCount === 0, "defaults");
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
