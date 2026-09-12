@@ -112,20 +112,29 @@ propagation tick every sim tick.
 `synthetic_world.js` exports `buildWorld(seed)` and `buildFrames(world, n)`.
 
 World: aisle heading 33.5 deg, half width 1.6 m (`expected_rack_distance`).
+Everything is generated in the map frame, then expressed in odom by
+subtracting a constant odom offset: `odomAlongOffsetM = 0.6` along the aisle
+and `odomLateralOffsetM = 0.2` across it. So odom lags map by 0.6 m along the
+aisle (the x-offset stage must recover +0.6) and the map centerline, which is
+`c = 0` in map, has `c = +0.2` in odom (the intercept output is non-zero).
 Each rack per frame: 640 face points along +/-1.6 m (extent 3.2 m, above the
 2.0 m heading gate) with sigma 0.018 m, plus 200 interior points 0.06 to
 0.25 m behind the face. Uprights every 2.8 m along each rack at the face
 line. The mission map holds the true upright positions in the map frame.
-Odom is offset from map by `odomAlongOffsetM = 0.6` along the aisle, so
-detected uprights (odom) disagree with the map and the x-offset stage has
-work to do; the expected converged `x_offset_filtered` is +0.6.
+
+Because relative camera geometry is preserved, an odom offset shifts rack
+points and the FCU pose together, so it never changes the drone's signed
+distance to the centerline; it changes only the intercept. A lateral
+measurement jump therefore needs either a true lateral displacement of the
+drone or a perception glitch, and the schedule uses one of each.
 
 Vertical detections per frame: uprights within 4 m ahead and 2.5 m behind
 along the aisle on both sides, each as an odom XY point with sigma 0.05 m.
 One spurious detection every 17th frame, 0.9 m off any upright.
 
-Drone: along = 0.16 i; lateral = 0.16 sin(0.13 i) + 0.05; yaw = heading +
-4 deg sin(0.21 i). Frames every 0.1 s. Track ids 1 (left) and 2 (right).
+Drone (true, map frame): along = 0.16 i; lateral = 0.16 sin(0.13 i) + 0.05;
+yaw = heading + 4 deg sin(0.21 i). Reported odom pose = true minus the odom
+offset. Frames every 0.1 s. Track ids 1 (left) and 2 (right).
 
 Fault schedule over 120 frames:
 
@@ -133,13 +142,13 @@ Fault schedule over 120 frames:
 |---|---|---|
 | 0-29 | none | dual, calibration on first dual |
 | 30-44 | right rack missing | single mode with calibrated half width |
-| 45-54 | left beam short (extent 1.2 m) | heading held, lateral still updates |
-| 55-64 | right beam skewed +8 deg | consensus rejects it at the 3 deg gate |
-| 65-66 | odom lateral jump 0.35 m, isolated | lateral filter holds |
-| 70-84 | odom lateral jump 0.35 m, sustained | confirmed after 3, step-limited |
-| 85-94 | perception dropout: no frame delivered, timer only | identity never returns; held correction republished; measurement stamp frozen |
-| 95-104 | left track id 1 becomes 3 | coefficient EMA restarts for id 3 |
-| 105-119 | none | recovery |
+| 45-54 | both beams short (extent 1.2 m) | no heading-qualified beam: heading held, lateral still updates from both |
+| 55-69 | right beam skewed +20 deg with 520 face points; left 1000 face points | consensus rejects the skewed beam at the 3 deg gate once its coefficient EMA drifts past it; if both fall outside the gate the heading is held. Published heading stays within 1.5 deg of truth throughout |
+| 70-71 | perception glitch: both racks' points shifted 0.35 m laterally | isolated jump: lateral filter holds |
+| 75-89 | true lateral displacement 0.35 m (drone really moves, odom tracks it) | sustained jump: confirmed on the third frame, then EMA and step limit |
+| 90-99 | perception dropout: no frame delivered, timer only | identity never returns; held correction republished; measurement stamp frozen at frame 89 |
+| 100-109 | left track id 1 becomes 3 | coefficient EMA restarts for id 3 |
+| 110-119 | none | recovery |
 
 The schedule is a plain array so a page can show which fault is active.
 
@@ -188,11 +197,16 @@ the face band and drops interior; `isBeamReliableForHeading` reason strings;
 nearest gate, median rejects a 0.9 m outlier, raw accumulates and EMA follows.
 
 Pipeline smoke test on the synthetic world, 120 frames:
-after frame 20 the corrected pose is within 0.05 m of the true centerline;
-`x_offset_filtered` is within 0.1 m of +0.6 by frame 60; during frames 85-94
-the measurement stamp stays frozen while tick outputs advance; across frames
-55-64 the heading moves no more than the rate limit allows; the lateral
-filter holds at 65-66 and confirms by 73.
+after frame 20 the corrected pose lies within 0.05 m of the true map
+centerline and its along-aisle position within 0.1 m of the true map
+position; `x_offset_filtered` is within 0.1 m of +0.6 by frame 60; the
+measurement intercept is within 0.05 m of the true odom intercept by frame
+20; frames 45-54 report a held heading with a reason naming the extent;
+across frames 55-69 the published heading stays within 1.5 deg of the true
+heading; the lateral filter reports `held` at frame 70 and `jumpConfirmed`
+at frame 77; during ticks for frames 90-99 the measurement stamp equals the
+frame-89 stamp while the tick corrected pose keeps moving; the first frame
+with track id 3 reports a restarted coefficient EMA.
 
 Error handling: pure functions never throw on empty input; they return
 invalid results with a reason string, as the C++ logs. Drawers guard on
