@@ -1026,10 +1026,10 @@ Port notes (read the C++ ranges before writing each):
 **Interfaces:**
 - Consumes: geometry.
 - Produces:
-  - `buildWorld(options = {}) -> world` with defaults `{seed: 73, headingDeg: 33.5, halfWidth: 1.6, uprightSpacing: 2.8, frameCount: 120, dt: 0.1, odomAlongOffsetM: 0.6, odomLateralOffsetM: 0.2}` and fields `{seed, headingRad, halfWidth, uprightSpacing, frameCount, dt, odomOffset:{along, lateral, vec:{x,y}}, missionUprights:[{id, type:2, start, end}] (map), trueCenterlineMap:{a,b,c:0}, trueCenterlineOdom:{a,b,c}, faults:[{id, label, from, to}], frames:[frame|null], truth:[{mapPose:{x,y,z,yaw}, along, lateral}]}`.
+  - `buildWorld(options = {}) -> world` with defaults `{seed: 73, headingDeg: 33.5, halfWidth: 1.6, uprightSpacing: 2.8, frameCount: 150, dt: 0.1, odomAlongOffsetM: 0.6, odomLateralOffsetM: 0.2}` and fields `{seed, headingRad, halfWidth, uprightSpacing, frameCount, dt, odomOffset:{along, lateral, vec:{x,y}}, missionUprights:[{id, type:2, start, end}] (map), trueCenterlineMap:{a,b,c:0}, trueCenterlineOdom:{a,b,c}, faults:[{id, label, from, to}], frames:[frame|null], truth:[{mapPose:{x,y,z,yaw}, along, lateral}]}`.
   - `faultAt(world, frameIndex) -> fault|null`, `mapToOdom(world, p)`, `odomToMap(world, p)`, `poseAtTime(world, tSec) -> odom pose {x,y,z,yaw,stamp}` linearly interpolated between the truth poses (yaw via `blendAngleCircular`).
-  - Fault ids and windows exactly as the spec table: `none` (0-29, 110-119), `missing-right` (30-44), `short-both` (45-54), `skew-right` (55-69), `glitch-lateral` (70-71), `displacement` (75-89), `dropout` (90-99, `frames[i] = null`), `id-switch` (100-109). Frames 72-74 are `none`.
-  - Frame content per spec Section 3: 640 face points (`sigma 0.018`) over +/-1.6 m along, 200 interior points 0.06-0.25 m behind; `short-both` keeps only |t| <= 0.6 m; `skew-right` rotates the right rack's points by +20 deg about their centre and uses 520 face points while the left uses 1000; `glitch-lateral` shifts both racks' points by +0.35 m along the aisle normal; `displacement` adds +0.35 m to the drone's true lateral; `id-switch` gives the left track id 3. Vertical detections: uprights within [-2.5, +4] m of the drone along the aisle, each `+ randNormal(0.05)`, plus one spurious point 0.9 m along-aisle off the nearest upright on every frame where `frameIndex % 17 === 0`. Everything is generated in map and converted with `mapToOdom`.
+  - Fault ids and windows exactly as the spec table: `none` (0-29, 72-74, 110-149), `missing-right` (30-44), `short-both` (45-54), `skew-right` (55-69), `glitch-lateral` (70-71), `displacement` (75-89), `dropout` (90-99, `frames[i] = null`), `id-switch` (100-109). Frames 72-74 are `none`.
+  - Frame content per spec Section 3: 640 face points (`sigma 0.018`) over +/-1.6 m along, 200 interior points 0.06-0.25 m behind; `short-both` keeps only |t| <= 0.6 m; `skew-right` rotates the right rack's points by +20 deg about their centre and uses 520 face points while the left uses 1000; `glitch-lateral` shifts the reported odom pose AND the odom rack/upright points by +0.35 m along the aisle normal (an odom jump); `displacement` adds +0.35 m to the drone's true lateral; `id-switch` gives the left track id 3. Vertical detections: uprights within [-2.5, +4] m of the drone along the aisle, each `+ randNormal(0.05)`, plus one spurious point 0.9 m along-aisle off the nearest upright on every frame where `frameIndex % 17 === 0`. Everything is generated in map and converted with `mapToOdom`.
 
 - [ ] **Step 1: Append failing tests**
 
@@ -1038,7 +1038,7 @@ Port notes (read the C++ ranges before writing each):
   test("buildWorld places odom behind map by the configured offsets", () => {
     const W = requireApi(worldApi, "synthetic_world.js"), G = requireApi(geometryApi, "geometry.js");
     const w = W.buildWorld();
-    assert(w.frames.length === 120 && w.missionUprights.length > 0, "sizes");
+    assert(w.frames.length === 150 && w.missionUprights.length > 0, "sizes");
     near(w.trueCenterlineMap.c, 0, 1e-12);
     near(w.trueCenterlineOdom.c, 0.2, 1e-9);
     const p = { x: 3, y: 4 }; const back = W.odomToMap(w, W.mapToOdom(w, p));
@@ -1049,7 +1049,7 @@ Port notes (read the C++ ranges before writing each):
   test("buildWorld fault schedule matches the spec windows", () => {
     const W = requireApi(worldApi, "synthetic_world.js");
     const w = W.buildWorld();
-    const expect = [[0, "none"], [30, "missing-right"], [45, "short-both"], [55, "skew-right"], [70, "glitch-lateral"], [72, "none"], [75, "displacement"], [90, "dropout"], [100, "id-switch"], [110, "none"]];
+    const expect = [[0, "none"], [30, "missing-right"], [45, "short-both"], [55, "skew-right"], [70, "glitch-lateral"], [72, "none"], [75, "displacement"], [90, "dropout"], [100, "id-switch"], [110, "none"], [149, "none"]];
     for (const [i, id] of expect) assert((W.faultAt(w, i) || { id: "none" }).id === id, `frame ${i} expected ${id}`);
     assert(w.frames[90] === null && w.frames[99] === null && w.frames[100] !== null, "dropout frames are null");
     assert(w.frames[30].tracks.length === 1 && w.frames[30].tracks[0].side === "left", "right missing");

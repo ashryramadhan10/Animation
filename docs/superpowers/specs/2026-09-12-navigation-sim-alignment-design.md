@@ -122,21 +122,24 @@ Each rack per frame: 640 face points along +/-1.6 m (extent 3.2 m, above the
 0.25 m behind the face. Uprights every 2.8 m along each rack at the face
 line. The mission map holds the true upright positions in the map frame.
 
-Because relative camera geometry is preserved, an odom offset shifts rack
-points and the FCU pose together, so it never changes the drone's signed
-distance to the centerline; it changes only the intercept. A lateral
-measurement jump therefore needs either a true lateral displacement of the
-drone or a perception glitch, and the schedule uses one of each.
+Because relative camera geometry is preserved, a constant odom offset shifts
+rack points and the FCU pose together and changes only the intercept. A
+sudden odom jump, however, does reach the lateral filter: the pose moves at
+once while the aisle-state centerline (EMA plus calibration anchor) lags, so
+the signed distance jumps. A true lateral displacement reaches it directly.
+The schedule uses one of each.
 
 Vertical detections per frame: uprights within 4 m ahead and 2.5 m behind
 along the aisle on both sides, each as an odom XY point with sigma 0.05 m.
 One spurious detection every 17th frame, 0.9 m off any upright.
 
-Drone (true, map frame): along = 0.16 i; lateral = 0.16 sin(0.13 i) + 0.05;
+Drone (true, map frame): along = 0.16 i; lateral = 0.08 sin(0.025 i) + 0.05
+(slow enough for the 0.05 lateral EMA to track within 0.05 m);
 yaw = heading + 4 deg sin(0.21 i). Reported odom pose = true minus the odom
 offset. Frames every 0.1 s. Track ids 1 (left) and 2 (right).
 
-Fault schedule over 120 frames:
+Fault schedule over 150 frames (the lateral EMA needs about sixty frames to
+absorb a 0.35 m displacement, so the run is long enough to show it settle):
 
 | Frames | Fault | Node reaction to show |
 |---|---|---|
@@ -144,11 +147,11 @@ Fault schedule over 120 frames:
 | 30-44 | right rack missing | single mode with calibrated half width |
 | 45-54 | both beams short (extent 1.2 m) | no heading-qualified beam: heading held, lateral still updates from both |
 | 55-69 | right beam skewed +20 deg with 520 face points; left 1000 face points | consensus rejects the skewed beam at the 3 deg gate once its coefficient EMA drifts past it; if both fall outside the gate the heading is held. Published heading stays within 1.5 deg of truth throughout |
-| 70-71 | perception glitch: both racks' points shifted 0.35 m laterally | isolated jump: lateral filter holds |
+| 70-71 | odom pose glitch: reported odom shifts 0.35 m laterally for two frames, pose and rack points together | isolated jump: lateral filter holds. (A shift of rack points alone never reaches the filter: the aisle-state EMA absorbs it. An odom jump does, because the state lags the pose.) |
 | 75-89 | true lateral displacement 0.35 m (drone really moves, odom tracks it) | sustained jump: confirmed on the third frame, then EMA and step limit |
 | 90-99 | perception dropout: no frame delivered, timer only | identity never returns; held correction republished; measurement stamp frozen at frame 89 |
 | 100-109 | left track id 1 becomes 3 | coefficient EMA restarts for id 3 |
-| 110-119 | none | recovery |
+| 110-149 | none | recovery; the lateral EMA settles on the displaced position |
 
 The schedule is a plain array so a page can show which fault is active.
 
@@ -196,10 +199,11 @@ the face band and drops interior; `isBeamReliableForHeading` reason strings;
 `rateLimitHeading` clamps to 0.75 deg/s; x-offset association picks the
 nearest gate, median rejects a 0.9 m outlier, raw accumulates and EMA follows.
 
-Pipeline smoke test on the synthetic world, 120 frames:
-after frame 20 the corrected pose lies within 0.05 m of the true map
-centerline and its along-aisle position within 0.1 m of the true map
-position; `x_offset_filtered` is within 0.1 m of +0.6 by frame 60; the
+Pipeline smoke test on the synthetic world, 150 frames. The node's corrected
+pose is expressed in the aisle-aligned frame (odom rotated by minus the aisle
+yaw), so "on the centerline" means its y equals minus the odom intercept c.
+Frames 21-69 and the final frame have that y within 0.05 m; from frame 60 the
+along-aisle x is within 0.1 m of the true map position; `x_offset_filtered` is within 0.1 m of +0.6 by frame 60; the
 measurement intercept is within 0.05 m of the true odom intercept by frame
 20; frames 45-54 report a held heading with a reason naming the extent;
 across frames 55-69 the published heading stays within 1.5 deg of the true

@@ -606,6 +606,49 @@
     assert(!state.aisleState.lateralValid && !state.lateralDriftFilter.hasValue() && !state.xOffset.xOffsetHasMeasurement, "full reset");
   });
 
+  // ── synthetic_world.js ────────────────────────────────────────────────────
+  test("buildWorld places odom behind map by the configured offsets", () => {
+    const W = requireApi(worldApi, "synthetic_world.js"), G = requireApi(geometryApi, "geometry.js");
+    const w = W.buildWorld();
+    assert(w.frames.length === 150 && w.missionUprights.length > 0, "sizes");
+    near(w.trueCenterlineMap.c, 0, 1e-12);
+    near(w.trueCenterlineOdom.c, 0.2, 1e-9);
+    const p = { x: 3, y: 4 }; const back = W.odomToMap(w, W.mapToOdom(w, p));
+    near(back.x, 3, 1e-12); near(back.y, 4, 1e-12);
+    const f = w.frames[0];
+    near(G.lineSignedDistance(w.trueCenterlineOdom, f.fcuPose), w.truth[0].lateral, 1e-9);
+  });
+  test("buildWorld fault schedule matches the spec windows", () => {
+    const W = requireApi(worldApi, "synthetic_world.js");
+    const w = W.buildWorld();
+    const expect = [[0, "none"], [30, "missing-right"], [45, "short-both"], [55, "skew-right"], [70, "glitch-lateral"], [72, "none"], [75, "displacement"], [90, "dropout"], [100, "id-switch"], [110, "none"], [149, "none"]];
+    for (const [i, id] of expect) assert((W.faultAt(w, i) || { id: "none" }).id === id, `frame ${i} expected ${id}`);
+    assert(w.frames[90] === null && w.frames[99] === null && w.frames[100] !== null, "dropout frames are null");
+    assert(w.frames[30].tracks.length === 1 && w.frames[30].tracks[0].side === "left", "right missing");
+    assert(w.frames[100].tracks.find(t => t.side === "left").trackId === 3, "id switch");
+    assert(w.frames[0].tracks.find(t => t.side === "left").points.length === 840, "640 face + 200 interior");
+  });
+  test("poseAtTime interpolates between frames and carries a stamp", () => {
+    const W = requireApi(worldApi, "synthetic_world.js");
+    const w = W.buildWorld();
+    const p = W.poseAtTime(w, 0.05);
+    near(p.x, 0.5 * (w.frames[0].fcuPose.x + w.frames[1].fcuPose.x), 1e-9);
+    near(p.stamp, 0.05, 1e-12);
+  });
+  test("vertical detections sit near mission uprights shifted by the odom offset", () => {
+    const W = requireApi(worldApi, "synthetic_world.js"), X = requireApi(xOffsetApi, "x_offset.js");
+    const w = W.buildWorld();
+    const f = w.frames[5];
+    assert(f.verticalDetections.length >= 2, "some detections");
+    const proj = X.buildProjectedMissionUprights(w.missionUprights, w.headingRad);
+    let close = 0;
+    for (const d of f.verticalDetections) {
+      const s = X.projectAlongAisle(d.x, d.y, w.headingRad) + w.odomOffset.along;
+      if (proj.some(u => Math.abs(u.s - s) < 0.2)) close += 1;
+    }
+    assert(close >= f.verticalDetections.length - 1, "all but a spurious one are within 0.2 m of an upright");
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
