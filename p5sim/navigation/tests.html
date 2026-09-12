@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Navigation Sim Tests</title>
+    <style>
+      body { margin: 0; padding: 32px; background: #07090e; color: #edf2f7; font-family: ui-monospace, Consolas, monospace; }
+      main { width: min(760px, 100%); margin: auto; }
+      h1 { font: 700 1.3rem/1.2 system-ui, sans-serif; }
+      .summary { border: 1px solid #35445f; border-radius: 10px; padding: 14px; color: #61dda1; background: #0d1119; }
+      .failure { margin-top: 10px; border-left: 3px solid #ff7c8b; padding: 9px 12px; color: #ffc4ca; background: #171015; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section id="results">
+        <h1>Navigation sim tests</h1>
+        <p>Running tests…</p>
+      </section>
+    </main>
+    <script>
+      window.renderTestResults = function renderTestResults(result) {
+        const host = document.querySelector("#results");
+        host.innerHTML = "<h1>Navigation sim tests</h1>";
+        const summary = document.createElement("p");
+        summary.className = "summary";
+        summary.textContent = `${result.passed}/${result.total} tests passed`;
+        host.append(summary);
+        result.failures.forEach(({ name, error }) => {
+          const item = document.createElement("div");
+          item.className = "failure";
+          item.textContent = `${name}: ${error.message}`;
+          host.append(item);
+        });
+      };
+    </script>
+    <script src="scripts/config.js"></script>
+    <script src="scripts/geometry.js"></script>
+    <script src="scripts/line_fitter.js"></script>
+    <script src="scripts/aisle_state.js"></script>
+    <script src="scripts/lateral_drift_filter.js"></script>
+    <script src="scripts/heading.js"></script>
+    <script src="scripts/x_offset.js"></script>
+    <script src="scripts/correction_transform.js"></script>
+    <script src="scripts/pose_corrector.js"></script>
+    <script src="scripts/synthetic_world.js"></script>
+    <script src="tests.js"></script>
+  </body>
+</html>
