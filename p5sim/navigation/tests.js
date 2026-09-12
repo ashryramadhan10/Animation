@@ -391,6 +391,77 @@
     assert(H.resetCooldownPassed(null, 5, 0.7) && H.resetCooldownPassed(4.0, 5.0, 0.7) && !H.resetCooldownPassed(4.5, 5.0, 0.7), "cooldown");
   });
 
+  // ── x_offset.js ───────────────────────────────────────────────────────────
+  function uprightsAlong(headingRad, spacing, count, lateral) {
+    const d = { x: Math.cos(headingRad), y: Math.sin(headingRad) }, n = { x: -Math.sin(headingRad), y: Math.cos(headingRad) };
+    const out = [];
+    for (let k = 0; k < count; k += 1) {
+      const s = k * spacing, x = d.x * s + n.x * lateral, y = d.y * s + n.y * lateral;
+      out.push({ id: 100 + k, start: { x, y }, end: { x, y } });
+    }
+    return out;
+  }
+  test("projectAlongAisle and projectAcrossAisle decompose along the heading", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js");
+    const h = 30 * DEG, p = { x: 2 * Math.cos(h) - 1 * Math.sin(h), y: 2 * Math.sin(h) + 1 * Math.cos(h) };
+    near(X.projectAlongAisle(p.x, p.y, h), 2, 1e-9); near(X.projectAcrossAisle(p.x, p.y, h), 1, 1e-9);
+  });
+  test("buildProjectedMissionUprights sorts by along-aisle position and numbers them", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js");
+    const ups = uprightsAlong(0, 2.8, 3, 1.6).reverse();
+    const proj = X.buildProjectedMissionUprights(ups, 0);
+    assert(proj[0].id === 100 && proj[2].id === 102, "sorted by s");
+    assert(proj[0].order === 0 && proj[2].order === 2, "order");
+    near(proj[1].s, 2.8, 1e-9); near(proj[1].l, 1.6, 1e-9);
+  });
+  test("associateVerticalObservation picks the nearest gate and rejects beyond range", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js"), C = requireApi(configApi, "config.js");
+    const proj = X.buildProjectedMissionUprights(uprightsAlong(0, 2.8, 4, 1.6), 0);
+    const obs = X.buildVerticalObservation(2.8 - 0.6, 1.6, 0);
+    const m = X.associateVerticalObservation(obs, proj, 0, 0.0, C.Config.x_offset_correction);
+    assert(m && m.upright.id === 101, "nearest is id 101");
+    near(m.residualM, 0.6, 1e-9);
+    const far = X.associateVerticalObservation(X.buildVerticalObservation(1.4, 1.6, 0), proj, 0, 0.0, C.Config.x_offset_correction);
+    assert(far === null, "1.4 m from both neighbours is outside the 1.0 m gate");
+  });
+  test("updateXOffsetFromVerticalObservations converges to the along-aisle offset", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js"), C = requireApi(configApi, "config.js");
+    const ups = uprightsAlong(0, 2.8, 5, 1.6);
+    const state = { xOffsetRaw: 0, xOffsetFiltered: 0, xOffsetHasMeasurement: false };
+    const obs1 = [X.buildVerticalObservation(2.8 - 0.6, 1.6, 0), X.buildVerticalObservation(5.6 - 0.6, 1.6, 0)];
+    const r1 = X.updateXOffsetFromVerticalObservations(state, obs1, 0, ups, C.Config.x_offset_correction);
+    assert(r1.updated && r1.matches.length === 2 && r1.keptMatches.length === 2, "two matches kept");
+    near(state.xOffsetRaw, 0.6, 1e-9); near(state.xOffsetFiltered, 0.6, 1e-9); assert(state.xOffsetHasMeasurement, "has");
+    const r2 = X.updateXOffsetFromVerticalObservations(state, obs1, 0, ups, C.Config.x_offset_correction);
+    near(r2.meanResidual, 0.0, 1e-9); near(state.xOffsetRaw, 0.6, 1e-9);
+  });
+  test("updateXOffsetFromVerticalObservations rejects a residual outlier by median", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js"), C = requireApi(configApi, "config.js");
+    const ups = uprightsAlong(0, 2.8, 6, 1.6);
+    const state = { xOffsetRaw: 0, xOffsetFiltered: 0, xOffsetHasMeasurement: false };
+    const obs = [
+      X.buildVerticalObservation(2.8 - 0.30, 1.6, 0),
+      X.buildVerticalObservation(5.6 - 0.32, 1.6, 0),
+      X.buildVerticalObservation(8.4 - 0.95, 1.6, 0),
+    ];
+    const r = X.updateXOffsetFromVerticalObservations(state, obs, 0, ups, C.Config.x_offset_correction);
+    assert(r.matches.length === 3 && r.keptMatches.length === 2, `kept ${r.keptMatches.length}`);
+    near(state.xOffsetRaw, 0.31, 1e-9);
+  });
+  test("updateXOffsetFromVerticalObservations keeps one nearest association per upright", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js"), C = requireApi(configApi, "config.js");
+    const ups = uprightsAlong(0, 2.8, 3, 1.6);
+    const state = { xOffsetRaw: 0, xOffsetFiltered: 0, xOffsetHasMeasurement: false };
+    const obs = [X.buildVerticalObservation(2.8 - 0.5, 1.6, 0), X.buildVerticalObservation(2.8 - 0.1, 1.6, 0)];
+    const r = X.updateXOffsetFromVerticalObservations(state, obs, 0, ups, C.Config.x_offset_correction);
+    assert(r.matches.length === 1, "one match for id 101");
+    near(r.matches[0].residualM, 0.1, 1e-9);
+  });
+  test("median averages the middle pair for even counts", () => {
+    const X = requireApi(xOffsetApi, "x_offset.js");
+    near(X.median([3, 1, 2]), 2, 0); near(X.median([4, 1, 3, 2]), 2.5, 0); near(X.median([]), 0, 0);
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
