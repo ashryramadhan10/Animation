@@ -510,6 +510,102 @@
     near(angleDiff(composed.yaw, tf.correctedPose.yaw), 0, 1e-9);
   });
 
+  // ── pose_corrector.js ─────────────────────────────────────────────────────
+  function rackFrame(G, idx, stamp, headingRad, halfWidth, cOffset, sides, faceCount = 640, rng = null) {
+    const r = rng || G.makeRng(1000 + idx);
+    const tracks = [];
+    for (const side of sides) {
+      const sign = side === "left" ? 1 : -1;
+      const pts = linePoints(G, headingRad, sign * halfWidth + cOffset, -1.6 + 0.16 * idx, 1.6 + 0.16 * idx, faceCount, 0.018, r);
+      tracks.push({ trackId: side === "left" ? 1 : 2, side, points: pts });
+    }
+    const d = G.headingVector(headingRad), n = G.normalVector(headingRad);
+    const along = 0.16 * idx, lateral = 0.05 + cOffset;
+    return { frameIndex: idx, stamp, fcuPose: { x: d.x * along + n.x * lateral, y: d.y * along + n.y * lateral, z: 2, yaw: headingRad }, tracks, verticalDetections: [] };
+  }
+  test("processFrame on a dual rack frame yields a dual measurement and calibrates once", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const h = 33.5 * DEG;
+    const t1 = N.processFrame(state, rackFrame(G, 0, 0.0, h, 1.6, 0, ["left", "right"]));
+    assert(t1.hold === null, "no hold: " + t1.hold);
+    assert(t1.measurement && t1.measurement.dualSide, "dual");
+    assert(t1.calibration.isCalibrated && !t1.calibration.fromSingleRack, "calibrated on first dual");
+    near(t1.calibration.halfWidth, 1.6, 0.05);
+    near(t1.aisleState.headingRad, h, 0.01);
+    assert(t1.broadcast && !t1.broadcast.held, "broadcast");
+    const calibC = t1.calibration.c;
+    N.processFrame(state, rackFrame(G, 1, 0.1, h, 1.6, 0, ["left", "right"]));
+    near(state.aisleCalib.c, calibC, 0, "calibration is one-shot");
+  });
+  test("processFrame with no tracks holds with the C++ reason and keeps lateral running", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const h = 33.5 * DEG;
+    N.processFrame(state, rackFrame(G, 0, 0.0, h, 1.6, 0, ["left", "right"]));
+    const empty = rackFrame(G, 1, 0.1, h, 1.6, 0, []);
+    const t = N.processFrame(state, empty);
+    assert(t.hold === "no valid fit", t.hold);
+    assert(t.broadcast && t.broadcast.held, "held broadcast still runs the lateral filter");
+  });
+  test("processFrame before any heading holds because no aisle state exists", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const t = N.processFrame(state, rackFrame(G, 0, 0.0, 33.5 * DEG, 1.6, 0, []));
+    assert(t.hold === "no valid fit" && t.broadcast === null, "nothing to hold yet");
+  });
+  test("processFrame single rack uses calibrated half width after a dual calibration", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const h = 33.5 * DEG;
+    N.processFrame(state, rackFrame(G, 0, 0.0, h, 1.55, 0, ["left", "right"]));
+    const t = N.processFrame(state, rackFrame(G, 1, 0.1, h, 1.55, 0, ["left"]));
+    assert(t.measurement && !t.measurement.dualSide, "single");
+    near(t.measurement.halfWidthM, 1.55, 0.05);
+  });
+  test("processFrame short beams hold the heading but still update lateral", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const h = 33.5 * DEG;
+    N.processFrame(state, rackFrame(G, 0, 0.0, h, 1.6, 0, ["left", "right"]));
+    const short = rackFrame(G, 1, 0.1, h, 1.6, 0, ["left", "right"]);
+    for (const tr of short.tracks) tr.points = tr.points.filter(p => Math.abs(G.dot(p, G.headingVector(h)) - 0.16) < 0.6);
+    const t = N.processFrame(state, short);
+    assert(t.stages.every(s => s.beamResult && !s.beamResult.headingValid), "both heading-rejected");
+    assert(t.stages[0].beamResult.headingRejectReason.startsWith("extent"), t.stages[0].beamResult.headingRejectReason);
+    assert(!t.freshHeading && t.hold === null && t.broadcast && !t.broadcast.held, "held heading, live lateral");
+  });
+  test("propagationTick publishes identity until the first correction, then the stored one", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const pose = { x: 1, y: 2, z: 2, yaw: 0.1 };
+    const t0 = N.propagationTick(state, pose, 0.0);
+    assert(t0.published && t0.isIdentity && t0.measurement === null, "identity, no measurement");
+    near(t0.correctedPose.x, 1, 1e-12); near(t0.correctedPose.yaw, 0.1, 1e-12);
+    N.processFrame(state, rackFrame(G, 0, 0.05, 33.5 * DEG, 1.6, 0, ["left", "right"]));
+    const t1 = N.propagationTick(state, pose, 0.2);
+    assert(t1.published && !t1.isIdentity && t1.measurement, "stored correction");
+    near(t1.measurement.stamp, 0.05, 1e-12);
+    assert(t1.measurement.hasX === false, "no x yet");
+  });
+  test("propagationTick refuses a stale pose", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    const t = N.propagationTick(state, { x: 0, y: 0, z: 0, yaw: 0, stamp: 0.0 }, 1.0);
+    assert(!t.published && t.reason === "pose stale", t.reason);
+  });
+  test("resetTrackingState with preserveLateral keeps lateral state and x offset", () => {
+    const N = requireApi(nodeApi, "pose_corrector.js"), G = requireApi(geometryApi, "geometry.js"), C = requireApi(configApi, "config.js");
+    const state = N.makeNodeState(C.Config);
+    N.processFrame(state, rackFrame(G, 0, 0.0, 33.5 * DEG, 1.6, 0, ["left", "right"]));
+    state.xOffset.xOffsetRaw = 0.4; state.xOffset.xOffsetHasMeasurement = true;
+    N.resetTrackingState(state, "test", 1.0, true);
+    assert(!state.aisleState.initialized && state.aisleState.lateralValid, "heading-only");
+    assert(state.lateralDriftFilter.hasValue() && state.xOffset.xOffsetHasMeasurement, "lateral kept");
+    N.resetTrackingState(state, "test", 2.0, false);
+    assert(!state.aisleState.lateralValid && !state.lateralDriftFilter.hasValue() && !state.xOffset.xOffsetHasMeasurement, "full reset");
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
