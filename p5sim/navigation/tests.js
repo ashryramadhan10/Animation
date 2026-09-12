@@ -462,6 +462,54 @@
     near(X.median([3, 1, 2]), 2, 0); near(X.median([4, 1, 3, 2]), 2.5, 0); near(X.median([]), 0, 0);
   });
 
+  // ── correction_transform.js ───────────────────────────────────────────────
+  function angleDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+  test("VisionCorrectionTransform rotates aisle motion to the map x axis", () => {
+    const T = requireApi(correctionApi, "correction_transform.js");
+    const aisle = 32 * DEG, travel = 10;
+    const p0 = { x: 0, y: 0, z: 2, yaw: 0 }, p1 = { x: Math.cos(aisle) * travel, y: Math.sin(aisle) * travel, z: 2, yaw: 0 };
+    const t0 = T.buildVisionCorrectionTransform(p0, p0.x, p0.y, p0.z, aisle);
+    const t1 = T.buildVisionCorrectionTransform(p1, p1.x, p1.y, p1.z, aisle);
+    near(t1.correctedPose.x - t0.correctedPose.x, travel, 1e-6);
+    near(t1.correctedPose.y - t0.correctedPose.y, 0, 1e-6);
+    near(t1.mapToVisionOdom.yaw, -aisle, 1e-9);
+  });
+  test("VisionCorrectionTransform map to vision odom is the correction, not the FCU pose", () => {
+    const T = requireApi(correctionApi, "correction_transform.js");
+    const rawYaw = 1 * DEG, aisle = 32.6 * DEG, cx = 24.549, cy = 15.876;
+    const raw = { x: 24.565, y: 15.922, z: 2, yaw: rawYaw };
+    const tf = T.buildVisionCorrectionTransform(raw, cx, cy, 2, aisle);
+    const cyaw = -aisle, dx = cx - raw.x, dy = cy - raw.y;
+    const ecx = Math.cos(cyaw) * dx - Math.sin(cyaw) * dy, ecy = Math.sin(cyaw) * dx + Math.cos(cyaw) * dy;
+    const epx = Math.cos(cyaw) * raw.x - Math.sin(cyaw) * raw.y + ecx, epy = Math.sin(cyaw) * raw.x + Math.cos(cyaw) * raw.y + ecy;
+    assert(Math.hypot(tf.mapToVisionOdom.x, tf.mapToVisionOdom.y) < 1.0, "small correction");
+    near(tf.mapToVisionOdom.x, ecx, 1e-9); near(tf.mapToVisionOdom.y, ecy, 1e-9);
+    near(tf.visionOdomToBase.x, raw.x, 1e-9); near(tf.visionOdomToBase.y, raw.y, 1e-9);
+    near(tf.correctedPose.x, epx, 1e-9); near(tf.correctedPose.y, epy, 1e-9);
+    near(tf.visionOdomToBase.yaw, rawYaw, 1e-9); near(tf.mapToVisionOdom.yaw, -aisle, 1e-9);
+    near(tf.correctedPose.yaw, rawYaw - aisle, 1e-9);
+  });
+  test("VisionCorrectionTransform corrected pose uses composed frame position and corrected FCU yaw", () => {
+    const T = requireApi(correctionApi, "correction_transform.js");
+    const rawYaw = -148 * DEG, aisle = 78.5 * DEG;
+    const tf = T.buildVisionCorrectionTransform({ x: 3.809, y: 3.894, z: 1.428, yaw: rawYaw }, 4.377, 3.766, 1.428, aisle);
+    near(angleDiff(tf.correctedPose.yaw, rawYaw - aisle), 0, 1e-9);
+    near(tf.visionOdomToBase.yaw, rawYaw, 1e-9);
+    near(angleDiff(tf.composedYaw, rawYaw - aisle), 0, 1e-9);
+  });
+  test("radiansToDegrees converts a right angle", () => {
+    const T = requireApi(correctionApi, "correction_transform.js");
+    near(T.radiansToDegrees(Math.PI / 2), 90, 1e-9);
+  });
+  test("composeStoredCorrectionPose reproduces the transform's corrected pose", () => {
+    const T = requireApi(correctionApi, "correction_transform.js");
+    const raw = { x: 24.565, y: 15.922, z: 2, yaw: 1 * DEG };
+    const tf = T.buildVisionCorrectionTransform(raw, 24.549, 15.876, 2, 32.6 * DEG);
+    const composed = T.composeStoredCorrectionPose(tf.mapToVisionOdom, raw);
+    near(composed.x, tf.correctedPose.x, 1e-9); near(composed.y, tf.correctedPose.y, 1e-9);
+    near(angleDiff(composed.yaw, tf.correctedPose.yaw), 0, 1e-9);
+  });
+
   // ── @@NEXT_TESTS@@ ─────────────────────────────────────────────────────────
 
   function runAllTests() {
