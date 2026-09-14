@@ -53,11 +53,11 @@ frame every third animation tick and a propagation tick every tick):
 | 30-44 | right rack missing | single mode with the calibrated half width |
 | 45-54 | both beams short (1.2 m) | no beam passes the extent gate: heading held, lateral still live |
 | 55-69 | right beam skewed 20 deg, sparser | the 3 deg gate first rejects the skewed beam, then both; heading held; the dual midpoint still leaks the skewed line into c |
-| 70-71 | odom pose glitch 0.35 m | lateral filter holds the isolated jump |
-| 75-89 | true lateral displacement 0.35 m | confirmed on the third frame, then eased in by the 0.05 EMA |
+| 70-71 | odom pose glitch 0.35 m | pose and racks move together; the aisle-state EMA absorbs the line shift, so the corrected pose follows the glitched odom for two frames |
+| 75-89 | true lateral displacement 0.35 m | reflected in the corrected pose at once: the shift is a property of the line, not of the drone |
 | 90-99 | perception dropout | timer republishes the held correction; measurement stamp frozen at frame 89 |
 | 100-109 | left track id 1 becomes 3 | coefficient EMA restarts for the new id |
-| 110-149 | none | the lateral EMA settles on the displaced position |
+| 110-149 | none | the skew's after-effect (held ~40 frames by the coefficient EMA) has decayed |
 
 ## Demo pages
 
@@ -77,22 +77,25 @@ comments), so one file can be read top to bottom without the shared scripts.
 | `heading-consensus/` | weighted circular mean and the 3 deg gate | `ComputeConsensus`, `select_consensus_heading_samples` |
 | `centerline/` | dual with validation, single with calibrated half width, frozen c | `BuildCenterlineMeasurement`, `ComputeDualCenterline` |
 | `calibration/` | the one-shot anchor and the 30/70 blend | `TryInitialCalibration`, `ApplyVisionCorrection` |
-| `lateral-drift-filter/` | raw versus filtered with hold and confirm | `LateralDriftFilter` |
+| `lateral-drift-filter/` | the centerline offset c, raw versus filtered, with hold and confirm | `LateralDriftFilter` |
 | `x-offset/` | pillar association and the running x offset | `UpdateXOffsetFromVerticalObservations` |
-| `correction/` | signed distance, projection, x step, transform | `BroadcastVisionCorrectedTF` |
+| `correction/` | c filter, shift by c, x step, transform | `BroadcastVisionCorrectedTF` |
 | `tf-logic/` | the two TF edges and the composed yaw | `build_vision_correction_transform` |
 | `outputs-hold/` | the timer, identity until ready, frozen stamps through a dropout | `VisionCorrectionPropagationTimer`, `PublishStoredVisionCorrection` |
 | `failure-cases/` | the schedule with the node's real reaction | hold and reset paths |
 
 ## Frames and outputs
 
-- `map -> odom_vision_correction` carries the correction delta rotated by minus
-  the aisle yaw, with rotation minus the aisle yaw.
+- `map -> odom_vision_correction` carries the correction delta `(x_offset, c)`
+  rotated by minus the aisle yaw, with rotation minus the aisle yaw: a shift of
+  the whole odom frame so the centerline becomes its x axis, exactly the
+  laser's `createCorrectedTF`.
 - `odom_vision_correction -> base_link_odom_vision_correction` carries the raw
   FCU pose, translation and yaw.
-- `corrected_pose` is `R(-aisle_yaw) * corrected + delta` with yaw
+- `corrected_pose` is `R(-aisle_yaw) * raw + delta` with yaw
   `raw_yaw - aisle_yaw`: an aisle-aligned frame where x is the along-aisle
-  position and y is minus the odom intercept. This is pinned by
+  position and y is the drone's real signed distance from the middle, 0 when
+  it flies centered. The yaw convention is pinned by
   `test_vision_correction_transform.cpp`.
 - The production output is one atomic `CenterlineMeasurement`: absolute
   centerline yaw, odom-frame intercept, x offset and `has_x`, stamped with the
@@ -118,3 +121,8 @@ Two things the tests document about the C++ itself:
 - The recursive fit only shrinks its inlier set. With interior points behind
   the rack face, about 15% of face points are dropped for good, which is why
   the heading gate's 500-inlier floor matters.
+- The 3 deg consensus gate protects heading, not `c`: a skewed beam still
+  enters the dual midpoint (its normal passes the 0.7 dot check), and because
+  `c` is referenced to the odom origin a small angle error far down the aisle
+  becomes a large `c` error. The coefficient EMA then remembers it for about
+  forty frames. The smoke test encodes that recovery profile.

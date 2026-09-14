@@ -91,9 +91,13 @@ a trace the drawers read. Drawers never recompute.
    anchor at `calibration_blend_alpha`. Single-rack calibration only if
    `allow_single_rack_calibration`.
 7. Aisle state and broadcast: `updateAisleState`, then
-   `broadcastVisionCorrectedTF`: raw signed distance, lateral drift filter,
-   projection onto centerline, x offset along heading,
-   `buildVisionCorrectionTransform`, `storeVisionCorrectionState`.
+   `broadcastVisionCorrectedTF` (line-based since the C++ change of
+   2026-09-14): the lateral drift filter guards and low-passes the centerline
+   offset `c`; odom is shifted by `c` along the aisle normal plus the x offset
+   along the heading, so the TF translation is `(x_offset, c)` like the laser's
+   `createCorrectedTF`; `buildVisionCorrectionTransform`,
+   `storeVisionCorrectionState`. The drone's signed distance to the filtered
+   line is telemetry only.
 8. Hold path: any early exit in 2 to 6 calls `publishHeldVisionCorrection`,
    which reuses the aisle state and still runs the lateral filter. The trace
    records the hold reason string.
