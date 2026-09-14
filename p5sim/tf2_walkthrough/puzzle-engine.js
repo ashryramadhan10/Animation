@@ -190,6 +190,12 @@
         return createProgress();
       }
       if (!validRecord(progress.drafts)) progress.drafts = {};
+      // The catalog can be renumbered when a stage is inserted (stage 19 on 2026-09-14):
+      // a solved puzzle keeps unlocking its successor by id, not by the stored number.
+      const catalog = root.TF2_PUZZLES || [];
+      catalog.forEach((puzzle) => {
+        if (progress.solved[puzzle.id]) progress.highestUnlocked = Math.max(progress.highestUnlocked, Math.min(puzzle.number, catalog.length - 1));
+      });
       return progress;
     } catch (error) {
       return createProgress();

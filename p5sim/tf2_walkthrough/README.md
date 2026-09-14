@@ -51,21 +51,22 @@ Track 3 (Buffers & Sensors) adds puzzles 52 to 63, unlocked by the ICP finale:
 
 Stage 15 is where the static-versus-dynamic difference actually lives: a static edge is one latched sample that answers any time, a dynamic edge is a pruned history that only answers inside its range, and only the dynamic edges on the lookup path constrain it.
 
-Track 4 (Pose Correction) adds puzzles 64 to 75, unlocked by the buffer finale, and is the warehouse rack pipeline from `p5sim/navigation` rebuilt brick by brick:
+Track 4 (Pose Correction) adds puzzles 64 to 83, unlocked by the buffer finale, and is the vision pose corrector from `p5sim/navigation` (the JavaScript twin of `warehouse_pose_corrector_vision_based`) rebuilt brick by brick:
 
 16. Point-cloud bricks: pointsToOdom, fitLine (total least squares), signedLineDistance, headingFromLine.
 17. Rack filters: refitInliers, faceFilter, smoothLine, consensusHeading.
-18. Aisle correction: centerlineFromRacks, centerlineFromOneRack, correctedPose, aisleCorrectionStep, which produces the `map -> odom` transform that keeps `odom -> base_link` untouched.
+18. Aisle correction: centerlineFromRacks, centerlineFromOneRack, correctedPoseFromCenterline (shift odom by the centerline offset c along the normal, the same shift the laser node applies from its intercept), aisleCorrectionStep, which produces the `map -> odom` transform that keeps `odom -> base_link` untouched.
+19. Vision node: isBeamReliableForHeading (the heading gate), selectConsensusHeading (the 3° outlier gate), rateLimitHeading, blendAisleState (heading blended on the circle), computeDualCenterline (normals and half-width checks), lowPassStepLimit, lateralJumpGuard (LateralDriftFilter on c: hold, confirm, ease in), visionCorrectionTransform (map → odom = delta rotated by −heading; corrected_pose.y is the drone's real distance from the middle).
 
-Each puzzle links the matching demo under `p5sim/navigation`.
+Each puzzle links the navigation page that animates the same step and names the module function it mirrors (`scripts/<module>.js · <function>`). Stage 18's old "pull the pose toward the centerline by gain × distance" brick was replaced on 2026-09-14 when the node moved to the line-based shift; that pull is now the puzzle's first diagnosis.
 
-Track 5 (Uncertainty & Estimation) adds puzzles 76 to 87, unlocked by the map → odom capstone, and follows PythonRobotics' localization examples:
+Track 5 (Uncertainty & Estimation) adds puzzles 84 to 95, unlocked by the vision correction transform, and follows PythonRobotics' localization examples:
 
 19. Kinematics: diffDriveTwist, integrateGyro, twistInSensorFrame (with the lever arm).
 20. Uncertainty: predictCovariance (F P Fᵀ + Q), composeUncertain, mahalanobisDistance, covarianceEllipse.
 21. Estimation: ekfPredict, ekfUpdatePosition, particleWeights, resampleLowVariance, ekfLocalizeStep.
 
-Track 6 (Bayesian Filters) adds puzzles 88 to 102, unlocked by the EKF localization step, and follows *Kalman and Bayesian Filters in Python* (`references/Kalman-and-Bayesian-Filters-in-Python-master`) chapter by chapter:
+Track 6 (Bayesian Filters) adds puzzles 96 to 110, unlocked by the EKF localization step, and follows *Kalman and Bayesian Filters in Python* (`references/Kalman-and-Bayesian-Filters-in-Python-master`) chapter by chapter:
 
 22. Scalar filters: ghFilterStep, discretePredict, discreteUpdate, gaussianMultiply, kalman1dStep.
 23. Multivariate Kalman: matMul2, matInv2, constantVelocityModel, kfPredict, kfUpdate, kalmanTrackStep (the dog tracker).

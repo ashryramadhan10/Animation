@@ -32,19 +32,20 @@
   const CORRECTION_STAGES = Object.freeze([
     { id: "pointcloud-bricks", title: "Point-Cloud Bricks", subtitle: "Rack points into odom, line fits, distances, headings.", range: [64, 67] },
     { id: "rack-filters", title: "Rack Filters", subtitle: "Inlier refits, rack faces, smoothing, consensus.", range: [68, 71] },
-    { id: "aisle-correction", title: "Aisle Correction", subtitle: "Centerline, corrected pose, and map → odom.", range: [72, 75] },
+    { id: "aisle-correction", title: "Aisle Correction", subtitle: "Centerline, shift by c, and map → odom.", range: [72, 75] },
+    { id: "vision-node", title: "Vision Node", subtitle: "Heading gate, outlier gate, rate limit, aisle state, the c filter, and the TF.", range: [76, 83] },
   ]);
 
   const ESTIMATION_STAGES = Object.freeze([
-    { id: "kinematics", title: "Kinematics", subtitle: "Wheel speeds, gyro rates, and twists between frames.", range: [76, 78] },
-    { id: "uncertainty", title: "Uncertainty", subtitle: "Propagate, compound, gate, and draw covariance.", range: [79, 82] },
-    { id: "estimation", title: "Estimation", subtitle: "EKF predict and update, particle weights and resampling.", range: [83, 87] },
+    { id: "kinematics", title: "Kinematics", subtitle: "Wheel speeds, gyro rates, and twists between frames.", range: [84, 86] },
+    { id: "uncertainty", title: "Uncertainty", subtitle: "Propagate, compound, gate, and draw covariance.", range: [87, 90] },
+    { id: "estimation", title: "Estimation", subtitle: "EKF predict and update, particle weights and resampling.", range: [91, 95] },
   ]);
 
   const BAYES_STAGES = Object.freeze([
-    { id: "scalar-filters", title: "Scalar Filters", subtitle: "g-h, discrete Bayes, Gaussians, and the 1D Kalman filter.", range: [88, 92] },
-    { id: "multivariate-kalman", title: "Multivariate Kalman", subtitle: "A position-velocity tracker, brick by brick.", range: [93, 98] },
-    { id: "nonlinear-smoothing", title: "Nonlinear & Smoothing", subtitle: "Sigma points, the unscented transform, and RTS smoothing.", range: [99, 102] },
+    { id: "scalar-filters", title: "Scalar Filters", subtitle: "g-h, discrete Bayes, Gaussians, and the 1D Kalman filter.", range: [96, 100] },
+    { id: "multivariate-kalman", title: "Multivariate Kalman", subtitle: "A position-velocity tracker, brick by brick.", range: [101, 106] },
+    { id: "nonlinear-smoothing", title: "Nonlinear & Smoothing", subtitle: "Sigma points, the unscented transform, and RTS smoothing.", range: [107, 110] },
   ]);
 
   const TRACKS = Object.freeze([
@@ -73,8 +74,8 @@
     Object.freeze({
       id: "estimation",
       title: "Track 5 · Uncertainty & Estimation",
-      unlockAfter: "aisle-correction-step",
-      note: "Unlocks after the map → odom capstone.",
+      unlockAfter: "vision-correction-transform",
+      note: "Unlocks after the vision correction transform.",
       stages: ESTIMATION_STAGES,
     }),
     Object.freeze({
@@ -96,8 +97,8 @@
     return Object.freeze({ label, url });
   }
 
-  function navref(page, symbol) {
-    return Object.freeze({ label: "p5sim/navigation · core.js · " + symbol, url: "../navigation/" + page + "/index.html" });
+  function navref(page, module, symbol) {
+    return Object.freeze({ label: "p5sim/navigation · scripts/" + module + " · " + symbol, url: "../navigation/" + page + "/index.html" });
   }
 
   const KBF = "https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/";
@@ -2549,7 +2550,7 @@
       referenceSource: "function pointsToOdom(odomFromLaser, points) { return points.map(function (point) { return transformPoint(odomFromLaser, point); }); }",
       comparator: "deep", walkthroughChapter: "sensor-scenario",
       dependencies: ["transform-point"],
-      reference: navref("synthetic-input", "runPipeline (frame handling)"),
+      reference: navref("synthetic-input", "synthetic_world.js", "mapToOdom (the node receives rack points already in odom)"),
       scene: { kind: "aisle", view: "cloud", handles: [{ id: "robot", type: "pose", label: "base_link in odom", value: { x: 0.5, y: 0.2, yaw: 0.15 } }], args: [{ fixture: "odomFromLaser" }, { fixture: "leftPointsInLaser" }] },
       diagnoses: [diagnosis("rotation-ignored", "The points were only shifted: the laser's yaw must rotate them too.", "function pointsToOdom(odomFromLaser, points) { return points.map(function (p) { return { x: p.x + odomFromLaser.x, y: p.y + odomFromLaser.y }; }); }")],
       hints: ["Each point is a position, so rotation and translation both apply.", "transformPoint(odomFromLaser, point) for each point.", "Return points.map(...)."],
@@ -2581,7 +2582,7 @@
         "}"
       ),
       comparator: "deep", walkthroughChapter: "sensor-scenario",
-      reference: navref("line-fit", "fitLine2D"),
+      reference: navref("line-fit", "line_fitter.js", "fitLine2D inside RecursiveLinRegFitter.fitPlane"),
       scene: { kind: "aisle", view: "fit", handles: [{ id: "aisle", type: "frame", label: "aisle in odom", value: { x: 0, y: 0.3, yaw: 0.2 } }], args: [{ fixture: "leftFace" }] },
       diagnoses: [
         diagnosis("slope-intercept", "That is y = m·x + k packed as {a: m, b: −1, c: k}: the line must be normalized with a² + b² = 1 and b > 0.", lines(
@@ -2620,12 +2621,12 @@
     puzzle({
       number: 66, id: "signed-line-distance", track: "correction", title: "Signed Distance to a Line",
       goal: "Compute a·x + b·y + c for a normalized line: how far, and on which side.",
-      concept: "The sign tells left from right of the rack; the correction only needs this one number.",
+      concept: "The sign tells left from right of the rack. The node uses it to pick the side for a single-rack centerline and to report the drone's distance to the middle; the transform itself is built from the line's own offset c (puzzle 74).",
       functionName: "signedLineDistance", signature: "signedLineDistance(point, line) → number",
       starterSource: starter("signedLineDistance", "point, line", "a·x + b·y + c."),
       referenceSource: "function signedLineDistance(point, line) { return line.a * point.x + line.b * point.y + line.c; }",
       comparator: "scalar", walkthroughChapter: "sensor-scenario",
-      reference: navref("centerline", "lineDistance"),
+      reference: navref("correction", "geometry.js", "lineSignedDistance"),
       scene: { kind: "aisle", view: "distance", handles: [{ id: "point", type: "point", label: "p", value: { x: 1, y: 0.8 } }], args: [{ handle: "point" }, { fixture: "fixedLeftLine" }] },
       diagnoses: [diagnosis("absolute", "The absolute value throws away the side: the pipeline needs the sign.", "function signedLineDistance(point, line) { return Math.abs(line.a * point.x + line.b * point.y + line.c); }")],
       hints: ["For a normalized line, a·x + b·y + c is the perpendicular distance with a sign.", "Positive means the point lies on the side the normal (a, b) points to.", "Return line.a * point.x + line.b * point.y + line.c."],
@@ -2650,7 +2651,7 @@
         "}"
       ),
       comparator: "angle", walkthroughChapter: "sensor-scenario",
-      reference: navref("heading-consensus", "headingFromLine"),
+      reference: navref("heading-consensus", "geometry.js", "computeHeadingFromLineCoefficients"),
       scene: { kind: "aisle", view: "heading", handles: [{ id: "aisle", type: "frame", label: "aisle in odom", value: { x: 0, y: 0.3, yaw: 0.2 } }], args: [{ fixture: "leftLine" }] },
       diagnoses: [
         diagnosis("normal-not-direction", "That is the angle of the normal (a, b); the direction along the line is (−b, a).", "function headingFromLine(line) { return Math.atan2(line.b, line.a); }"),
@@ -2670,7 +2671,7 @@
     puzzle({
       number: 68, id: "inlier-refit", track: "correction", title: "Refit on Inliers",
       goal: "Fit, drop the points far from the line, refit, and repeat until the inlier set settles.",
-      concept: "A single outlier tilts a least-squares line; iterating on inliers removes its pull.",
+      concept: "A single outlier tilts a least-squares line; iterating on inliers removes its pull. The node's fitter only ever shrinks the inlier set, then checks the inlier ratio, the largest gap, and the line length.",
       functionName: "refitInliers", signature: "refitInliers(points, threshold, maxIterations) → { line, inliers }",
       starterSource: starter("refitInliers", "points, threshold, maxIterations", "inliers are the indexes of points within threshold of the final line."),
       referenceSource: lines(
@@ -2690,7 +2691,7 @@
       ),
       comparator: "deep", walkthroughChapter: "sensor-scenario",
       dependencies: ["fit-line", "signed-line-distance"],
-      reference: navref("line-fit", "recursiveLineFit"),
+      reference: navref("line-fit", "line_fitter.js", "RecursiveLinRegFitter.fitPlane (inlier refinement)"),
       scene: { kind: "aisle", view: "refit", handles: [{ id: "outlier", type: "point", label: "outlier", value: { x: 0.5, y: 0.9 } }], args: [{ fixture: "pointsWithOutlier" }, 0.3, 10] },
       diagnoses: [diagnosis("single-pass", "Only one fit was made: the outlier still pulled the line. Refit on the inliers until the set stops changing.", lines(
         "function refitInliers(points, threshold, maxIterations) {",
@@ -2722,7 +2723,7 @@
         "}"
       ),
       comparator: "deep", walkthroughChapter: "sensor-scenario",
-      reference: navref("rotation-filter", "rotationSearchFilter (keep rule)"),
+      reference: navref("rotation-filter", "line_fitter.js", "rotationSearchFilter (the keep rule at the best angle)"),
       scene: { kind: "aisle", view: "face", handles: [{ id: "aisle", type: "frame", label: "aisle in odom", value: { x: 0, y: 0.3, yaw: 0.2 } }], args: [{ fixture: "leftWithInterior" }, { fixture: "aisleHeading" }, "left", 0.15] },
       diagnoses: [
         diagnosis("sides-swapped", "Left and right are swapped: the left rack's face is its minimum projection (closest to the aisle), the right rack's face is its maximum.", lines(
@@ -2753,7 +2754,7 @@
     puzzle({
       number: 70, id: "smooth-line", track: "correction", title: "Smooth a Line Over Time",
       goal: "Blend a new line fit into the previous one with an exponential moving average.",
-      concept: "Lines have a sign ambiguity, so align the new normal to the previous one before blending, then renormalize.",
+      concept: "Lines have a sign ambiguity, so align the new normal to the previous one before blending, then renormalize. The node keeps one such EMA per track id (plane_coefficients_ema_alpha 0.08) and restarts it when a track id changes.",
       functionName: "smoothLine", signature: "smoothLine(previous, line, alpha) → line",
       starterSource: starter("smoothLine", "previous, line, alpha", "previous may be null."),
       referenceSource: lines(
@@ -2766,7 +2767,7 @@
         "}"
       ),
       comparator: "deep", walkthroughChapter: "time-buffer",
-      reference: navref("coefficient-smoothing", "smoothLine"),
+      reference: navref("coefficient-smoothing", "pose_corrector.js", "buildBeamResultFromFit (coefficient EMA)"),
       scene: { kind: "aisle", view: "smooth", handles: [
         { id: "newC", type: "slider", label: "new line offset c", value: -2.4, min: -3.2, max: -0.8 },
         { id: "alpha", type: "slider", label: "alpha", value: 0.3, min: 0, max: 1 },
@@ -2799,7 +2800,7 @@
     puzzle({
       number: 71, id: "consensus-heading", track: "correction", title: "Heading Consensus",
       goal: "Combine rack headings into one aisle heading, weighting by inlier count and resolving the 180° ambiguity.",
-      concept: "A line heading is only known modulo π; resolve each beam toward the previous heading before averaging on the circle.",
+      concept: "A line heading is only known modulo π; resolve each beam toward the previous heading before averaging on the circle. The node's consensus adds an outlier gate on top of this mean (puzzle 77).",
       functionName: "consensusHeading", signature: "consensusHeading(beams, previousHeading) → radians",
       starterSource: starter("consensusHeading", "beams, previousHeading", "beams: [{ heading, inlierCount }]; previousHeading may be null (use the first beam)."),
       referenceSource: lines(
@@ -2819,7 +2820,7 @@
       ),
       comparator: "angle", walkthroughChapter: "frame-roles",
       dependencies: ["wrap-angle"],
-      reference: navref("heading-consensus", "consensusHeading / resolveHeadingToReference"),
+      reference: navref("heading-consensus", "heading.js", "selectConsensusHeadingSamples (weighted circular mean)"),
       scene: { kind: "aisle", view: "consensus", handles: [
         { id: "beamA", type: "dial", label: "beam A", value: 0.2, radius: 1.5 },
         { id: "beamB", type: "dial", label: "beam B", value: 2.9, radius: 2.2 },
@@ -2889,7 +2890,7 @@
     puzzle({
       number: 72, id: "centerline-from-racks", track: "correction", title: "Aisle Centerline from Two Racks",
       goal: "Average the two rack lines into the aisle centerline after aligning their normals with the aisle heading.",
-      concept: "Both racks face the aisle; once their normals agree, the centerline is their mean.",
+      concept: "Both racks face the aisle; once their normals agree, the centerline is their mean. The node also measures the half width from the two offsets and rejects bad pairs (puzzle 80).",
       functionName: "centerlineFromRacks", signature: "centerlineFromRacks(leftLine, rightLine, heading) → line",
       starterSource: starter("centerlineFromRacks", "leftLine, rightLine, heading", "Align each line so its normal dots positively with (−sin heading, cos heading), average, renormalize."),
       referenceSource: lines(
@@ -2903,7 +2904,7 @@
         "}"
       ),
       comparator: "deep", walkthroughChapter: "frame-roles",
-      reference: navref("centerline", "computeCenterline (dual)"),
+      reference: navref("centerline", "pose_corrector.js", "computeDualCenterline (the midpoint; checks in puzzle 80)"),
       scene: { kind: "aisle", view: "centerline", handles: [
         { id: "leftOffset", type: "slider", label: "left rack y", value: 1.6, min: 0.8, max: 3 },
         { id: "rightOffset", type: "slider", label: "right rack y", value: -1.6, min: -3, max: -0.8 },
@@ -2926,7 +2927,7 @@
     puzzle({
       number: 73, id: "single-rack-centerline", track: "correction", title: "Centerline from One Rack",
       goal: "When only one rack is visible, place the centerline the expected half-width away on the robot's side.",
-      concept: "Fallback: the robot is between the racks, so the aisle center lies toward the robot.",
+      concept: "Fallback: the robot is between the racks, so the aisle center lies toward the robot. The node uses the half width it calibrated on the first dual frame, and expected_rack_distance before that.",
       functionName: "centerlineFromOneRack", signature: "centerlineFromOneRack(line, heading, pose, expectedDistance) → line",
       starterSource: starter("centerlineFromOneRack", "line, heading, pose, expectedDistance"),
       referenceSource: lines(
@@ -2939,7 +2940,7 @@
         "}"
       ),
       comparator: "deep", walkthroughChapter: "frame-roles",
-      reference: navref("centerline", "computeCenterline (single-beam fallback)"),
+      reference: navref("centerline", "pose_corrector.js", "buildCenterlineMeasurement (single-rack branch)"),
       scene: { kind: "aisle", view: "single", handles: [
         { id: "robot", type: "pose", label: "robot", value: { x: 0.5, y: 0.4, yaw: 0.1 } },
         { id: "rack", type: "selector", label: "visible rack", value: "left", options: ["left", "right"] },
@@ -2962,40 +2963,41 @@
       ],
     }),
     puzzle({
-      number: 74, id: "corrected-pose", track: "correction", title: "Corrected Pose",
-      goal: "Pull the pose toward the centerline by gain × its signed distance and adopt the aisle heading.",
-      concept: "The lateral error is the one number the racks can tell you; the along-aisle position stays as odometry says.",
-      functionName: "correctedPose", signature: "correctedPose(pose, centerline, aisleHeading, gain) → pose",
-      starterSource: starter("correctedPose", "pose, centerline, aisleHeading, gain", "d = signedLineDistance(pose, centerline); move by −gain·d along the normal."),
+      number: 74, id: "corrected-pose-shift", track: "correction", title: "Corrected Pose: Shift by c",
+      goal: "Shift the odom pose by the centerline offset c along the aisle normal, plus the x offset along the heading; keep the raw yaw.",
+      concept: "The shift is a property of the line, not of the robot: every odom point moves by the same c, so the robot's y in the corrected frame is its real distance from the aisle middle. The laser node applies the same shift from its intercept (−intercept·cos h).",
+      functionName: "correctedPoseFromCenterline", signature: "correctedPoseFromCenterline(pose, centerline, aisleHeading, xOffset) → pose",
+      starterSource: starter("correctedPoseFromCenterline", "pose, centerline, aisleHeading, xOffset", "x + c·a + xOffset·cos h, y + c·b + xOffset·sin h, yaw unchanged."),
       referenceSource: lines(
-        "function correctedPose(pose, centerline, aisleHeading, gain) {",
-        "  var d = signedLineDistance(pose, centerline);",
-        "  return { x: pose.x - gain * d * centerline.a, y: pose.y - gain * d * centerline.b, yaw: aisleHeading };",
+        "function correctedPoseFromCenterline(pose, centerline, aisleHeading, xOffset) {",
+        "  var c = centerline.c;",
+        "  return { x: pose.x + c * centerline.a + xOffset * Math.cos(aisleHeading), y: pose.y + c * centerline.b + xOffset * Math.sin(aisleHeading), yaw: pose.yaw };",
         "}"
       ),
       comparator: "se2", walkthroughChapter: "frame-roles",
-      dependencies: ["signed-line-distance"],
-      reference: navref("correction", "correctedPoseFromCenterline"),
-      scene: { kind: "aisle", view: "correct", handles: [
-        { id: "robot", type: "pose", label: "robot", value: { x: 1, y: 0.7, yaw: 0.35 } },
-        { id: "gain", type: "slider", label: "gain", value: 1, min: 0, max: 1 },
-      ], args: [{ handle: "robot" }, { fixture: "mapCenterline" }, 0, { handle: "gain" }] },
+      reference: navref("correction", "pose_corrector.js", "broadcastVisionCorrectedTF"),
+      scene: { kind: "aisle", view: "shift", handles: [
+        { id: "robot", type: "pose", label: "robot (odom)", value: { x: 1, y: 0.7, yaw: 0.35 } },
+        { id: "c", type: "slider", label: "centerline c", value: -0.4, min: -1.5, max: 1.5 },
+        { id: "xOffset", type: "slider", label: "x offset", value: 0, min: -1, max: 1 },
+      ], args: [{ handle: "robot" }, { fixture: "shiftCenterline" }, 0, { handle: "xOffset" }] },
       diagnoses: [
-        diagnosis("sign-flipped", "The pose moved away from the centerline: subtract gain·d along the normal.", "function correctedPose(pose, centerline, aisleHeading, gain) { var d = signedLineDistance(pose, centerline); return { x: pose.x + gain * d * centerline.a, y: pose.y + gain * d * centerline.b, yaw: aisleHeading }; }"),
-        diagnosis("yaw-kept", "The heading must become the aisle heading, not stay as odometry reported it.", "function correctedPose(pose, centerline, aisleHeading, gain) { var d = signedLineDistance(pose, centerline); return { x: pose.x - gain * d * centerline.a, y: pose.y - gain * d * centerline.b, yaw: pose.yaw }; }"),
+        diagnosis("robot-projection", "That pulls the robot onto the centerline by its own distance, so the corrected frame collapses onto the raw one whenever the robot flies centered (the bug fixed on 2026-09-14). Shift by the line's c instead.", "function correctedPoseFromCenterline(pose, centerline, aisleHeading, xOffset) { var d = centerline.a * pose.x + centerline.b * pose.y + centerline.c; return { x: pose.x - d * centerline.a + xOffset * Math.cos(aisleHeading), y: pose.y - d * centerline.b + xOffset * Math.sin(aisleHeading), yaw: pose.yaw }; }"),
+        diagnosis("sign-flipped", "The shift went the wrong way: add c along the normal (a, b). With c = −0.4 the line sits at y = 0.4 and the frame must move down by 0.4.", "function correctedPoseFromCenterline(pose, centerline, aisleHeading, xOffset) { var c = centerline.c; return { x: pose.x - c * centerline.a + xOffset * Math.cos(aisleHeading), y: pose.y - c * centerline.b + xOffset * Math.sin(aisleHeading), yaw: pose.yaw }; }"),
+        diagnosis("yaw-adopted", "The odom-side pose keeps the raw yaw; the aisle heading only enters through the map → odom rotation (puzzles 75 and 83).", "function correctedPoseFromCenterline(pose, centerline, aisleHeading, xOffset) { var c = centerline.c; return { x: pose.x + c * centerline.a + xOffset * Math.cos(aisleHeading), y: pose.y + c * centerline.b + xOffset * Math.sin(aisleHeading), yaw: aisleHeading }; }"),
       ],
-      hints: ["signedLineDistance gives how far the robot is from the center, with a sign.", "Move against the normal (a, b) by gain × that distance.", "Return { x: x − gain·d·a, y: y − gain·d·b, yaw: aisleHeading }."],
+      hints: ["c is how far the centerline sits from the odom origin along its normal (a, b); moving every point by c·(a, b) puts the line through the origin.", "Add the pillar x offset along the aisle heading: xOffset·(cos h, sin h).", "Return { x: x + c·a + xOffset·cos h, y: y + c·b + xOffset·sin h, yaw: pose.yaw }."],
       cases: [
-        example([{ x: 2, y: 0.5, yaw: 0.3 }, { a: 0, b: 1, c: 0 }, 0, 1], { x: 2, y: 0, yaw: 0 }, "full correction"),
-        example([{ x: 2, y: 0.5, yaw: 0.3 }, { a: 0, b: 1, c: 0 }, 0, 0.5], { x: 2, y: 0.25, yaw: 0 }, "half gain"),
-        example([{ x: 0.4, y: 3, yaw: 1.4 }, { a: -1, b: 0, c: 0 }, PI / 2, 1], { x: 0, y: 3, yaw: PI / 2 }, "aisle along +y"),
-        example([{ x: 1, y: -1, yaw: 0 }, { a: 0, b: 1, c: 0 }, 0, 1], { x: 1, y: 0, yaw: 0 }, "from below"),
+        example([{ x: 2, y: 0.5, yaw: 0.3 }, { a: 0, b: 1, c: -0.4 }, 0, 0], { x: 2, y: 0.1, yaw: 0.3 }, "line at y = 0.4: the robot ends 0.1 above it"),
+        example([{ x: 2, y: 0.5, yaw: 0.3 }, { a: 0, b: 1, c: 0 }, 0, 0], { x: 2, y: 0.5, yaw: 0.3 }, "line through the origin: nothing to shift, y is already the real distance"),
+        example([{ x: 0.4, y: 3, yaw: 1.4 }, { a: -1, b: 0, c: 0.3 }, PI / 2, 0], { x: 0.1, y: 3, yaw: 1.4 }, "aisle along +y"),
+        example([{ x: 1, y: -1, yaw: 0 }, { a: 0, b: 1, c: 0.5 }, 0, 0.25], { x: 1.25, y: -0.5, yaw: 0 }, "with an x offset"),
       ],
     }),
     puzzle({
       number: 75, id: "aisle-correction-step", track: "correction", title: "Publish map → odom from the Racks",
       goal: "Run the whole pipeline for one frame and produce the map → odom correction that keeps odom → base_link untouched.",
-      concept: "The map aisle is the x-axis; the observed centerline in odom tells where odom sits relative to it: mapFromOdom = { 0, c, −heading }.",
+      concept: "The map aisle is the x-axis; the observed centerline in odom tells where odom sits relative to it: mapFromOdom = { 0, c, −heading }. That is the vision node's transform with the x offset at zero: the shift c·(a, b) rotated by −heading is exactly (0, c), so the corrected y is the robot's real distance from the middle.",
       functionName: "aisleCorrectionStep", signature: "aisleCorrectionStep(frame, threshold) → { heading, centerline, mapFromOdom, correctedPose }",
       starterSource: starter("aisleCorrectionStep", "frame, threshold", "frame = { odomFromBase, baseFromLaser, leftPoints, rightPoints } with points in the laser frame."),
       referenceSource: lines(
@@ -3011,7 +3013,7 @@
       ),
       comparator: "deep", walkthroughChapter: "frame-roles",
       dependencies: ["compose", "points-to-odom", "inlier-refit", "heading-from-line", "consensus-heading", "centerline-from-racks", "transform-pose"],
-      reference: navref("tf-logic", "runPipeline + TF correction logic"),
+      reference: navref("tf-logic", "correction_transform.js", "buildVisionCorrectionTransform (x offset 0)"),
       scene: { kind: "aisle", view: "capstone", handles: [
         { id: "aisle", type: "frame", label: "aisle drift in odom", value: { x: 0.3, y: 0.4, yaw: 0.15 } },
         { id: "robot", type: "pose", label: "robot in odom", value: { x: 1, y: 0.5, yaw: 0.3 } },
@@ -3059,9 +3061,474 @@
   const P_AFTER_STRAIGHT = [[1, 0, 0], [0, 2, 1], [0, 1, 1]];
   const P3 = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }];
 
+  const CORRECTION_19 = [
+    puzzle({
+      number: 76, id: "heading-gate", track: "correction", title: "Heading Gate",
+      goal: "Decide whether one rack fit may vote on the aisle heading: long enough, enough inliers, and a high enough inlier ratio.",
+      concept: "A short or sparse fit has a noisy direction. The node still lets it feed the centerline offset, but not the heading; the reason names every gate it failed.",
+      functionName: "isBeamReliableForHeading", signature: "isBeamReliableForHeading(beam, limits) → { valid, reason }",
+      starterSource: starter("isBeamReliableForHeading", "beam, limits", "beam = { lineExtentM, inlierCount, inlierRatio }; limits = { minExtentM, minInliers, minInlierRatio }. reason lists the failed gates \"extent\", \"inliers\", \"ratio\" joined by \", \" (empty when valid)."),
+      referenceSource: lines(
+        "function isBeamReliableForHeading(beam, limits) {",
+        "  var failures = [];",
+        "  if (beam.lineExtentM < limits.minExtentM) failures.push(\"extent\");",
+        "  if (beam.inlierCount < limits.minInliers) failures.push(\"inliers\");",
+        "  if (beam.inlierRatio < limits.minInlierRatio) failures.push(\"ratio\");",
+        "  return { valid: failures.length === 0, reason: failures.join(\", \") };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "sensor-scenario",
+      reference: navref("heading-gates", "heading.js", "isBeamReliableForHeading"),
+      scene: { kind: "aisle", view: "gate", handles: [
+        { id: "extent", type: "slider", label: "line extent (m)", value: 2.6, min: 0, max: 4 },
+        { id: "inliers", type: "slider", label: "inliers", value: 700, min: 0, max: 1000 },
+        { id: "ratio", type: "slider", label: "inlier ratio", value: 0.5, min: 0, max: 1 },
+      ], args: [{ fixture: "gateBeam" }, { fixture: "gateLimits" }] },
+      diagnoses: [
+        diagnosis("any-gate", "One passing gate is not enough: all three must pass, and the reason must name exactly the gates that failed.", lines(
+          "function isBeamReliableForHeading(beam, limits) {",
+          "  var ok = beam.lineExtentM >= limits.minExtentM || beam.inlierCount >= limits.minInliers || beam.inlierRatio >= limits.minInlierRatio;",
+          "  return { valid: ok, reason: ok ? \"\" : \"extent, inliers, ratio\" };",
+          "}"
+        )),
+        diagnosis("ratio-ignored", "The inlier ratio gate is missing: 600 inliers out of 3000 points is still a bad heading source.", lines(
+          "function isBeamReliableForHeading(beam, limits) {",
+          "  var failures = [];",
+          "  if (beam.lineExtentM < limits.minExtentM) failures.push(\"extent\");",
+          "  if (beam.inlierCount < limits.minInliers) failures.push(\"inliers\");",
+          "  return { valid: failures.length === 0, reason: failures.join(\", \") };",
+          "}"
+        )),
+      ],
+      hints: ["Check the three limits one by one and collect the names of the ones that fail.", "valid is true only when nothing failed.", "reason is the failed names joined with \", \": \"\" when valid, \"inliers, ratio\" when those two fail."],
+      cases: [
+        example([{ lineExtentM: 3.2, inlierCount: 680, inlierRatio: 0.68 }, { minExtentM: 2, minInliers: 500, minInlierRatio: 0.35 }], { valid: true, reason: "" }, "a good rack fit"),
+        example([{ lineExtentM: 1.2, inlierCount: 680, inlierRatio: 0.68 }, { minExtentM: 2, minInliers: 500, minInlierRatio: 0.35 }], { valid: false, reason: "extent" }, "too short"),
+        example([{ lineExtentM: 3.0, inlierCount: 485, inlierRatio: 0.68 }, { minExtentM: 2, minInliers: 500, minInlierRatio: 0.35 }], { valid: false, reason: "inliers" }, "the shrinking refit left it under 500"),
+        example([{ lineExtentM: 2.5, inlierCount: 60, inlierRatio: 0.2 }, { minExtentM: 2, minInliers: 500, minInlierRatio: 0.35 }], { valid: false, reason: "inliers, ratio" }, "sparse and noisy"),
+      ],
+    }),
+    puzzle({
+      number: 77, id: "consensus-outlier-gate", track: "correction", title: "Consensus with an Outlier Gate",
+      goal: "Take the weight-averaged circular mean of the beam headings, drop every beam farther than the threshold from it, then average the survivors again.",
+      concept: "One skewed rack must not tilt the aisle. The node's gate is 3 degrees; a beam rejected here keeps feeding the centerline offset, it only loses its heading vote.",
+      functionName: "selectConsensusHeading", signature: "selectConsensusHeading(samples, thresholdRad) → { valid, headingRad, accepted, rejected }",
+      starterSource: starter("selectConsensusHeading", "samples, thresholdRad", "samples = [{ trackId, headingRad, weight }]. accepted / rejected are trackIds in input order. Nothing left: { valid: false, headingRad: 0, ... }."),
+      referenceSource: lines(
+        "function selectConsensusHeading(samples, thresholdRad) {",
+        "  function mean(list) {",
+        "    var sx = 0, sy = 0;",
+        "    for (var i = 0; i < list.length; i += 1) { sx += list[i].weight * Math.cos(list[i].headingRad); sy += list[i].weight * Math.sin(list[i].headingRad); }",
+        "    return Math.atan2(sy, sx);",
+        "  }",
+        "  var initial = mean(samples);",
+        "  var accepted = [], rejected = [], kept = [];",
+        "  for (var i = 0; i < samples.length; i += 1) {",
+        "    if (Math.abs(wrapAngle(samples[i].headingRad - initial)) > thresholdRad) rejected.push(samples[i].trackId);",
+        "    else { accepted.push(samples[i].trackId); kept.push(samples[i]); }",
+        "  }",
+        "  if (!kept.length) return { valid: false, headingRad: 0, accepted: accepted, rejected: rejected };",
+        "  return { valid: true, headingRad: mean(kept), accepted: accepted, rejected: rejected };",
+        "}"
+      ),
+      comparator: "angles", walkthroughChapter: "frame-roles",
+      dependencies: ["wrap-angle"],
+      reference: navref("heading-consensus", "heading.js", "selectConsensusHeadingSamples"),
+      scene: { kind: "aisle", view: "outliers", handles: [
+        { id: "beamA", type: "dial", label: "beam A", value: 0.5, radius: 2.6 },
+        { id: "beamB", type: "dial", label: "beam B", value: 0.52, radius: 2.0 },
+        { id: "beamC", type: "dial", label: "beam C", value: 0.9, radius: 1.4 },
+      ], args: [{ fixture: "outlierSamples" }, 0.1] },
+      diagnoses: [
+        diagnosis("one-pass", "The first mean was returned as is: the skewed beam still pulls it. Reject the outliers and average again.", lines(
+          "function selectConsensusHeading(samples, thresholdRad) {",
+          "  var sx = 0, sy = 0, accepted = [];",
+          "  for (var i = 0; i < samples.length; i += 1) { sx += samples[i].weight * Math.cos(samples[i].headingRad); sy += samples[i].weight * Math.sin(samples[i].headingRad); accepted.push(samples[i].trackId); }",
+          "  return { valid: true, headingRad: Math.atan2(sy, sx), accepted: accepted, rejected: [] };",
+          "}"
+        )),
+        diagnosis("no-wrap", "The difference to the mean was not wrapped, so a beam at −3.1 rad looks 6 rad away from a mean at π.", lines(
+          "function selectConsensusHeading(samples, thresholdRad) {",
+          "  function mean(list) {",
+          "    var sx = 0, sy = 0;",
+          "    for (var i = 0; i < list.length; i += 1) { sx += list[i].weight * Math.cos(list[i].headingRad); sy += list[i].weight * Math.sin(list[i].headingRad); }",
+          "    return Math.atan2(sy, sx);",
+          "  }",
+          "  var initial = mean(samples);",
+          "  var accepted = [], rejected = [], kept = [];",
+          "  for (var i = 0; i < samples.length; i += 1) {",
+          "    if (Math.abs(samples[i].headingRad - initial) > thresholdRad) rejected.push(samples[i].trackId);",
+          "    else { accepted.push(samples[i].trackId); kept.push(samples[i]); }",
+          "  }",
+          "  if (!kept.length) return { valid: false, headingRad: 0, accepted: accepted, rejected: rejected };",
+          "  return { valid: true, headingRad: mean(kept), accepted: accepted, rejected: rejected };",
+          "}"
+        )),
+      ],
+      hints: ["A weighted circular mean is atan2(Σ w·sin, Σ w·cos).", "Compare each heading with that first mean through wrapAngle; beyond the threshold it is rejected.", "Average the accepted samples again; with none accepted return valid false and heading 0."],
+      cases: [
+        example([[{ trackId: 1, headingRad: 0.5, weight: 2 }, { trackId: 2, headingRad: 0.52, weight: 2 }, { trackId: 3, headingRad: 0.9, weight: 1 }], 0.1], { valid: true, headingRad: 0.51, accepted: [1, 2], rejected: [3] }, "one skewed beam is dropped"),
+        example([[{ trackId: 7, headingRad: 0.3, weight: 5 }], 0.1], { valid: true, headingRad: 0.3, accepted: [7], rejected: [] }, "single beam"),
+        example([[{ trackId: 1, headingRad: 0.5, weight: 2 }, { trackId: 2, headingRad: 0.52, weight: 2 }], 0.1], { valid: true, headingRad: 0.51, accepted: [1, 2], rejected: [] }, "two beams agree"),
+        example([[{ trackId: 1, headingRad: 3.1, weight: 1 }, { trackId: 2, headingRad: -3.1, weight: 1 }], 0.1], { valid: true, headingRad: PI, accepted: [1, 2], rejected: [] }, "across the wrap"),
+        example([[{ trackId: 1, headingRad: 0, weight: 1 }, { trackId: 2, headingRad: 1, weight: 1 }], 0.1], { valid: false, headingRad: 0, accepted: [], rejected: [1, 2] }, "both too far from the mean: no consensus"),
+      ],
+    }),
+    puzzle({
+      number: 78, id: "rate-limit-heading", track: "correction", title: "Rate-Limit the Heading",
+      goal: "Let the published aisle heading move at most maxRate × dt per frame toward the new consensus; an unusable dt falls back to one frame at 30 Hz.",
+      concept: "The consensus can flick by a degree between frames; the controller must not see that. The node allows 0.75 degrees per second, and a jump beyond its reset threshold is handled by a full reset instead of by this clamp.",
+      functionName: "rateLimitHeading", signature: "rateLimitHeading(previous, heading, dt, maxRate) → radians",
+      starterSource: starter("rateLimitHeading", "previous, heading, dt, maxRate", "previous null → heading. dt outside (0, 1] → 1/30. Clamp the wrapped difference to ±maxRate·dt."),
+      referenceSource: lines(
+        "function rateLimitHeading(previous, heading, dt, maxRate) {",
+        "  if (previous === null || maxRate <= 0) return heading;",
+        "  if (!(dt > 0) || dt > 1) dt = 1 / 30;",
+        "  var maxStep = maxRate * dt;",
+        "  var diff = wrapAngle(heading - previous);",
+        "  if (Math.abs(diff) <= maxStep) return heading;",
+        "  return wrapAngle(previous + (diff > 0 ? maxStep : -maxStep));",
+        "}"
+      ),
+      comparator: "angle", walkthroughChapter: "time-buffer",
+      dependencies: ["wrap-angle"],
+      reference: navref("heading-gates", "heading.js", "rateLimitHeading"),
+      scene: { kind: "aisle", view: "rate", handles: [
+        { id: "heading", type: "dial", label: "new consensus", value: 0.6, radius: 2.2 },
+        { id: "dt", type: "slider", label: "dt (s)", value: 0.5, min: 0, max: 1.2 },
+      ], args: [0.1, { handle: "heading" }, { handle: "dt" }, 0.4] },
+      diagnoses: [
+        diagnosis("no-wrap", "The difference was taken without wrapping, so a step across ±π runs the long way round.", lines(
+          "function rateLimitHeading(previous, heading, dt, maxRate) {",
+          "  if (previous === null || maxRate <= 0) return heading;",
+          "  if (!(dt > 0) || dt > 1) dt = 1 / 30;",
+          "  var maxStep = maxRate * dt;",
+          "  var diff = heading - previous;",
+          "  if (Math.abs(diff) <= maxStep) return heading;",
+          "  return wrapAngle(previous + (diff > 0 ? maxStep : -maxStep));",
+          "}"
+        )),
+        diagnosis("bad-dt-kept", "A dt of 2 s (a dropout) let the heading move 2 s worth at once; the node falls back to one 30 Hz frame.", lines(
+          "function rateLimitHeading(previous, heading, dt, maxRate) {",
+          "  if (previous === null || maxRate <= 0) return heading;",
+          "  var maxStep = maxRate * dt;",
+          "  var diff = wrapAngle(heading - previous);",
+          "  if (Math.abs(diff) <= maxStep) return heading;",
+          "  return wrapAngle(previous + (diff > 0 ? maxStep : -maxStep));",
+          "}"
+        )),
+      ],
+      hints: ["No previous heading: nothing to limit against.", "maxStep = maxRate·dt with dt forced to 1/30 when it is not in (0, 1].", "diff = wrapAngle(heading − previous); within ±maxStep return heading, else previous ± maxStep, wrapped."],
+      cases: [
+        example([0, 0.5, 1, 0.1], 0.1, "clamped to one step"),
+        example([null, 0.5, 0.033, 0.013], 0.5, "first heading passes"),
+        example([0, 0.05, 1, 0.1], 0.05, "small change passes"),
+        example([3.1, -3.1, 0.5, 0.1], 3.15 - 2 * PI, "the short way across the wrap"),
+        example([0, 0.5, 2, 0.3], 0.01, "dt of 2 s falls back to one frame"),
+      ],
+    }),
+    puzzle({
+      number: 79, id: "aisle-state-blend", track: "correction", title: "Aisle State EMA",
+      goal: "Blend a new centerline measurement into the aisle state: heading on the circle, offset c linearly, half width only from a dual measurement; the first measurement is taken as is.",
+      concept: "This state is what the transform is built from. Blending the heading through sin and cos keeps a state near ±π from collapsing toward zero, which a plain weighted average of the two angles would do.",
+      functionName: "blendAisleState", signature: "blendAisleState(state, meas, gain) → { headingRad, centerlineC, halfWidthM }",
+      starterSource: starter("blendAisleState", "state, meas, gain", "state may be null. meas = { headingRad, centerlineC, halfWidthM, dualSide }. gain is the weight on meas (0.2 dual, 0.05 single)."),
+      referenceSource: lines(
+        "function blendAisleState(state, meas, gain) {",
+        "  if (state === null) return { headingRad: meas.headingRad, centerlineC: meas.centerlineC, halfWidthM: meas.halfWidthM };",
+        "  var s = (1 - gain) * Math.sin(state.headingRad) + gain * Math.sin(meas.headingRad);",
+        "  var c = (1 - gain) * Math.cos(state.headingRad) + gain * Math.cos(meas.headingRad);",
+        "  return {",
+        "    headingRad: Math.atan2(s, c),",
+        "    centerlineC: (1 - gain) * state.centerlineC + gain * meas.centerlineC,",
+        "    halfWidthM: meas.dualSide ? (1 - gain) * state.halfWidthM + gain * meas.halfWidthM : state.halfWidthM,",
+        "  };",
+        "}"
+      ),
+      comparator: "angles", walkthroughChapter: "time-buffer",
+      reference: navref("pipeline", "aisle_state.js", "updateAisleState (blendAngleCircular)"),
+      scene: { kind: "aisle", view: "blend", handles: [
+        { id: "measHeading", type: "dial", label: "measured heading", value: 0.4, radius: 2.0 },
+        { id: "measC", type: "slider", label: "measured c", value: -0.2, min: -1, max: 1 },
+        { id: "gain", type: "slider", label: "gain", value: 0.2, min: 0, max: 1 },
+      ], args: [{ fixture: "blendState" }, { fixture: "blendMeas" }, { handle: "gain" }] },
+      diagnoses: [
+        diagnosis("linear-heading", "The heading was averaged as two numbers: a state at 3.1 and a measurement at −3.1 then blend to 0 instead of π. Blend sin and cos and take atan2.", lines(
+          "function blendAisleState(state, meas, gain) {",
+          "  if (state === null) return { headingRad: meas.headingRad, centerlineC: meas.centerlineC, halfWidthM: meas.halfWidthM };",
+          "  return {",
+          "    headingRad: (1 - gain) * state.headingRad + gain * meas.headingRad,",
+          "    centerlineC: (1 - gain) * state.centerlineC + gain * meas.centerlineC,",
+          "    halfWidthM: meas.dualSide ? (1 - gain) * state.halfWidthM + gain * meas.halfWidthM : state.halfWidthM,",
+          "  };",
+          "}"
+        )),
+        diagnosis("gain-swapped", "gain is the weight on the new measurement, not on the state.", lines(
+          "function blendAisleState(state, meas, gain) {",
+          "  if (state === null) return { headingRad: meas.headingRad, centerlineC: meas.centerlineC, halfWidthM: meas.halfWidthM };",
+          "  var s = gain * Math.sin(state.headingRad) + (1 - gain) * Math.sin(meas.headingRad);",
+          "  var c = gain * Math.cos(state.headingRad) + (1 - gain) * Math.cos(meas.headingRad);",
+          "  return {",
+          "    headingRad: Math.atan2(s, c),",
+          "    centerlineC: gain * state.centerlineC + (1 - gain) * meas.centerlineC,",
+          "    halfWidthM: meas.dualSide ? gain * state.halfWidthM + (1 - gain) * meas.halfWidthM : state.halfWidthM,",
+          "  };",
+          "}"
+        )),
+      ],
+      hints: ["No state yet: the measurement becomes the state.", "Heading: blend (1 − gain)·(cos, sin) of the state with gain·(cos, sin) of the measurement, then atan2.", "c blends linearly; the half width blends only when meas.dualSide, otherwise it is kept."],
+      cases: [
+        example([{ headingRad: 0, centerlineC: 0, halfWidthM: 1.6 }, { headingRad: 0.2, centerlineC: -0.4, halfWidthM: 1.5, dualSide: true }, 0.5], { headingRad: 0.1, centerlineC: -0.2, halfWidthM: 1.55 }, "half way"),
+        example([null, { headingRad: 0.3, centerlineC: -0.4, halfWidthM: 1.55, dualSide: true }, 0.2], { headingRad: 0.3, centerlineC: -0.4, halfWidthM: 1.55 }, "first measurement"),
+        example([{ headingRad: 3.1, centerlineC: 0, halfWidthM: 1.6 }, { headingRad: -3.1, centerlineC: 0, halfWidthM: 1.6, dualSide: true }, 0.5], { headingRad: PI, centerlineC: 0, halfWidthM: 1.6 }, "across the wrap"),
+        example([{ headingRad: 0, centerlineC: -0.4, halfWidthM: 1.6 }, { headingRad: 0.4, centerlineC: -0.2, halfWidthM: 1.4, dualSide: false }, 0.2], { headingRad: Math.atan2(0.2 * Math.sin(0.4), 0.8 + 0.2 * Math.cos(0.4)), centerlineC: -0.36, halfWidthM: 1.6 }, "single-rack measurement keeps the half width"),
+      ],
+    }),
+    puzzle({
+      number: 80, id: "dual-centerline-check", track: "correction", title: "Dual Centerline with Checks",
+      goal: "Align both rack lines to the aisle heading, reject the pair when their normals disagree or the half width is unrealistic, otherwise return the midpoint line and the measured half width.",
+      concept: "The midpoint only means 'aisle center' when both lines are faces of the same aisle. The dot check catches a skewed or perpendicular fit, the half-width window a rack seen twice or a far wall, and the half width itself feeds the one-shot calibration.",
+      functionName: "computeDualCenterline", signature: "computeDualCenterline(leftLine, rightLine, heading) → { a, b, c, halfWidth } | null",
+      starterSource: starter("computeDualCenterline", "leftLine, rightLine, heading", "Align both normals to (−sin h, cos h). null when their dot < 0.7 or the half width |cL − cR| / 2 lies outside [0.3, 6]."),
+      referenceSource: lines(
+        "function computeDualCenterline(leftLine, rightLine, heading) {",
+        "  var nx = -Math.sin(heading), ny = Math.cos(heading);",
+        "  function align(line) {",
+        "    var n = Math.sqrt(line.a * line.a + line.b * line.b);",
+        "    var a = line.a / n, b = line.b / n, c = line.c / n;",
+        "    return a * nx + b * ny < 0 ? { a: -a, b: -b, c: -c } : { a: a, b: b, c: c };",
+        "  }",
+        "  var l = align(leftLine), r = align(rightLine);",
+        "  if (l.a * r.a + l.b * r.b < 0.7) return null;",
+        "  var halfWidth = Math.abs(l.c - r.c) / 2;",
+        "  if (halfWidth < 0.3 || halfWidth > 6) return null;",
+        "  var a = (l.a + r.a) / 2, b = (l.b + r.b) / 2;",
+        "  var norm = Math.sqrt(a * a + b * b);",
+        "  return { a: a / norm, b: b / norm, c: (l.c + r.c) / 2, halfWidth: halfWidth };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      reference: navref("centerline", "pose_corrector.js", "computeDualCenterline"),
+      scene: { kind: "aisle", view: "dual-check", handles: [
+        { id: "leftOffset", type: "slider", label: "left rack y", value: 1.6, min: 0.8, max: 3 },
+        { id: "rightOffset", type: "slider", label: "right rack y", value: -1.6, min: -3, max: -0.8 },
+        { id: "rightSkew", type: "dial", label: "right rack skew", value: 0, radius: 1.0 },
+      ], args: [{ fixture: "leftOffsetLine" }, { fixture: "rightSkewedLine" }, 0] },
+      diagnoses: [
+        diagnosis("no-dot-check", "A right rack skewed by 50° was accepted: normals that disagree (dot < 0.7) mean the pair is not two faces of one aisle.", lines(
+          "function computeDualCenterline(leftLine, rightLine, heading) {",
+          "  var nx = -Math.sin(heading), ny = Math.cos(heading);",
+          "  function align(line) {",
+          "    var n = Math.sqrt(line.a * line.a + line.b * line.b);",
+          "    var a = line.a / n, b = line.b / n, c = line.c / n;",
+          "    return a * nx + b * ny < 0 ? { a: -a, b: -b, c: -c } : { a: a, b: b, c: c };",
+          "  }",
+          "  var l = align(leftLine), r = align(rightLine);",
+          "  var halfWidth = Math.abs(l.c - r.c) / 2;",
+          "  if (halfWidth < 0.3 || halfWidth > 6) return null;",
+          "  var a = (l.a + r.a) / 2, b = (l.b + r.b) / 2;",
+          "  var norm = Math.sqrt(a * a + b * b);",
+          "  return { a: a / norm, b: b / norm, c: (l.c + r.c) / 2, halfWidth: halfWidth };",
+          "}"
+        )),
+        diagnosis("full-width", "That is the full aisle width; the half width is |cL − cR| / 2.", lines(
+          "function computeDualCenterline(leftLine, rightLine, heading) {",
+          "  var nx = -Math.sin(heading), ny = Math.cos(heading);",
+          "  function align(line) {",
+          "    var n = Math.sqrt(line.a * line.a + line.b * line.b);",
+          "    var a = line.a / n, b = line.b / n, c = line.c / n;",
+          "    return a * nx + b * ny < 0 ? { a: -a, b: -b, c: -c } : { a: a, b: b, c: c };",
+          "  }",
+          "  var l = align(leftLine), r = align(rightLine);",
+          "  if (l.a * r.a + l.b * r.b < 0.7) return null;",
+          "  var halfWidth = Math.abs(l.c - r.c);",
+          "  if (halfWidth < 0.3 || halfWidth > 6) return null;",
+          "  var a = (l.a + r.a) / 2, b = (l.b + r.b) / 2;",
+          "  var norm = Math.sqrt(a * a + b * b);",
+          "  return { a: a / norm, b: b / norm, c: (l.c + r.c) / 2, halfWidth: halfWidth };",
+          "}"
+        )),
+      ],
+      hints: ["Normalize each line and flip it when its normal dots negatively with (−sin h, cos h).", "Reject when the aligned normals' dot product is below 0.7 or |cL − cR| / 2 is outside [0.3, 6].", "Average a, b, c; renormalize (a, b); return the half width with the line."],
+      cases: [
+        example([{ a: 0, b: 1, c: -1.6 }, { a: 0, b: 1, c: 1.6 }, 0], { a: 0, b: 1, c: 0, halfWidth: 1.6 }, "symmetric aisle"),
+        example([{ a: 0, b: 1, c: -1.6 }, { a: 0, b: -1, c: -1.6 }, 0], { a: 0, b: 1, c: 0, halfWidth: 1.6 }, "right line flipped"),
+        example([{ a: 0, b: 1, c: -1.6 }, { a: -Math.sin(50 * PI / 180), b: Math.cos(50 * PI / 180), c: 1.6 }, 0], null, "right rack skewed 50°: rejected"),
+        example([{ a: 0, b: 1, c: -0.2 }, { a: 0, b: 1, c: 0.2 }, 0], null, "0.2 m half width: rejected"),
+        example([{ a: 0, b: 1, c: -3 }, { a: 0, b: 1, c: -1 }, 0], { a: 0, b: 1, c: -2, halfWidth: 1 }, "offset aisle"),
+      ],
+    }),
+    puzzle({
+      number: 81, id: "low-pass-step-limit", track: "correction", title: "Low-Pass with a Step Limit",
+      goal: "Move the filtered value toward the raw one by alpha, but never by more than maxStep per frame.",
+      concept: "An EMA alone still passes a big step scaled by alpha; the clamp bounds how fast the published correction can move, so the corrected TF cannot twitch.",
+      functionName: "lowPassStepLimit", signature: "lowPassStepLimit(current, raw, alpha, maxStep) → number",
+      starterSource: starter("lowPassStepLimit", "current, raw, alpha, maxStep", "target = alpha·raw + (1 − alpha)·current; clamp target − current to ±maxStep (maxStep ≤ 0: no clamp)."),
+      referenceSource: lines(
+        "function lowPassStepLimit(current, raw, alpha, maxStep) {",
+        "  var target = alpha * raw + (1 - alpha) * current;",
+        "  var delta = target - current;",
+        "  if (maxStep > 0) delta = Math.min(maxStep, Math.max(-maxStep, delta));",
+        "  return current + delta;",
+        "}"
+      ),
+      comparator: "scalar", walkthroughChapter: "time-buffer",
+      reference: navref("lateral-drift-filter", "lateral_drift_filter.js", "LateralDriftFilter.applyLowPassAndStepLimit"),
+      scene: { kind: "aisle", view: "lowpass", handles: [
+        { id: "raw", type: "slider", label: "raw c", value: 0.6, min: -1, max: 1 },
+        { id: "alpha", type: "slider", label: "alpha", value: 0.05, min: 0, max: 1 },
+        { id: "maxStep", type: "slider", label: "max step", value: 0.04, min: 0, max: 0.3 },
+      ], args: [0.2, { handle: "raw" }, { handle: "alpha" }, { handle: "maxStep" }] },
+      diagnoses: [
+        diagnosis("clamp-target", "The clamp must bound the change from current, not the target value itself.", lines(
+          "function lowPassStepLimit(current, raw, alpha, maxStep) {",
+          "  var target = alpha * raw + (1 - alpha) * current;",
+          "  if (maxStep > 0) target = Math.min(maxStep, Math.max(-maxStep, target));",
+          "  return target;",
+          "}"
+        )),
+        diagnosis("alpha-swapped", "alpha weights the raw value; (1 − alpha) stays on the current one.", lines(
+          "function lowPassStepLimit(current, raw, alpha, maxStep) {",
+          "  var target = alpha * current + (1 - alpha) * raw;",
+          "  var delta = target - current;",
+          "  if (maxStep > 0) delta = Math.min(maxStep, Math.max(-maxStep, delta));",
+          "  return current + delta;",
+          "}"
+        )),
+      ],
+      hints: ["target = alpha·raw + (1 − alpha)·current.", "delta = target − current, clamped to [−maxStep, maxStep] when maxStep > 0.", "Return current + delta."],
+      cases: [
+        example([0.2, 0.6, 0.05, 0.04], 0.22, "EMA step inside the limit"),
+        example([0, 1, 0.5, 1], 0.5, "no clamp needed"),
+        example([0, 1, 0.5, 0.04], 0.04, "clamped"),
+        example([1, 0, 0.5, 0], 0.5, "maxStep 0 disables the clamp"),
+        example([0, -1, 0.5, 0.04], -0.04, "clamped downward"),
+      ],
+    }),
+    puzzle({
+      number: 82, id: "lateral-jump-guard", track: "correction", title: "Lateral Jump Guard",
+      goal: "One step of LateralDriftFilter on the centerline offset c: hold an isolated jump, accept it once it has repeated for jumpConfirmFrames frames, otherwise low-pass with the step limit.",
+      concept: "One frame's c can jump when a fit flips; a real shift keeps coming back. Holding for a few frames tells them apart without adding lag to the normal path. Since 2026-09-14 the node runs this on c itself, not on the drone's distance.",
+      functionName: "lateralJumpGuard", signature: "lateralJumpGuard(state, raw, cfg) → { state, filteredM, held }",
+      starterSource: starter("lateralJumpGuard", "state, raw, cfg", "state = { filtered, lastAcceptedRaw, pendingJumpRaw, pendingJumpCount } or null; cfg = { emaAlpha, jumpThresholdM, jumpConfirmFrames, jumpClusterThresholdM, maxStepM }. Return a NEW state object."),
+      referenceSource: lines(
+        "function lateralJumpGuard(state, raw, cfg) {",
+        "  if (state === null) return { state: { filtered: raw, lastAcceptedRaw: raw, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: raw, held: false };",
+        "  var delta = raw - state.lastAcceptedRaw;",
+        "  var isJump = cfg.jumpThresholdM > 0 && Math.abs(delta) > cfg.jumpThresholdM;",
+        "  if (isJump) {",
+        "    var startsCluster = state.pendingJumpRaw === null || (cfg.jumpClusterThresholdM > 0 && Math.abs(raw - state.pendingJumpRaw) > cfg.jumpClusterThresholdM);",
+        "    var count = startsCluster ? 1 : state.pendingJumpCount + 1;",
+        "    if (count < cfg.jumpConfirmFrames) {",
+        "      return { state: { filtered: state.filtered, lastAcceptedRaw: state.lastAcceptedRaw, pendingJumpRaw: startsCluster ? raw : state.pendingJumpRaw, pendingJumpCount: count }, filteredM: state.filtered, held: true };",
+        "    }",
+        "  }",
+        "  var filtered = lowPassStepLimit(state.filtered, raw, cfg.emaAlpha, cfg.maxStepM);",
+        "  return { state: { filtered: filtered, lastAcceptedRaw: raw, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: filtered, held: false };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "time-buffer",
+      dependencies: ["low-pass-step-limit"],
+      reference: navref("lateral-drift-filter", "lateral_drift_filter.js", "LateralDriftFilter.update"),
+      scene: { kind: "aisle", view: "jump-guard", handles: [
+        { id: "raw", type: "slider", label: "raw c this frame", value: 0.6, min: -0.5, max: 1 },
+        { id: "pending", type: "selector", label: "pending jump at 0.60", value: "none", options: ["none", "one frame", "two frames"] },
+      ], args: [{ fixture: "guardState" }, { handle: "raw" }, { fixture: "guardConfig" }] },
+      diagnoses: [
+        diagnosis("no-cluster", "Every jump frame was counted, even one far from the pending value: a jump to 0.9 after two frames at 0.6 must restart the count.", lines(
+          "function lateralJumpGuard(state, raw, cfg) {",
+          "  if (state === null) return { state: { filtered: raw, lastAcceptedRaw: raw, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: raw, held: false };",
+          "  var delta = raw - state.lastAcceptedRaw;",
+          "  var isJump = cfg.jumpThresholdM > 0 && Math.abs(delta) > cfg.jumpThresholdM;",
+          "  if (isJump) {",
+          "    var count = state.pendingJumpCount + 1;",
+          "    if (count < cfg.jumpConfirmFrames) {",
+          "      return { state: { filtered: state.filtered, lastAcceptedRaw: state.lastAcceptedRaw, pendingJumpRaw: state.pendingJumpRaw === null ? raw : state.pendingJumpRaw, pendingJumpCount: count }, filteredM: state.filtered, held: true };",
+          "    }",
+          "  }",
+          "  var filtered = lowPassStepLimit(state.filtered, raw, cfg.emaAlpha, cfg.maxStepM);",
+          "  return { state: { filtered: filtered, lastAcceptedRaw: raw, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: filtered, held: false };",
+          "}"
+        )),
+        diagnosis("reference-filtered", "The jump was measured against the filtered value; the node compares with the last ACCEPTED raw value, otherwise the filter's own lag looks like a jump.", lines(
+          "function lateralJumpGuard(state, raw, cfg) {",
+          "  if (state === null) return { state: { filtered: raw, lastAcceptedRaw: raw, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: raw, held: false };",
+          "  var delta = raw - state.filtered;",
+          "  var isJump = cfg.jumpThresholdM > 0 && Math.abs(delta) > cfg.jumpThresholdM;",
+          "  if (isJump) {",
+          "    var startsCluster = state.pendingJumpRaw === null || (cfg.jumpClusterThresholdM > 0 && Math.abs(raw - state.pendingJumpRaw) > cfg.jumpClusterThresholdM);",
+          "    var count = startsCluster ? 1 : state.pendingJumpCount + 1;",
+          "    if (count < cfg.jumpConfirmFrames) {",
+          "      return { state: { filtered: state.filtered, lastAcceptedRaw: state.lastAcceptedRaw, pendingJumpRaw: startsCluster ? raw : state.pendingJumpRaw, pendingJumpCount: count }, filteredM: state.filtered, held: true };",
+          "    }",
+          "  }",
+          "  var filtered = lowPassStepLimit(state.filtered, raw, cfg.emaAlpha, cfg.maxStepM);",
+          "  return { state: { filtered: filtered, lastAcceptedRaw: raw, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: filtered, held: false };",
+          "}"
+        )),
+      ],
+      hints: ["No state: the raw value initializes filtered and lastAcceptedRaw.", "A jump is |raw − lastAcceptedRaw| > jumpThresholdM. Near the pending value (within the cluster threshold) it extends the count, otherwise it starts a new count at 1; below jumpConfirmFrames the output is held.", "Confirmed jump or no jump: lastAcceptedRaw = raw, filtered = lowPassStepLimit(filtered, raw, emaAlpha, maxStepM), pending cleared."],
+      cases: [
+        example([{ filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: null, pendingJumpCount: 0 }, 0.6, { emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }], { state: { filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: 0.6, pendingJumpCount: 1 }, filteredM: 0.2, held: true }, "first jump frame: held"),
+        example([null, 0.2, { emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }], { state: { filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: 0.2, held: false }, "first value"),
+        example([{ filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: 0.6, pendingJumpCount: 2 }, 0.62, { emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }], { state: { filtered: 0.24, lastAcceptedRaw: 0.62, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: 0.24, held: false }, "third frame in the cluster: confirmed, then eased in"),
+        example([{ filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: null, pendingJumpCount: 0 }, 0.3, { emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }], { state: { filtered: 0.24, lastAcceptedRaw: 0.3, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: 0.24, held: false }, "no jump: EMA with the step clamp"),
+        example([{ filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: 0.6, pendingJumpCount: 2 }, 0.9, { emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }], { state: { filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: 0.9, pendingJumpCount: 1 }, filteredM: 0.2, held: true }, "a different jump restarts the count"),
+        example([{ filtered: 0.24, lastAcceptedRaw: 0.3, pendingJumpRaw: null, pendingJumpCount: 0 }, 0.52, { emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }], { state: { filtered: 0.28, lastAcceptedRaw: 0.52, pendingJumpRaw: null, pendingJumpCount: 0 }, filteredM: 0.28, held: false }, "0.22 from the last accepted raw: no jump"),
+      ],
+    }),
+    puzzle({
+      number: 83, id: "vision-correction-transform", track: "correction", title: "Vision Correction Transform",
+      goal: "Turn a raw odom pose and its corrected position into the map → odom edge (the delta rotated by −aisle heading, rotation −aisle heading) and the corrected pose it implies.",
+      concept: "The corrected frame is odom rotated so the aisle is its x axis and shifted so the centerline is y = 0. The child edge stays the raw FCU pose, so corrected_pose.y is the drone's real distance from the middle and its yaw is raw yaw − aisle heading.",
+      functionName: "visionCorrectionTransform", signature: "visionCorrectionTransform(rawPose, corrected, aisleHeading) → { mapFromOdom, correctedPose }",
+      starterSource: starter("visionCorrectionTransform", "rawPose, corrected, aisleHeading", "yaw = wrapAngle(−aisleHeading); mapFromOdom = { R(yaw)·(corrected − raw), yaw }; correctedPose = transformPose(mapFromOdom, rawPose)."),
+      referenceSource: lines(
+        "function visionCorrectionTransform(rawPose, corrected, aisleHeading) {",
+        "  var yaw = wrapAngle(-aisleHeading);",
+        "  var dx = corrected.x - rawPose.x, dy = corrected.y - rawPose.y;",
+        "  var mapFromOdom = { x: Math.cos(yaw) * dx - Math.sin(yaw) * dy, y: Math.sin(yaw) * dx + Math.cos(yaw) * dy, yaw: yaw };",
+        "  return { mapFromOdom: mapFromOdom, correctedPose: transformPose(mapFromOdom, rawPose) };",
+        "}"
+      ),
+      comparator: "deep", walkthroughChapter: "frame-roles",
+      dependencies: ["wrap-angle", "transform-pose"],
+      reference: navref("tf-logic", "correction_transform.js", "buildVisionCorrectionTransform"),
+      scene: { kind: "aisle", view: "vision-tf", handles: [
+        { id: "robot", type: "pose", label: "raw FCU (odom)", value: { x: 1, y: 0.5, yaw: 0.3 } },
+        { id: "c", type: "slider", label: "centerline c", value: -0.4, min: -1.5, max: 1.5 },
+        { id: "aisle", type: "dial", label: "aisle heading", value: 0.15, radius: 0.9, center: { x: -2.4, y: -1.4 } },
+      ], args: [{ handle: "robot" }, { fixture: "correctedFromC" }, { handle: "aisle" }] },
+      diagnoses: [
+        diagnosis("delta-unrotated", "The delta was written into the edge in odom axes; the map → odom edge carries it rotated by −aisle heading.", lines(
+          "function visionCorrectionTransform(rawPose, corrected, aisleHeading) {",
+          "  var yaw = wrapAngle(-aisleHeading);",
+          "  var mapFromOdom = { x: corrected.x - rawPose.x, y: corrected.y - rawPose.y, yaw: yaw };",
+          "  return { mapFromOdom: mapFromOdom, correctedPose: transformPose(mapFromOdom, rawPose) };",
+          "}"
+        )),
+        diagnosis("yaw-positive", "The edge rotates by −aisle heading so the observed aisle lands on the map x axis; +heading turns it the other way.", lines(
+          "function visionCorrectionTransform(rawPose, corrected, aisleHeading) {",
+          "  var yaw = wrapAngle(aisleHeading);",
+          "  var dx = corrected.x - rawPose.x, dy = corrected.y - rawPose.y;",
+          "  var mapFromOdom = { x: Math.cos(yaw) * dx - Math.sin(yaw) * dy, y: Math.sin(yaw) * dx + Math.cos(yaw) * dy, yaw: yaw };",
+          "  return { mapFromOdom: mapFromOdom, correctedPose: transformPose(mapFromOdom, rawPose) };",
+          "}"
+        )),
+      ],
+      hints: ["The edge's rotation is −aisleHeading, wrapped.", "Its translation is the delta (corrected − raw) rotated by that same angle.", "correctedPose = transformPose(mapFromOdom, rawPose): position R(yaw)·raw + translation, yaw raw + (−aisle heading)."],
+      cases: [
+        example([{ x: 2, y: 0.5, yaw: 0.3 }, { x: 2, y: 0.1 }, 0], { mapFromOdom: { x: 0, y: -0.4, yaw: 0 }, correctedPose: { x: 2, y: 0.1, yaw: 0.3 } }, "aisle along x: the edge is (0, c)"),
+        example([{ x: 0.4, y: 3, yaw: 1.4 }, { x: 0.1, y: 3 }, PI / 2], { mapFromOdom: { x: 0, y: 0.3, yaw: -PI / 2 }, correctedPose: { x: 3, y: -0.1, yaw: 1.4 - PI / 2 } }, "aisle along +y: corrected y is the signed distance"),
+        example([{ x: 1, y: -1, yaw: 0 }, { x: 1.25, y: -0.5 }, 0], { mapFromOdom: { x: 0.25, y: 0.5, yaw: 0 }, correctedPose: { x: 1.25, y: -0.5, yaw: 0 } }, "with an x offset"),
+        example([{ x: 1, y: 1, yaw: 0.5 }, { x: 1, y: 1 }, 0.5], { mapFromOdom: { x: 0, y: 0, yaw: -0.5 }, correctedPose: { x: Math.cos(0.5) + Math.sin(0.5), y: Math.cos(0.5) - Math.sin(0.5), yaw: 0 } }, "rotation only"),
+      ],
+    }),
+  ];
+
   const ESTIMATION_19 = [
     puzzle({
-      number: 76, id: "diff-drive-twist", track: "estimation", title: "Wheel Speeds to Twist",
+      number: 84, id: "diff-drive-twist", track: "estimation", title: "Wheel Speeds to Twist",
       goal: "Convert left and right wheel speeds into the body twist a differential-drive controller publishes.",
       concept: "This is where odom → base_link is born: v is the mean wheel speed, ω is their difference over the wheelbase.",
       functionName: "diffDriveTwist", signature: "diffDriveTwist(vLeft, vRight, wheelBase) → { v, omega }",
@@ -3086,7 +3553,7 @@
       ],
     }),
     puzzle({
-      number: 77, id: "integrate-gyro", track: "estimation", title: "Integrate a Gyro",
+      number: 85, id: "integrate-gyro", track: "estimation", title: "Integrate a Gyro",
       goal: "Advance an orientation quaternion by body-frame angular rates over dt.",
       concept: "Body rates rotate about the body axes, so the small rotation multiplies on the right.",
       functionName: "integrateGyro", signature: "integrateGyro(q, omega, dt) → quaternion",
@@ -3141,7 +3608,7 @@
       ],
     }),
     puzzle({
-      number: 78, id: "twist-in-sensor-frame", track: "estimation", title: "Twist at a Mounted Sensor",
+      number: 86, id: "twist-in-sensor-frame", track: "estimation", title: "Twist at a Mounted Sensor",
       goal: "Express the robot's body twist at a rigidly mounted sensor frame, lever arm included.",
       concept: "A turning robot drags its sensors sideways: v_sensor = v + ω × r, then rotate into the sensor axes.",
       functionName: "twistInSensorFrame", signature: "twistInSensorFrame(twist, baseFromSensor) → twist",
@@ -3187,7 +3654,7 @@
 
   const ESTIMATION_20 = [
     puzzle({
-      number: 79, id: "covariance-propagate-motion", track: "estimation", title: "Propagate Covariance Through Motion",
+      number: 87, id: "covariance-propagate-motion", track: "estimation", title: "Propagate Covariance Through Motion",
       goal: "Compute F P Fᵀ + Q for the odometry motion model.",
       concept: "Yaw uncertainty turns into sideways position uncertainty as the robot drives; the Jacobian encodes exactly that.",
       functionName: "predictCovariance", signature: "predictCovariance(P, pose, v, dt, Q) → 3×3",
@@ -3228,7 +3695,7 @@
       ],
     }),
     puzzle({
-      number: 80, id: "compose-uncertain", track: "estimation", title: "Compound Two Uncertain Transforms",
+      number: 88, id: "compose-uncertain", track: "estimation", title: "Compound Two Uncertain Transforms",
       goal: "Compose two transforms and their covariances to first order.",
       concept: "Uncertainty in the parent's yaw sweeps the child's position sideways; the two Jacobians capture that.",
       functionName: "composeUncertain", signature: "composeUncertain(a, b) → { transform, covariance }",
@@ -3279,7 +3746,7 @@
       ],
     }),
     puzzle({
-      number: 81, id: "mahalanobis-distance", track: "estimation", title: "Mahalanobis Distance",
+      number: 89, id: "mahalanobis-distance", track: "estimation", title: "Mahalanobis Distance",
       goal: "Measure an innovation against its covariance: d² = yᵀ S⁻¹ y.",
       concept: "Data association gates on this, not on metres: a 1 m miss is nothing along a loose axis and huge along a tight one.",
       functionName: "mahalanobisDistance", signature: "mahalanobisDistance(innovation, covariance) → number",
@@ -3309,7 +3776,7 @@
       ],
     }),
     puzzle({
-      number: 82, id: "covariance-ellipse", track: "estimation", title: "Covariance to Ellipse",
+      number: 90, id: "covariance-ellipse", track: "estimation", title: "Covariance to Ellipse",
       goal: "Turn a 2×2 covariance into the orientation and semi-axes of its uncertainty ellipse.",
       concept: "Eigenvectors are the ellipse axes; eigenvalues are variances, so the axes are their square roots times the sigma count.",
       functionName: "covarianceEllipse", signature: "covarianceEllipse(cov, sigmas) → { angle, major, minor }",
@@ -3360,7 +3827,7 @@
 
   const ESTIMATION_21 = [
     puzzle({
-      number: 83, id: "ekf-predict", track: "estimation", title: "EKF Predict",
+      number: 91, id: "ekf-predict", track: "estimation", title: "EKF Predict",
       goal: "Advance the state with the motion model and the covariance with its Jacobian.",
       concept: "Prediction is integrateMotion for the mean and predictCovariance for the spread, evaluated at the previous state.",
       functionName: "ekfPredict", signature: "ekfPredict(state, P, u, dt, Q) → { state, P }",
@@ -3387,7 +3854,7 @@
       ],
     }),
     puzzle({
-      number: 84, id: "ekf-update-position", track: "estimation", title: "EKF Update with a Position Fix",
+      number: 92, id: "ekf-update-position", track: "estimation", title: "EKF Update with a Position Fix",
       goal: "Fuse a position measurement: innovation, gain, corrected state, shrunk covariance.",
       concept: "K = P Hᵀ (H P Hᵀ + R)⁻¹ decides how much to trust the fix; yaw gets corrected through its correlation with position.",
       functionName: "ekfUpdatePosition", signature: "ekfUpdatePosition(state, P, z, R) → { state, P }",
@@ -3456,7 +3923,7 @@
       ],
     }),
     puzzle({
-      number: 85, id: "particle-weights", track: "estimation", title: "Weight Particles by a Measurement",
+      number: 93, id: "particle-weights", track: "estimation", title: "Weight Particles by a Measurement",
       goal: "Give each particle the normalized Gaussian likelihood of the measurement.",
       concept: "A particle filter never inverts anything; it just scores hypotheses and renormalizes.",
       functionName: "particleWeights", signature: "particleWeights(particles, z, sigma) → weights",
@@ -3495,7 +3962,7 @@
       ],
     }),
     puzzle({
-      number: 86, id: "resample-particles", track: "estimation", title: "Low-Variance Resampling",
+      number: 94, id: "resample-particles", track: "estimation", title: "Low-Variance Resampling",
       goal: "Draw a new particle set with one systematic sweep through the cumulative weights.",
       concept: "One random offset plus equally spaced pointers keeps the good particles without the noise of independent draws.",
       functionName: "resampleLowVariance", signature: "resampleLowVariance(particles, weights, u0) → particles",
@@ -3547,7 +4014,7 @@
       ],
     }),
     puzzle({
-      number: 87, id: "ekf-localize-step", track: "estimation", title: "One EKF Localization Step",
+      number: 95, id: "ekf-localize-step", track: "estimation", title: "One EKF Localization Step",
       goal: "Predict with odometry, then update with a position fix.",
       concept: "This is the loop every localizer runs: motion grows uncertainty, measurements shrink it.",
       functionName: "ekfLocalizeStep", signature: "ekfLocalizeStep(state, P, u, z, dt, Q, R) → { state, P }",
@@ -3598,7 +4065,7 @@
 
   const BAYES_22 = [
     puzzle({
-      number: 88, id: "gh-filter-step", track: "bayes", title: "One g-h Filter Step",
+      number: 96, id: "gh-filter-step", track: "bayes", title: "One g-h Filter Step",
       goal: "Predict with the current rate, then blend the residual into the estimate (g) and the rate (h).",
       concept: "Every filter in this track is this loop: predict, measure the residual, trust it a fraction. g and h are that fraction.",
       functionName: "ghFilterStep", signature: "ghFilterStep(x, dx, z, g, h, dt) → { x, dx }",
@@ -3642,7 +4109,7 @@
       ],
     }),
     puzzle({
-      number: 89, id: "discrete-predict", track: "bayes", title: "Discrete Bayes Predict",
+      number: 97, id: "discrete-predict", track: "bayes", title: "Discrete Bayes Predict",
       goal: "Move a belief along the hallway by offset cells, spreading it with an under/correct/over kernel and wrapping around.",
       concept: "Prediction is a convolution: motion is uncertain, so every cell's probability smears into its neighbours.",
       functionName: "discretePredict", signature: "discretePredict(belief, offset, kernel) → belief",
@@ -3707,7 +4174,7 @@
       ],
     }),
     puzzle({
-      number: 90, id: "discrete-update", track: "bayes", title: "Discrete Bayes Update",
+      number: 98, id: "discrete-update", track: "bayes", title: "Discrete Bayes Update",
       goal: "Multiply the belief by the measurement likelihood and normalize.",
       concept: "Bayes' rule in one line: posterior ∝ likelihood × prior. The division by the sum is what makes it a probability again.",
       functionName: "discreteUpdate", signature: "discreteUpdate(belief, likelihood) → belief",
@@ -3741,7 +4208,7 @@
       ],
     }),
     puzzle({
-      number: 91, id: "gaussian-multiply", track: "bayes", title: "Multiply Two Gaussians",
+      number: 99, id: "gaussian-multiply", track: "bayes", title: "Multiply Two Gaussians",
       goal: "Fuse two Gaussian beliefs into one: variance-weighted mean, smaller variance.",
       concept: "The product of two Gaussians is a Gaussian, which is why a Kalman update is one formula and not an integral.",
       functionName: "gaussianMultiply", signature: "gaussianMultiply(a, b) → { mean, variance }",
@@ -3772,7 +4239,7 @@
       ],
     }),
     puzzle({
-      number: 92, id: "kalman-1d-step", track: "bayes", title: "One-Dimensional Kalman Step",
+      number: 100, id: "kalman-1d-step", track: "bayes", title: "One-Dimensional Kalman Step",
       goal: "Predict by adding the movement Gaussian, then update by multiplying with the measurement Gaussian.",
       concept: "This is the whole Kalman filter in one dimension. The gain form K = P/(P + R) is the same product written differently.",
       functionName: "kalman1dStep", signature: "kalman1dStep(prior, movement, z, measurementVariance) → { mean, variance }",
@@ -3817,7 +4284,7 @@
 
   const BAYES_23 = [
     puzzle({
-      number: 93, id: "mat-mul-2", track: "bayes", title: "Multiply 2×2 Matrices",
+      number: 101, id: "mat-mul-2", track: "bayes", title: "Multiply 2×2 Matrices",
       goal: "The 2×2 product brick every multivariate filter step reuses.",
       concept: "Column j of A·B is A applied to column j of B: the product transforms the second matrix's columns.",
       functionName: "matMul2", signature: "matMul2(a, b) → 2×2",
@@ -3856,7 +4323,7 @@
       ],
     }),
     puzzle({
-      number: 94, id: "mat-inv-2", track: "bayes", title: "Invert a 2×2 Matrix",
+      number: 102, id: "mat-inv-2", track: "bayes", title: "Invert a 2×2 Matrix",
       goal: "The closed-form inverse: swap the diagonal, negate the off-diagonal, divide by the determinant.",
       concept: "Kalman gains divide by the innovation covariance; in two dimensions that division is this brick.",
       functionName: "matInv2", signature: "matInv2(m) → 2×2",
@@ -3886,7 +4353,7 @@
       ],
     }),
     puzzle({
-      number: 95, id: "constant-velocity-model", track: "bayes", title: "Constant-Velocity Model",
+      number: 103, id: "constant-velocity-model", track: "bayes", title: "Constant-Velocity Model",
       goal: "Build the state transition F and the discrete white-noise Q for a [position, velocity] state.",
       concept: "F says how the state moves on its own; Q says how much you distrust that story per step.",
       functionName: "constantVelocityModel", signature: "constantVelocityModel(dt, processVariance) → { F, Q }",
@@ -3926,7 +4393,7 @@
       ],
     }),
     puzzle({
-      number: 96, id: "kf-predict", track: "bayes", title: "Kalman Predict (2 States)",
+      number: 104, id: "kf-predict", track: "bayes", title: "Kalman Predict (2 States)",
       goal: "x = F x and P = F P Fᵀ + Q for the position-velocity tracker.",
       concept: "Prediction moves the mean with the model and stretches the covariance the same way, then adds process noise.",
       functionName: "kfPredict", signature: "kfPredict(x, P, F, Q) → { x, P }",
@@ -3975,7 +4442,7 @@
       ],
     }),
     puzzle({
-      number: 97, id: "kf-update", track: "bayes", title: "Kalman Update (Scalar Measurement)",
+      number: 105, id: "kf-update", track: "bayes", title: "Kalman Update (Scalar Measurement)",
       goal: "Fuse one scalar measurement z = H x: innovation, S, gain, corrected x, shrunk P.",
       concept: "H picks what the sensor sees. Velocity is never measured here, yet it gets corrected through P's off-diagonal.",
       functionName: "kfUpdate", signature: "kfUpdate(x, P, z, H, R) → { x, P }",
@@ -4029,7 +4496,7 @@
       ],
     }),
     puzzle({
-      number: 98, id: "kalman-track-step", track: "bayes", title: "One Tracker Step",
+      number: 106, id: "kalman-track-step", track: "bayes", title: "One Tracker Step",
       goal: "Build the model, predict, and update with a position measurement, in that order.",
       concept: "This is the book's dog tracker: constant velocity plus a noisy position sensor, one step at a time.",
       functionName: "kalmanTrackStep", signature: "kalmanTrackStep(x, P, z, dt, processVariance, R) → { x, P }",
@@ -4075,7 +4542,7 @@
 
   const BAYES_24 = [
     puzzle({
-      number: 99, id: "sigma-points", track: "bayes", title: "Van der Merwe Sigma Points",
+      number: 107, id: "sigma-points", track: "bayes", title: "Van der Merwe Sigma Points",
       goal: "Pick 2n + 1 points and weights that reproduce a 2D Gaussian's mean and covariance.",
       concept: "Instead of linearizing a function, the UKF pushes a few well-chosen points through it. These are the points.",
       functionName: "sigmaPoints", signature: "sigmaPoints(mean, P, alpha, beta, kappa) → { points, wm, wc }",
@@ -4137,7 +4604,7 @@
       ],
     }),
     puzzle({
-      number: 100, id: "unscented-transform", track: "bayes", title: "Unscented Transform",
+      number: 108, id: "unscented-transform", track: "bayes", title: "Unscented Transform",
       goal: "Recover a mean and covariance from weighted points.",
       concept: "Weighted mean with wm, weighted scatter around that mean with wc. Push the points through any function first and this gives the transformed Gaussian.",
       functionName: "unscentedTransform", signature: "unscentedTransform(points, wm, wc) → { mean, P }",
@@ -4192,7 +4659,7 @@
       ],
     }),
     puzzle({
-      number: 101, id: "unscented-polar", track: "bayes", title: "Unscented Transform of a Radar Return",
+      number: 109, id: "unscented-polar", track: "bayes", title: "Unscented Transform of a Radar Return",
       goal: "Push a (range, bearing) Gaussian through polar → cartesian using sigma points.",
       concept: "Linearizing at the mean gives a straight ellipse; the true distribution is banana-shaped, and the sigma points feel that curvature.",
       functionName: "unscentedPolarToCartesian", signature: "unscentedPolarToCartesian(mean, P, alpha, beta, kappa) → { mean, P }",
@@ -4241,7 +4708,7 @@
       ],
     }),
     puzzle({
-      number: 102, id: "rts-smoother-step", track: "bayes", title: "One RTS Smoother Step",
+      number: 110, id: "rts-smoother-step", track: "bayes", title: "One RTS Smoother Step",
       goal: "Pull a filtered estimate towards the smoothed estimate that follows it.",
       concept: "Smoothing runs backwards: knowing where the state ended up tightens every earlier estimate.",
       functionName: "rtsSmootherStep", signature: "rtsSmootherStep(x, P, xNext, PNext, F, Q) → { x, P }",
@@ -4314,7 +4781,7 @@
     }),
   ];
 
-  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7, TOOLKIT_8, TOOLKIT_9, TOOLKIT_10, TOOLKIT_11, TOOLKIT_12, ADVANCED_13, ADVANCED_14, ADVANCED_15, CORRECTION_16, CORRECTION_17, CORRECTION_18, ESTIMATION_19, ESTIMATION_20, ESTIMATION_21, BAYES_22, BAYES_23, BAYES_24));
+  const PUZZLES = Object.freeze(STAGE_1_2.concat(STAGE_3_4, STAGE_5_7, TOOLKIT_8, TOOLKIT_9, TOOLKIT_10, TOOLKIT_11, TOOLKIT_12, ADVANCED_13, ADVANCED_14, ADVANCED_15, CORRECTION_16, CORRECTION_17, CORRECTION_18, CORRECTION_19, ESTIMATION_19, ESTIMATION_20, ESTIMATION_21, BAYES_22, BAYES_23, BAYES_24));
   const byId = new Map(PUZZLES.map((entry) => [entry.id, entry]));
 
   function getPuzzle(id) {
