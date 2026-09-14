@@ -548,21 +548,32 @@
   }
 
   // ── BroadcastVisionCorrectedTF (1299-1400, markers omitted) ─────────────────
+  // LINE-based correction, the same as the laser's createCorrectedTF: odom is
+  // shifted by the centerline offset c so the centerline becomes the x axis of
+  // the corrected frame; the drone's corrected y is its real signed distance to
+  // the centerline. (An earlier form projected the drone onto the line, which
+  // collapsed to the raw FCU frame whenever the drone flew centered.)
   function broadcastVisionCorrectedTF(state, fcuPose, aisleYawRad, aNormal, bNormal, cCenterline, dLateralCamera, stamp, held, trace) {
     const fcuX = fcuPose.x, fcuY = fcuPose.y;
-    const rawDistToCl = aNormal * fcuX + bNormal * fcuY + cCenterline;
-    const lateral = state.lateralDriftFilter.update(rawDistToCl);
-    const distToCenterline = lateral.filteredM;
-    const yIntercept = Math.abs(bNormal) > 1e-6 ? -cCenterline / bNormal : 0;   // pose_offset_y convention
-    const lateralX = fcuX - distToCenterline * aNormal;
+    // Jump guard + low-pass on the centerline offset c itself (laser low-passes its intercept).
+    const lateral = state.lateralDriftFilter.update(cCenterline);
+    const cFiltered = lateral.filteredM;
+    // Drone's signed distance to the filtered centerline: telemetry (drone_y_to_centerline)
+    // and the projection marker only; not used for the transform.
+    const distToCenterline = aNormal * fcuX + bNormal * fcuY + cFiltered;
+    const yIntercept = Math.abs(bNormal) > 1e-6 ? -cFiltered / bNormal : 0;   // pose_offset_y convention
+    const lateralX = fcuX - distToCenterline * aNormal;   // foot of the perpendicular (marker)
     const lateralY = fcuY - distToCenterline * bNormal;
     const cosH = Math.cos(aisleYawRad), sinH = Math.sin(aisleYawRad);
-    const correctedX = lateralX + state.xOffset.xOffsetFiltered * cosH;
-    const correctedY = lateralY + state.xOffset.xOffsetFiltered * sinH;
+    // Shift by the line offset along its normal, plus the pillar x offset along the heading.
+    // build_vision_correction_transform turns this into map->vision_odom = (x_offset, c) in
+    // the rotated frame, so the corrected base y equals distToCenterline.
+    const correctedX = fcuX + cFiltered * aNormal + state.xOffset.xOffsetFiltered * cosH;
+    const correctedY = fcuY + cFiltered * bNormal + state.xOffset.xOffsetFiltered * sinH;
     const tf = T.buildVisionCorrectionTransform(fcuPose, correctedX, correctedY, fcuPose.z || 0, aisleYawRad);
     storeVisionCorrectionState(state, tf, stamp, yIntercept, distToCenterline);
     if (trace) {
-      trace.broadcast = { held, aisleYaw: aisleYawRad, a: aNormal, b: bNormal, c: cCenterline, dLateralCamera, rawDistToCl, lateral, yIntercept, lateralX, lateralY, correctedX, correctedY, tf };
+      trace.broadcast = { held, aisleYaw: aisleYawRad, a: aNormal, b: bNormal, c: cCenterline, cFiltered, dLateralCamera, distToCenterline, lateral, yIntercept, lateralX, lateralY, correctedX, correctedY, tf };
     }
   }
 

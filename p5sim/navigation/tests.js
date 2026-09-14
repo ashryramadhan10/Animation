@@ -656,23 +656,30 @@
     const { ticks } = N.runTimeline(world, C.Config);
     const traces = ticks.filter(k => k.trace).map(k => k.trace);
     const byFrame = new Map(traces.map(t => [t.frameIndex, t]));
-    // The corrected pose lives in the aisle-aligned frame (odom rotated by -aisle yaw):
-    // "on the centerline" means y == -c_odom; x is the along-aisle position.
-    const yOnCenterline = -world.trueCenterlineOdom.c;
-    for (let i = 21; i <= 54; i += 1) {
+    // Line-based correction: the corrected pose lives in the aisle-aligned frame
+    // whose x axis IS the centerline, so it should equal the drone's true map
+    // position: y = true lateral offset from the middle, x = true along-aisle.
+    // Tolerance schedule. 55-69: the skewed beam leaks into c through the dual
+    // midpoint (the 3 deg gate protects heading, not c). 72-105: three cascaded
+    // filters remember it: the per-track coefficient EMA (0.08) keeps the right
+    // line skewed for ~40 frames, the aisle-state EMA and the c filter follow.
+    // All of this is the node's real behaviour; by 110 the error is back under 5 cm.
+    const lateralTol = i => (i >= 55 && i <= 69) ? 0.10 : (i >= 72 && i <= 109) ? 0.16 : 0.05;
+    for (let i = 21; i <= 149; i += 1) {
+      if (i === 70 || i === 71) continue;   // odom glitch frames, asserted separately below
       const t = byFrame.get(i); if (!t || !t.broadcast) continue;
-      near(t.broadcast.tf.correctedPose.y, yOnCenterline, 0.05, `frame ${i} lateral`);
+      near(t.broadcast.tf.correctedPose.y, world.truth[i].lateral, lateralTol(i), `frame ${i} lateral`);
     }
-    // 55-74: while both beams fail the 3 deg gate the node still feeds both into
-    // the dual centerline, so the skewed line leaks into c (faithful behaviour).
-    // 70-71 are excluded: the odom glitch is held by the lateral filter, so the
-    // corrected pose follows the glitched pose for those two frames by design.
-    for (let i = 55; i <= 74; i += 1) {
-      if (i === 70 || i === 71) continue;
-      const t = byFrame.get(i); if (!t || !t.broadcast) continue;
-      near(t.broadcast.tf.correctedPose.y, yOnCenterline, 0.10, `frame ${i} lateral (skew leak)`);
-    }
-    near(byFrame.get(149).broadcast.tf.correctedPose.y, yOnCenterline, 0.05, "frame 149 lateral settled");
+    // A true lateral displacement (75-89) is reflected at once: the shift is a
+    // property of the line, not of the drone, so the drone's own motion sees no
+    // filter lag. Compare the STEP between frames 74 and 76 with the true step.
+    const step = byFrame.get(76).broadcast.tf.correctedPose.y - byFrame.get(74).broadcast.tf.correctedPose.y;
+    near(step, world.truth[76].lateral - world.truth[74].lateral, 0.05, "displacement step tracked at once");
+    // The odom glitch moves pose and rack points together; the aisle-state EMA
+    // absorbs the measured line shift, so the corrected pose follows the glitched odom.
+    assert(Math.abs(byFrame.get(70).broadcast.tf.correctedPose.y - world.truth[70].lateral) > 0.25, "frame 70 glitch passes through");
+    // The jump guard sits on the already-smoothed c and never fires on this world.
+    assert(traces.every(t => !t.broadcast || !t.broadcast.lateral.held), "c jump guard stays inert");
     for (let i = 60; i <= 149; i += 1) {
       const t = byFrame.get(i); if (!t || !t.broadcast) continue;
       near(t.broadcast.tf.correctedPose.x, world.truth[i].along, 0.1, `frame ${i} along`);
@@ -680,6 +687,7 @@
     near(byFrame.get(60).xOffsetState.xOffsetFiltered, 0.6, 0.1, "x offset by frame 60");
     const m20 = byFrame.get(20).measurement;
     near(-m20.c / m20.b, -world.trueCenterlineOdom.c / world.trueCenterlineOdom.b, 0.05, "intercept at frame 20");
+    near(byFrame.get(40).broadcast.cFiltered, world.trueCenterlineOdom.c, 0.05, "filtered c converged by frame 40");
     for (let i = 45; i <= 54; i += 1) {
       const t = byFrame.get(i);
       assert(!t.freshHeading, `frame ${i} heading should be held`);
@@ -689,8 +697,6 @@
       const t = byFrame.get(i);
       near(G.normalizeAngle(t.aisleState.headingRad - world.headingRad), 0, 1.5 * DEG, `frame ${i} heading`);
     }
-    assert(byFrame.get(70).broadcast.lateral.held, "frame 70 held");
-    assert(byFrame.get(77).broadcast.lateral.jumpConfirmed, "frame 77 confirmed");
     const frozen = byFrame.get(89).outputs.stamp;
     for (const k of ticks.filter(x => x.frameIndex >= 90 && x.frameIndex <= 99)) {
       assert(k.trace === null && k.tick.published && !k.tick.isIdentity, `dropout tick ${k.k} publishes the held correction`);

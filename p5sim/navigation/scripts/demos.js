@@ -153,8 +153,8 @@
     const series = { rawDist: [], filtDist: [], held: [], reqHeading: [], pubHeading: [], xRaw: [], xFilt: [] };
     for (let i = 0; i < world.frameCount; i += 1) {
       const tr = lastTraceAtOrBefore[i]; const own = tr && tr.frameIndex === i ? tr : null;
-      series.rawDist.push(own && own.broadcast ? own.broadcast.lateral.rawM : null);
-      series.filtDist.push(own && own.broadcast ? own.broadcast.lateral.filteredM : null);
+      series.rawDist.push(own && own.broadcast ? own.broadcast.lateral.rawM : null);      // centerline offset c as handed to the filter
+      series.filtDist.push(own && own.broadcast ? own.broadcast.lateral.filteredM : null); // c after jump guard + EMA
       series.held.push(own && own.broadcast ? own.broadcast.lateral.held : false);
       series.reqHeading.push(own && own.consensus && own.consensus.valid ? own.consensus.headingRad / DEG : null);
       series.pubHeading.push(own && own.aisleState.initialized ? own.aisleState.headingRad / DEG : null);
@@ -190,7 +190,7 @@
     const { trace, frame } = cur;
     if (!trace || !frame) return;
     const world = makeWorld(p, framePoints(frame, trace.broadcast ? [{ x: trace.broadcast.correctedX, y: trace.broadcast.correctedY }] : []), 0.8);
-    drawTitle(p, "Full pipeline", "SegDepthCallback -> ProcessBeamClouds -> ProcessBeamResults -> ApplyVisionCorrection -> BroadcastVisionCorrectedTF");
+    drawTitle(p, "Full pipeline", "SegDepthCallback -> ProcessBeamClouds -> ProcessBeamResults -> ApplyVisionCorrection -> BroadcastVisionCorrectedTF (line-based)");
     world.drawGrid();
     for (const st of trace.stages) {
       drawTrackPoints(world, st, 2.2);
@@ -200,8 +200,10 @@
     if (trace.aisleState.initialized) world.drawLine(stateLine(trace.aisleState), Colors.centerline, 3);
     if (trace.broadcast) {
       const b = trace.broadcast;
-      world.drawWorldSegment(frame.fcuPose, { x: b.lateralX, y: b.lateralY }, [255, 255, 255, 160], 2);
-      world.drawWorldSegment({ x: b.lateralX, y: b.lateralY }, { x: b.correctedX, y: b.correctedY }, Colors.xoff, 3);
+      world.drawWorldSegment(frame.fcuPose, { x: b.lateralX, y: b.lateralY }, [255, 255, 255, 120], 1.5);
+      const shifted = { x: frame.fcuPose.x + b.cFiltered * b.a, y: frame.fcuPose.y + b.cFiltered * b.b };
+      world.drawWorldSegment(frame.fcuPose, shifted, Colors.centerline, 3);
+      world.drawWorldSegment(shifted, { x: b.correctedX, y: b.correctedY }, Colors.xoff, 3);
       world.drawPose({ x: b.correctedX, y: b.correctedY, yaw: frame.fcuPose.yaw }, Colors.corrected, "corrected (odom)");
     }
     world.drawPose(frame.fcuPose, Colors.fcu, "FCU (odom)");
@@ -213,13 +215,14 @@
       `mode: ${trace.centerlineMode || "-"}   fresh heading: ${trace.freshHeading}`,
       `heading (state): ${trace.aisleState.initialized ? deg(trace.aisleState.headingRad) + " deg" : "-"}`,
       `centerline_c (state): ${m3(trace.aisleState.centerlineC)}`,
-      b ? `lateral raw ${m3(b.rawDistToCl)}  filtered ${m3(b.lateral.filteredM)}${b.lateral.held ? "  HELD" : ""}` : "lateral: -",
+      b ? `c raw ${m3(b.c)}  c filtered ${m3(b.cFiltered)}${b.lateral.held ? "  HELD" : ""}  drone dist ${m3(b.distToCenterline)}` : "c: -",
       `x offset raw ${m3(trace.xOffsetState.xOffsetRaw)}  filtered ${m3(trace.xOffsetState.xOffsetFiltered)}  has_x ${trace.xOffsetState.xOffsetHasMeasurement}`,
       `beams: ${trace.stages.map(s => `${s.trackId}${s.beamResult ? (s.beamResult.headingValid ? "" : "(gate)") : s.skipped ? "(skip)" : "(-)"}`).join(" ")}`,
       trace.consensus ? `consensus: acc ${JSON.stringify(trace.consensus.acceptedTrackIds)} rej ${JSON.stringify(trace.consensus.rejectedSamples.map(r => r.trackId))}` : "consensus: -",
       "",
       "White lines: per-track fits (red = heading gate failed).",
-      "Green: aisle-state centerline. Yellow step: x offset.",
+      "Green line: aisle-state centerline. Green arrow: shift by c",
+      "(same for every point). Yellow step: x offset.",
       "Red dots: rotation-filtered points (YAML thresholds keep all).",
     ]);
   }
@@ -553,19 +556,19 @@
     const cur = current(state, simFrame);
     const rects = worldRect(p);
     const stripRect = { x: rects.world.x, y: rects.world.y + 20, w: rects.world.w, h: rects.world.h - 40 };
-    drawTitle(p, "Lateral drift filter", "LateralDriftFilter::Update: jump detection -> hold until confirmed -> EMA -> output step limit");
+    drawTitle(p, "Lateral drift filter (on the centerline offset c)", "LateralDriftFilter::Update on c: jump detection -> hold until confirmed -> EMA -> output step limit");
     drawStrip(p, stripRect, -0.3, 0.9, [
       { values: state.series.rawDist, color: Colors.muted, weight: 1.5 },
       { values: state.series.filtDist, color: Colors.accepted, weight: 3 },
-    ], cur.frameIndex, faultWindows(state.world), [{ text: "raw signed distance", color: Colors.muted }, { text: "filtered", color: Colors.accepted }]);
+    ], cur.frameIndex, faultWindows(state.world), [{ text: "c from the aisle state", color: Colors.muted }, { text: "c filtered (TF translation)", color: Colors.accepted }]);
     const b = cur.trace && cur.trace.broadcast;
     const l = b && b.lateral;
     panel(p, "Lateral filter", [
       `frame ${cur.frameIndex}  fault: ${faultText(cur)}`,
-      l ? `raw ${m3(l.rawM)}  filtered ${m3(l.filteredM)}` : "no update this frame",
+      l ? `c raw ${m3(l.rawM)}  c filtered ${m3(l.filteredM)}` : "no update this frame",
       l ? `raw delta ${m3(l.rawDeltaM)}  jumpDetected ${l.jumpDetected}` : "",
       l ? `held ${l.held}  jumpCount ${l.jumpCount}  jumpConfirmed ${l.jumpConfirmed}` : "",
-      b ? `drone_y_to_centerline ${m3(F.droneYToCenterlineFromSignedError(l.filteredM))}` : "",
+      b ? `drone dist to line ${m3(b.distToCenterline)}  drone_y_to_centerline ${m3(F.droneYToCenterlineFromSignedError(b.distToCenterline))}` : "",
       "",
       `lateral_ema_alpha ${BP.lateral_ema_alpha}`,
       `lateral_jump_threshold_m ${BP.lateral_jump_threshold_m}`,
@@ -573,11 +576,12 @@
       `lateral_jump_cluster_threshold_m ${BP.lateral_jump_cluster_threshold_m}`,
       `lateral_max_step_m ${BP.lateral_max_step_m}`,
       "",
-      "70-71 odom glitch: held (2 < 3 frames).",
-      "75+ true displacement: confirmed on frame 77,",
-      "then the 0.05 EMA eases in over ~60 frames.",
-      "The skew window also moves raw: the dual midpoint",
-      "leaks the skewed line into c.",
+      "The filter guards the LINE offset c, which the",
+      "aisle-state EMA has already smoothed, so on this",
+      "world it never holds. The drone's own motion (75+)",
+      "never passes through it. The skew window (55-69)",
+      "moves c: the dual midpoint leaks the skewed line,",
+      "and the coefficient EMA remembers it ~40 frames.",
     ]);
   }
 
@@ -634,28 +638,32 @@
     const b = trace.broadcast;
     const lat = { x: b.lateralX, y: b.lateralY }, corr = { x: b.correctedX, y: b.correctedY };
     const world = makeWorld(p, [frame.fcuPose, lat, corr, ...frame.tracks.flatMap(t => t.points.slice(0, 200))], 1.0);
-    drawTitle(p, "Correction", "BroadcastVisionCorrectedTF: signed distance -> LateralDriftFilter -> project onto centerline -> + x offset along heading -> transform");
+    drawTitle(p, "Correction", "BroadcastVisionCorrectedTF: centerline c -> jump guard + EMA on c -> shift odom by c along the normal -> + x offset along heading -> transform");
     world.drawGrid();
     drawFrameRacks(world, frame, 1.5);
-    world.drawLine({ a: b.a, b: b.b, c: b.c }, Colors.centerline, 3.5);
-    world.drawWorldSegment(frame.fcuPose, lat, [255, 255, 255, 190], 2);
-    world.drawWorldSegment(lat, corr, Colors.xoff, 3);
-    world.drawPoints([lat], Colors.centerline, 8, 230); label(world, lat, "projection");
+    world.drawLine({ a: b.a, b: b.b, c: b.cFiltered }, Colors.centerline, 3.5);
+    world.drawWorldSegment(frame.fcuPose, lat, [255, 255, 255, 120], 1.5);
+    world.drawPoints([lat], Colors.centerline, 7, 200); label(world, lat, "foot on centerline");
+    const shifted = { x: frame.fcuPose.x + b.cFiltered * b.a, y: frame.fcuPose.y + b.cFiltered * b.b };
+    world.drawWorldSegment(frame.fcuPose, shifted, Colors.centerline, 3);
+    world.drawWorldSegment(shifted, corr, Colors.xoff, 3);
     world.drawPose(frame.fcuPose, Colors.fcu, "FCU (odom)");
     world.drawPose(corr, Colors.corrected, "corrected (odom)");
     panel(p, "Lateral + longitudinal", [
       `frame ${cur.frameIndex}  fault: ${faultText(cur)}${b.held ? "  (HELD correction)" : ""}`,
-      `raw distance ${m3(b.rawDistToCl)}  filtered ${m3(b.lateral.filteredM)}`,
+      `c raw ${m3(b.c)}  c filtered ${m3(b.cFiltered)}${b.lateral.held ? "  HELD" : ""}`,
+      `drone distance to line ${m3(b.distToCenterline)}`,
       `y intercept (pose_offset_y) ${m3(b.yIntercept)}`,
-      `drone_y_to_centerline ${m3(F.droneYToCenterlineFromSignedError(b.lateral.filteredM))}`,
+      `drone_y_to_centerline ${m3(F.droneYToCenterlineFromSignedError(b.distToCenterline))}`,
       `x offset filtered ${m3(trace.xOffsetState.xOffsetFiltered)}`,
       `corrected (odom) ${m3(corr.x)}, ${m3(corr.y)}`,
       `corrected_pose (aisle frame) ${m3(b.tf.correctedPose.x)}, ${m3(b.tf.correctedPose.y)}  yaw ${deg(b.tf.correctedPose.yaw)}`,
       "",
-      "White: drone to centerline (filtered distance).",
-      "Yellow: x offset step along the aisle heading.",
-      "corrected_pose is R(-aisle_yaw) * corrected + delta,",
-      "i.e. an aisle-aligned frame: x = along, y = -c.",
+      "Green arrow: shift by c, the same for every point",
+      "(laser: -intercept*cos h). Yellow: x offset step.",
+      "corrected_pose is R(-aisle_yaw) * corrected + delta:",
+      "x = along-aisle position, y = drone's real distance",
+      "from the middle (0 when centered).",
     ]);
   }
 
@@ -696,9 +704,10 @@
       `corrected_pose (${m3(tf.correctedPose.x)}, ${m3(tf.correctedPose.y)}) yaw ${deg(tf.correctedPose.yaw)}`,
       "",
       "The parent rotates odom by -aisle_yaw and carries",
-      "only the correction delta. The child is the raw",
-      "FCU pose. Composition yields the FCU yaw relative",
-      "to the aisle, which corrected_pose publishes.",
+      "the delta (x offset, c): a shift of the whole odom",
+      "frame so the centerline is the x axis. The child is",
+      "the raw FCU pose. Composition yields the FCU yaw",
+      "relative to the aisle, which corrected_pose publishes.",
       "(Pinned by test_vision_correction_transform.cpp.)",
     ]);
   }
@@ -778,8 +787,10 @@
     if (!trace.freshHeading && !trace.hold) reaction.push("heading held, lateral live (no heading-qualified beam or all rejected)");
     if (trace.consensus && trace.consensus.rejectedSamples.length) reaction.push(`consensus rejected ${trace.consensus.rejectedSamples.map(r => r.trackId).join(",")} (select_consensus_heading_samples)`);
     for (const st of trace.stages) if (st.beamResult && !st.beamResult.headingValid) reaction.push(`beam ${st.trackId} no vote: ${st.beamResult.headingRejectReason} (IsBeamReliableForHeading)`);
-    if (l && l.held) reaction.push(`lateral HELD jumpCount ${l.jumpCount} (LateralDriftFilter)`);
-    if (l && l.jumpConfirmed) reaction.push("lateral jump CONFIRMED (LateralDriftFilter)");
+    if (l && l.held) reaction.push(`centerline c HELD jumpCount ${l.jumpCount} (LateralDriftFilter on c)`);
+    if (l && l.jumpConfirmed) reaction.push("centerline c jump CONFIRMED (LateralDriftFilter on c)");
+    if (cur.fault && cur.fault.id === "glitch-lateral") reaction.push("odom glitch: pose and racks move together; the aisle-state EMA absorbs the line shift, so the corrected pose follows the glitched odom for these frames");
+    if (cur.fault && cur.fault.id === "displacement") reaction.push("true displacement: corrected_pose y reflects it at once (line-based shift, no filter on the drone's motion)");
     if (trace.centerlineMode === "dual-fallback-frozen-c") reaction.push("dual failed: c frozen, heading-only (BuildCenterlineMeasurement)");
     for (const st of trace.stages) if (st.beamResult && st.beamResult.smoothingRestarted && cur.frameIndex > 0) reaction.push(`track ${st.trackId}: coefficient EMA restarted (BuildBeamResultFromFit)`);
     if (!reaction.length) reaction.push("normal: fresh heading, dual centerline, live lateral");
