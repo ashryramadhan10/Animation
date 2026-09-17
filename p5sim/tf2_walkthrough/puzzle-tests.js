@@ -162,7 +162,7 @@
       cases.forEach((testCase) => {
         const result = api.evaluateCompiled(compiled, testCase.args);
         assert(result.learner.ok, puzzle.id + " reference threw on " + testCase.label + ": " + (result.learner.ok ? "" : result.learner.error.message));
-        assert(!result.learner.inputMutated, puzzle.id + " reference mutated input on " + testCase.label);
+        assert(puzzle.allowMutation || !result.learner.inputMutated, puzzle.id + " reference mutated input on " + testCase.label);
         assert(valuesMatch(puzzle.comparator, result.learner.value, testCase.expected), puzzle.id + " reference mismatch on " + testCase.label + ": " + JSON.stringify(result.learner.value));
         puzzle.diagnoses.forEach((entry) => {
           if (!valuesMatch(puzzle.comparator, result.variants[entry.id], testCase.expected)) variantDiffers[entry.id] = true;
@@ -864,6 +864,58 @@
       near(counts.reduce((sum, c) => sum + c, 0), 5);
       const nearest = referenceOutput(api.getPuzzle("nearest-point-on-segment"), [{ x: 2, y: 5 }, { x: 0, y: 0 }, { x: 4, y: 0 }]);
       near(nearest.x, 2); near(nearest.y, 0);
+    });
+  });
+
+  // ---------------------------------------------------------------- algo lab (cses)
+  const algoCatalog = load("./algo-puzzles.js", "AlgoPuzzles");
+  function algoApi() {
+    const api = requireApi(algoCatalog, "algo-puzzles.js");
+    return { TF2_PUZZLES: api.ALGO_PUZZLES, TF2_PUZZLE_TRACKS: api.ALGO_PUZZLE_TRACKS, getPuzzle: api.getPuzzle };
+  }
+
+  test("algo catalog lists the six CSES sections and validates", () => {
+    withCatalog(algoApi(), () => {
+      const engineApi = requireApi(engine, "puzzle-engine.js");
+      const status = engineApi.validateCatalog(puzzleList(), scenesApi().SCENE_KINDS);
+      assert(status.valid, status.message);
+      assert(puzzleList().length === 36, "algo catalog should hold 36 puzzles");
+      same(puzzlesApi().TF2_PUZZLE_TRACKS.map((track) => track.id), ["intro", "sorting", "dp", "graphs", "range", "trees"]);
+      same(idsInRange(1, 6), ["weird-algorithm", "missing-number", "increasing-array", "permutations", "two-sets", "chessboard-and-queens"]);
+      same(idsInRange(7, 12), ["distinct-numbers", "prefix-sums", "lower-bound", "sum-of-two-values", "maximum-subarray-sum", "ferris-wheel"]);
+      same(idsInRange(13, 18), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "grid-paths", "book-shop"]);
+      same(idsInRange(19, 25), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "heap-push", "heap-pop", "shortest-routes"]);
+      same(idsInRange(26, 30), ["static-range-sum-queries", "build-segment-tree", "segment-tree-update", "segment-tree-query", "dynamic-range-sum-queries"]);
+      same(idsInRange(31, 36), ["subordinates", "tree-diameter", "tree-distances", "binary-lifting-table", "kth-ancestor", "company-queries-ii"]);
+      puzzleList().forEach((puzzle) => {
+        assert(/^https:\/\/cses\.fi\/book\//.test(puzzle.reference.url), puzzle.id + " should link the handbook");
+        assert(/^\d+$/.test(puzzle.walkthroughChapter), puzzle.id + " should carry its CSES task id");
+        const singleOperation = [6, 9, 23, 24, 28, 29, 35].includes(puzzle.number);
+        assert(singleOperation || puzzle.cases.some((entry) => /time limit/.test(entry.label)), puzzle.id + " needs a hidden time-limit case");
+        const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
+        assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes");
+      });
+    });
+  });
+
+  test("algo catalog references pass their cases and diagnoses differ", () => {
+    withCatalog(algoApi(), () => checkStageRange(1, 36));
+  });
+
+  test("scenes: algo views build valid arguments and analytic checks hold", () => {
+    withCatalog(algoApi(), () => {
+      checkSceneKinds(["algo"]);
+      const api = puzzlesApi();
+      const values = [3, 2, 4, 5, 1, 1, 5, 3];
+      const prefix = referenceOutput(api.getPuzzle("prefix-sums"), [values]);
+      const sums = referenceOutput(api.getPuzzle("static-range-sum-queries"), [values, [[2, 4], [1, 8]]]);
+      near(sums[0], prefix[4] - prefix[1]); near(sums[1], prefix[8]);
+      near(referenceOutput(api.getPuzzle("coin-combinations-i"), [[1], 7]), 1);
+      near(referenceOutput(api.getPuzzle("coin-combinations-ii"), [[1], 7]), 1);
+      const tree = referenceOutput(api.getPuzzle("build-segment-tree"), [values]);
+      near(referenceOutput(api.getPuzzle("segment-tree-query"), [tree, 2, 5]), 4 + 5 + 1 + 1);
+      const answers = referenceOutput(api.getPuzzle("company-queries-ii"), [5, [1, 1, 2, 3], [[4, 4], [4, 2]]]);
+      same(answers, [4, 2]);
     });
   });
 

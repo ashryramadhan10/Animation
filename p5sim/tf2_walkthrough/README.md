@@ -92,6 +92,10 @@ Puzzle Lab keyboard controls:
 
 `side-lab.html` is a second lab that shares the engine, scenes, editor, and worker but keeps its own progress. It rebuilds the core of the `agents`, `force`, `scalar_projection`, `procedural_animation`, and `random_distribution` sketches as 32 puzzles in six stages: vectors, forces, steering, flocking, procedural chains, and randomness. Every puzzle links its Nature of Code chapter and opens the sketch file it came from. It is open from the start and does not depend on the TF2 tracks.
 
+## Algo Lab
+
+`algo-lab.html` is a judge-style lab for the first six sections of the CSES Problem Set: Introductory, Sorting and Searching, Dynamic Programming, Graph Algorithms, Range Queries, and Tree Algorithms, 36 puzzles in six tracks that unlock in order. Each puzzle links its section of the free *Competitive Programmer's Handbook* and its CSES task. Besides the small preset inputs in the scene, Check runs hidden cases of CSES size under a four-second budget, so a solution with the wrong complexity fails with "did not finish", the same lesson the real judge teaches. Heap and segment-tree bricks are updated in place; later puzzles reuse them.
+
 ## Learning Route
 
 The thirteen chapters cover:

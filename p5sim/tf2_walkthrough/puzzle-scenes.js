@@ -76,6 +76,8 @@
       if (isPoint(value.future) && isPoint(value.normal) && isPoint(value.target)) return "normal " + fmtPoint(value.normal) + " · target " + fmtPoint(value.target);
       if (isPoint(value.pos) && Number.isFinite(value.angle)) return "pos " + fmtPoint(value.pos) + " · angle " + degrees(value.angle);
       if (isPoint(value.pos) && isPoint(value.offset)) return "pos " + fmtPoint(value.pos) + " · offset " + fmtPoint(value.offset);
+      if (typeof value.possible === "boolean" && Array.isArray(value.a)) return (value.possible ? "possible · a [" + value.a.join(" ") + "] · b [" + value.b.join(" ") + "]" : "impossible");
+      if ("item" in value && Array.isArray(value.heap)) return "popped " + (value.item ? "[" + value.item.join(", ") + "]" : "nothing") + " · heap " + JSON.stringify(value.heap).slice(0, 40);
       if (Number.isFinite(value.x) && Number.isFinite(value.dx)) return "x " + fmt(value.x) + " · dx " + fmt(value.dx);
       if (Array.isArray(value.x) && Array.isArray(value.P)) return "pos " + fmt(value.x[0]) + " vel " + fmt(value.x[1]) + " · σpos " + fmt(Math.sqrt(Math.max(0, value.P[0][0]))) + " σvel " + fmt(Math.sqrt(Math.max(0, value.P[1][1])));
       if (Array.isArray(value.F) && Array.isArray(value.Q)) return "F " + describe(value.F) + " · Q " + describe(value.Q);
@@ -1975,6 +1977,300 @@
       return out;
     },
   };
+  // ------------------------------------------------------------ cses algo lab
+  const ALGO_PRESETS = {
+    "missing-number": { five: { a: [2, 3, 1, 5], b: 5 }, eight: { a: [8, 1, 3, 6, 2, 7, 4], b: 8 }, "missing at the end": { a: [1, 2, 3, 4, 5, 6, 7], b: 8 } },
+    "increasing-array": { sample: { a: [3, 2, 5, 1, 7] }, "already sorted": { a: [1, 2, 3, 4, 5] }, flat: { a: [5, 5, 5, 5] }, "big drop": { a: [10, 1, 1, 1] } },
+    "distinct-numbers": { sample: { a: [2, 3, 2, 2, 3, 5, 1, 5] }, "all same": { a: [4, 4, 4, 4] }, "all different": { a: [1, 2, 3, 4, 5, 6] } },
+    "prefix-sums": { sample: { a: [3, 2, 4, 5, 1, 1, 5, 3] }, "with negatives": { a: [2, -3, 4, -1, 2] }, ones: { a: [1, 1, 1, 1, 1] } },
+    "lower-bound": { sample: { a: [1, 2, 3, 4, 5, 6, 7, 8] }, "with gaps": { a: [1, 3, 3, 5, 8, 8, 9] } },
+    "sum-of-two-values": { sample: { a: [2, 7, 5, 1] }, "no pair": { a: [1, 2, 3] }, "equal halves": { a: [3, 3, 8] } },
+    "maximum-subarray-sum": { "CSES sample": { a: [-1, 3, -2, 5, 3, -5, 2, 2] }, "all negative": { a: [-3, -1, -2] }, alternating: { a: [2, -1, 2, -1, 2] } },
+    "ferris-wheel": { "CSES sample": { a: [7, 2, 3, 9] }, "all light": { a: [1, 1, 1, 1, 2] }, "all heavy": { a: [9, 8, 9, 7] } },
+    "chessboard-and-queens": {
+      empty: { a: ["........", "........", "........", "........", "........", "........", "........", "........"] },
+      "CSES sample": { a: ["........", "........", "..*.....", "........", "........", ".....**.", "...*....", "........"] },
+      "blocked corners": { a: ["*......*", "........", "........", "........", "........", "........", "........", "*......*"] },
+      "blocked row": { a: ["........", "........", "........", "****....", "........", "........", "........", "........"] },
+    },
+    "minimizing-coins": { "1 5 7": { a: [1, 5, 7] }, "4 3": { a: [4, 3] }, "2 only": { a: [2] } },
+    "coin-combinations-i": { "2 3 5": { a: [2, 3, 5] }, "1 2": { a: [1, 2] }, "2 only": { a: [2] } },
+    "coin-combinations-ii": { "2 3 5": { a: [2, 3, 5] }, "1 2": { a: [1, 2] }, "2 only": { a: [2] } },
+    "grid-paths": { "CSES sample": { a: ["....", ".*..", "...*", "*..."] }, "open 3×3": { a: ["...", "...", "..."] }, blocked: { a: ["..*", "*..", "..."] } },
+    "book-shop": { "CSES sample": { a: [4, 8, 5, 3], b: [5, 12, 8, 1] }, "cheap and thick": { a: [1, 2, 3, 9], b: [3, 4, 5, 20] }, "all expensive": { a: [15, 16, 17], b: [1, 2, 3] } },
+    "counting-rooms": { "CSES sample": { a: ["########", "#..#...#", "####.#.#", "#..#...#", "########"] }, "one room": { a: ["....", "....", "...."] }, checkerboard: { a: [".#.#.", "#.#.#", ".#.#."] } },
+    "labyrinth": { "CSES sample": { a: ["########", "#.A#...#", "#.##.#B#", "#......#", "########"] }, straight: { a: ["A......B"] }, blocked: { a: ["A.#.B", "..#..", "..#.."] } },
+    "building-roads": {
+      "CSES sample": { a: 4, b: [[1, 2], [3, 4]], c: [{ x: -3, y: 1 }, { x: -1, y: 1 }, { x: 1, y: -1 }, { x: 3, y: -1 }] },
+      "three islands": { a: 5, b: [[2, 3], [4, 5]], c: [{ x: -4, y: 0 }, { x: -1.5, y: 1.5 }, { x: 0, y: 0 }, { x: 2, y: -1.5 }, { x: 4, y: 0 }] },
+      connected: { a: 4, b: [[1, 2], [2, 3], [3, 4]], c: [{ x: -3, y: 0 }, { x: -1, y: 1 }, { x: 1, y: -1 }, { x: 3, y: 0 }] },
+    },
+    "building-teams": {
+      "CSES sample": { a: 5, b: [[1, 2], [1, 3], [4, 5]], c: [{ x: -3, y: 1.5 }, { x: -4, y: -1 }, { x: -2, y: -1 }, { x: 2, y: 1 }, { x: 3.5, y: -1 }] },
+      triangle: { a: 3, b: [[1, 2], [2, 3], [1, 3]], c: [{ x: -2, y: -1 }, { x: 2, y: -1 }, { x: 0, y: 2 }] },
+      square: { a: 4, b: [[1, 2], [2, 3], [3, 4], [4, 1]], c: [{ x: -2, y: 2 }, { x: 2, y: 2 }, { x: 2, y: -2 }, { x: -2, y: -2 }] },
+    },
+    "heap-push": { "small heap": { a: [[1, 10], [3, 20], [2, 30]] }, empty: { a: [] }, chain: { a: [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 7]] } },
+    "heap-pop": { "small heap": { a: [[0, 40], [1, 10], [2, 30], [3, 20]] }, "two items": { a: [[1, 10], [2, 20]] }, chain: { a: [[1, 1], [5, 2], [2, 3], [6, 4], [7, 5]] } },
+    "shortest-routes": {
+      "CSES sample": { a: 3, b: [[1, 2, 6], [1, 3, 2], [3, 2, 3]], c: [{ x: -3, y: 0 }, { x: 3, y: 0 }, { x: 0, y: -2 }] },
+      "detour is shorter": { a: 4, b: [[1, 2, 1], [2, 3, 1], [3, 4, 1], [1, 4, 5]], c: [{ x: -4, y: 0 }, { x: -1.5, y: 2 }, { x: 1.5, y: 2 }, { x: 4, y: 0 }] },
+      unreachable: { a: 3, b: [[2, 3, 4]], c: [{ x: -3, y: 0 }, { x: 0, y: 0 }, { x: 3, y: 0 }] },
+    },
+    "static-range-sum-queries": { "CSES sample": { a: [3, 2, 4, 5, 1, 1, 5, 3], b: [[2, 4], [5, 6], [1, 8], [3, 3]] }, ones: { a: [1, 1, 1, 1, 1, 1], b: [[1, 3], [2, 5]] } },
+    "build-segment-tree": { "eight values": { a: [3, 2, 4, 5, 1, 1, 5, 3] }, ones: { a: [1, 1, 1, 1, 1, 1, 1, 1] } },
+    "segment-tree-update": { "eight values": { a: [3, 2, 4, 5, 1, 1, 5, 3] }, ones: { a: [1, 1, 1, 1, 1, 1, 1, 1] } },
+    "segment-tree-query": { "eight values": { a: [3, 2, 4, 5, 1, 1, 5, 3] }, ones: { a: [1, 1, 1, 1, 1, 1, 1, 1] } },
+    "dynamic-range-sum-queries": { "CSES sample": { a: [3, 2, 4, 5, 1, 1, 5, 3], b: [[2, 1, 4], [2, 5, 6], [1, 3, 1], [2, 1, 4]] }, ones: { a: [1, 1, 1, 1, 1, 1, 1, 1], b: [[2, 1, 8], [1, 4, 9], [2, 3, 5]] } },
+    "subordinates": { "CSES sample": { a: 5, b: [1, 1, 2, 3] }, chain: { a: 5, b: [1, 2, 3, 4] }, star: { a: 5, b: [1, 1, 1, 1] } },
+    "tree-diameter": { "CSES sample": { a: 5, b: [1, 1, 3, 3] }, chain: { a: 5, b: [1, 2, 3, 4] }, star: { a: 5, b: [1, 1, 1, 1] } },
+    "tree-distances": { "CSES sample": { a: 5, b: [1, 1, 3, 3] }, chain: { a: 5, b: [1, 2, 3, 4] }, star: { a: 5, b: [1, 1, 1, 1] } },
+    "binary-lifting-table": { "CSES sample": { a: 5, b: [1, 1, 2, 3] }, chain: { a: 5, b: [1, 2, 3, 4] }, star: { a: 5, b: [1, 1, 1, 1] } },
+    "kth-ancestor": { "CSES sample": { a: 5, b: [1, 1, 2, 3] }, chain: { a: 5, b: [1, 2, 3, 4] }, star: { a: 5, b: [1, 1, 1, 1] } },
+    "company-queries-ii": { "CSES sample": { a: 5, b: [1, 1, 2, 3], c: [[4, 5], [4, 2], [3, 5]] }, chain: { a: 5, b: [1, 2, 3, 4], c: [[5, 2], [3, 3]] }, star: { a: 5, b: [1, 1, 1, 1], c: [[2, 3], [4, 5]] } },
+  };
+  function algoPreset(values, puzzle) {
+    const table = ALGO_PRESETS[puzzle.id] || {};
+    return table[values.preset] || table[Object.keys(table)[0]] || {};
+  }
+  function algoSegmentTree(list) {
+    const n = list.length;
+    const tree = new Array(2 * n).fill(0);
+    for (let i = 0; i < n; i += 1) tree[n + i] = list[i];
+    for (let i = n - 1; i >= 1; i -= 1) tree[i] = tree[2 * i] + tree[2 * i + 1];
+    return tree;
+  }
+  function algoLifting(n, bosses, levels) {
+    const up = [];
+    const first = new Array(n + 1).fill(0);
+    for (let v = 2; v <= n; v += 1) first[v] = bosses[v - 2];
+    up.push(first);
+    for (let k = 1; k < levels; k += 1) {
+      const previous = up[k - 1];
+      const row = new Array(n + 1).fill(0);
+      for (let v = 1; v <= n; v += 1) row[v] = previous[previous[v]];
+      up.push(row);
+    }
+    return up;
+  }
+  function treeLayoutFromBosses(n, bosses) {
+    const children = [];
+    for (let v = 0; v <= n; v += 1) children.push([]);
+    for (let v = 2; v <= n; v += 1) children[bosses[v - 2]].push(v);
+    const depth = new Array(n + 1).fill(0);
+    for (let v = 2; v <= n; v += 1) depth[v] = depth[bosses[v - 2]] + 1;
+    const x = new Array(n + 1).fill(0);
+    let slot = 0;
+    const visit = (v) => {
+      if (children[v].length === 0) { x[v] = slot; slot += 1; return; }
+      children[v].forEach(visit);
+      x[v] = (x[children[v][0]] + x[children[v][children[v].length - 1]]) / 2;
+    };
+    visit(1);
+    const width = Math.max(1, slot - 1);
+    const maxDepth = Math.max(1, ...depth.slice(1));
+    const positions = [null];
+    for (let v = 1; v <= n; v += 1) positions.push({ x: -4 + 8 * x[v] / width, y: 2.6 - 4.2 * depth[v] / maxDepth });
+    return positions;
+  }
+  function algoBars(list, style, options) {
+    const opts = options || {};
+    const n = Math.max(1, list.length);
+    const left = -5, span = 10, width = span / n;
+    const peak = Math.max(1e-9, ...list.map((v) => Math.abs(v)));
+    const base = opts.base === undefined ? -0.6 : opts.base;
+    const height = opts.height || 2.6;
+    const pairs = list.map((v, i) => { const x = left + (i + 0.5) * width + (opts.shift || 0); return [{ x, y: base }, { x, y: base + height * (v / (opts.peak || peak)) }]; });
+    return segments(pairs, style, { weight: opts.weight || Math.max(3, Math.min(12, 60 / n)), alpha: opts.alpha, dashed: opts.dashed });
+  }
+  function algoGridLayers(grid, options) {
+    const opts = options || {};
+    const rows = grid.length, cols = grid[0].length;
+    const size = Math.min(9 / cols, 5.6 / rows, 1.2);
+    const left = -cols * size / 2, top = 3.2;
+    const out = [];
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const ch = grid[r][c];
+        const a = { x: left + c * size, y: top - r * size }, b = { x: left + (c + 1) * size, y: top - (r + 1) * size };
+        if (ch === "#" || ch === "*") out.push(shade(a, b, "input"), shade({ x: a.x + size * 0.15, y: a.y - size * 0.15 }, { x: b.x - size * 0.15, y: b.y + size * 0.15 }, "input"));
+        else if (ch === "A" || ch === "B") out.push(label(ch, "input", { at: { x: a.x + size * 0.3, y: b.y + size * 0.35 } }));
+        if (opts.cellLabels && opts.cellLabels[r] && opts.cellLabels[r][c] !== undefined) out.push(label(String(opts.cellLabels[r][c]), opts.style || "muted", { at: { x: a.x + size * 0.25, y: b.y + size * 0.35 } }));
+      }
+    }
+    const lines = [];
+    for (let r = 0; r <= rows; r += 1) lines.push([{ x: left, y: top - r * size }, { x: left + cols * size, y: top - r * size }]);
+    for (let c = 0; c <= cols; c += 1) lines.push([{ x: left + c * size, y: top }, { x: left + c * size, y: top - rows * size }]);
+    out.push(segments(lines, "muted", { weight: 1 }));
+    return out;
+  }
+  function heapTreeLayers(heap, style, offsetX, caption) {
+    const out = [];
+    const positions = [];
+    for (let i = 0; i < heap.length; i += 1) {
+      const level = Math.floor(Math.log2(i + 1));
+      const first = (1 << level) - 1, count = 1 << level;
+      const x = offsetX + (-2.2 + 4.4 * ((i - first) + 0.5) / count);
+      positions.push({ x, y: 2.4 - level * 1.15 });
+    }
+    for (let i = 1; i < heap.length; i += 1) out.push(segments([[positions[(i - 1) >> 1], positions[i]]], style, { weight: 1 }));
+    positions.forEach((at, i) => out.push(point(at, String(heap[i][0]) + (heap[i][1] !== undefined ? "·" + heap[i][1] : ""), style)));
+    if (caption) out.push(label(caption, style, { at: { x: offsetX - 2.2, y: 3.4 } }));
+    return out;
+  }
+  function segmentTreeLayers(tree, style, options) {
+    const opts = options || {};
+    const out = [];
+    const n = tree.length / 2;
+    if (!(n >= 1)) return out;
+    const levels = Math.ceil(Math.log2(n)) + 1;
+    for (let i = 1; i < tree.length; i += 1) {
+      const level = Math.floor(Math.log2(i));
+      const first = 1 << level, count = 1 << level;
+      const at = { x: -4.5 + 9 * ((i - first) + 0.5) / count, y: 3 - level * (4.6 / levels) };
+      if (i >= 2) { const parentLevel = Math.floor(Math.log2(i >> 1)); const pf = 1 << parentLevel; out.push(segments([[{ x: -4.5 + 9 * (((i >> 1) - pf) + 0.5) / pf, y: 3 - parentLevel * (4.6 / levels) }, at]], "muted", { weight: 1 })); }
+      const highlighted = opts.highlight && opts.highlight.has(i);
+      out.push(point(at, String(tree[i]), highlighted ? style : (i >= n ? "input" : "muted"), { dashed: opts.dashed }));
+    }
+    return out;
+  }
+  const algoScene = {
+    fixtures: {
+      presetA: (values, puzzle) => algoPreset(values, puzzle).a,
+      presetB: (values, puzzle) => algoPreset(values, puzzle).b,
+      presetC: (values, puzzle) => algoPreset(values, puzzle).c,
+      presetEdges: (values, puzzle) => algoPreset(values, puzzle).b.map((boss, i) => [boss, i + 2]),
+      roundedN: (values) => Math.round(values.n),
+      roundedX: (values) => Math.round(values.x),
+      roundedTarget: (values) => Math.round(values.target),
+      roundedIndex: (values) => Math.round(values.index),
+      roundedValue: (values) => Math.round(values.value),
+      roundedV: (values) => Math.round(values.v),
+      roundedK: (values) => Math.round(values.k),
+      rangeLo: (values) => Math.min(Math.round(values.l), Math.round(values.r)),
+      rangeHi: (values) => Math.max(Math.round(values.l), Math.round(values.r)),
+      pushItem: (values) => [Math.round(values.key), 99],
+      builtTree: (values, puzzle) => algoSegmentTree(algoPreset(values, puzzle).a),
+      liftingTable: (values, puzzle) => algoLifting(algoPreset(values, puzzle).a, algoPreset(values, puzzle).b, 3),
+    },
+    layers(context) {
+      const view = context.puzzle.scene.view;
+      const values = context.values;
+      const out = laneLayers(context.puzzle, values);
+      const style = resultStyle(context), text = resultLabel(context);
+      const chosen = algoPreset(values, context.puzzle);
+      const isNumberList = (v) => Array.isArray(v) && v.every(Number.isFinite);
+      const numberRows = (expectedText, actualText) => { out.push(label("expected " + expectedText, "expected", { at: { x: -5.3, y: 3.3 } }), label(text + " " + actualText, style, { at: { x: -5.3, y: 2.9 } })); };
+      if (view === "sequence") {
+        if (isNumberList(context.expected)) out.push(algoBars(context.expected, "expected", { alpha: 160, shift: -0.05 }));
+        if (isNumberList(context.actual)) out.push(algoBars(context.actual, style, { shift: 0.05 }));
+        out.push(label("n = " + Math.round(values.n) + " · bars are the values of the sequence, left to right", "muted", { row: 3 }));
+      } else if (view === "bars") {
+        const input = Array.isArray(chosen.a) ? chosen.a : null;
+        if (input && input.every(Number.isFinite)) {
+          out.push(algoBars(input, "input", { base: -3.0, height: 1.6, weight: 10 }));
+          input.forEach((v, i) => out.push(label(String(v), "input", { at: { x: -5 + (i + 0.5) * (10 / input.length) - 0.1, y: -3.3 } })));
+        }
+        if (Array.isArray(context.expected) && context.expected.length === 2 && context.expected.every(Number.isInteger) && context.puzzle.id === "sum-of-two-values") {
+          context.expected.forEach((position) => out.push(marker({ x: -5 + (position - 0.5) * (10 / input.length), y: -1.0 }, "", "expected", { height: 0.3 })));
+        }
+        if (Array.isArray(context.actual) && context.actual.length === 2 && context.actual.every(Number.isInteger) && context.puzzle.id === "sum-of-two-values") {
+          context.actual.forEach((position) => out.push(marker({ x: -5 + (position - 0.5) * (10 / input.length), y: -0.4 }, "", style, { height: 0.3 })));
+        }
+        if (isNumberList(context.expected) && context.puzzle.id !== "sum-of-two-values") out.push(algoBars(context.expected, "expected", { base: 0, height: 2.2, alpha: 160, shift: -0.06 }));
+        if (isNumberList(context.actual) && context.puzzle.id !== "sum-of-two-values") out.push(algoBars(context.actual, style, { base: 0, height: 2.2, shift: 0.06 }));
+        if (context.puzzle.id === "lower-bound" && Number.isFinite(context.actual) && input) out.push(marker({ x: -5 + Math.min(context.actual, input.length) * (10 / input.length), y: -1.0 }, "index " + context.actual, style, { height: 0.5 }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "sets") {
+        const n = Math.round(values.n);
+        for (let v = 1; v <= n; v += 1) out.push(point({ x: -4.5 + 9 * (v - 0.5) / n, y: 1.2 }, String(v), "input"));
+        const drawSets = (result, styleName, y) => { if (!result || !Array.isArray(result.a)) return; result.a.forEach((v) => out.push(marker({ x: -4.5 + 9 * (v - 0.5) / n, y }, "", styleName, { height: 0.25 }))); result.b.forEach((v) => out.push(marker({ x: -4.5 + 9 * (v - 0.5) / n, y: y - 0.8 }, "", styleName, { height: 0.25 }))); };
+        drawSets(context.expected, "expected", -0.2);
+        drawSets(context.actual, style, -0.35);
+        out.push(label("upper marks: set a · lower marks: set b", "muted", { row: 3 }));
+        numberRows(describe(context.expected), describe(context.actual));
+      } else if (view === "board" || view === "grid") {
+        if (Array.isArray(chosen.a)) out.push(...algoGridLayers(chosen.a));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "number" || view === "coins" || view === "shop") {
+        if (view === "coins" && Array.isArray(chosen.a)) {
+          const x = Math.round(values.x);
+          out.push(segments([[{ x: -4.5, y: 0 }, { x: 4.5, y: 0 }]], "muted", { weight: 2 }), marker({ x: 4.5, y: 0 }, "x = " + x, "input", { height: 0.4 }), marker({ x: -4.5, y: 0 }, "0", "muted", { height: 0.3 }));
+          chosen.a.forEach((coin, i) => out.push(marker({ x: -4.5 + 9 * Math.min(1, coin / Math.max(1, x)), y: -1.2 - i * 0.5 }, "coin " + coin, "input", { height: 0.2 })));
+        }
+        if (view === "shop" && Array.isArray(chosen.a)) {
+          out.push(label("price →", "muted", { at: { x: 4, y: -3.3 } }), label("↑ pages", "muted", { at: { x: -5.2, y: 2.5 } }));
+          const maxPrice = Math.max(1, ...chosen.a), maxPages = Math.max(1, ...chosen.b);
+          chosen.a.forEach((price, i) => out.push(point({ x: -4.5 + 8.5 * price / maxPrice, y: -2.8 + 5 * chosen.b[i] / maxPages }, price + " → " + chosen.b[i] + "p", "input")));
+          out.push(marker({ x: -4.5 + 8.5 * Math.min(1, Math.round(values.x) / maxPrice), y: -2.8 }, "budget " + Math.round(values.x), "muted", { height: 0.5 }));
+        }
+        if (view === "number") out.push(label("n = " + Math.round(values.n), "input", { row: 3 }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "graph") {
+        const positions = chosen.c || [];
+        const edges = chosen.b || [];
+        edges.forEach((edge) => {
+          const a = positions[edge[0] - 1], b = positions[edge[1] - 1];
+          if (!a || !b) return;
+          if (edge.length > 2) out.push(arrow(a, b, "muted", { weight: 1.5 }), label(String(edge[2]), "muted", { at: { x: (a.x + b.x) / 2 + 0.1, y: (a.y + b.y) / 2 + 0.2 } }));
+          else out.push(segments([[a, b]], "muted", { weight: 2 }));
+        });
+        positions.forEach((at, i) => out.push(point(at, String(i + 1), "input")));
+        const roads = (list, styleName, dashed) => list.forEach((road) => { const a = positions[road[0] - 1], b = positions[road[1] - 1]; if (a && b) out.push(segments([[a, b]], styleName, { weight: 2, dashed })); });
+        if (context.puzzle.id === "building-roads") {
+          if (Array.isArray(context.expected)) roads(context.expected, "expected", true);
+          if (Array.isArray(context.actual)) roads(context.actual, style, false);
+        } else {
+          const perNode = (list, styleName, dy, prefix) => { if (!isNumberList(list)) return; list.forEach((v, i) => { const at = positions[i]; if (at) out.push(label(prefix + v, styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
+          perNode(context.expected, "expected", 0.45, "");
+          perNode(context.actual, style, -0.35, "");
+        }
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "heap") {
+        const input = Array.isArray(chosen.a) ? chosen.a : [];
+        out.push(...heapTreeLayers(input, "input", -2.6, "input heap"));
+        const shown = (result) => (result && Array.isArray(result.heap) ? result.heap : (Array.isArray(result) ? result : null));
+        if (shown(context.actual)) out.push(...heapTreeLayers(shown(context.actual), style, 2.6, text + " heap"));
+        else if (shown(context.expected)) out.push(...heapTreeLayers(shown(context.expected), "expected", 2.6, "expected heap"));
+        if (context.puzzle.id === "heap-push") out.push(label("pushing [" + Math.round(values.key) + ", 99]", "input", { row: 3 }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "segtree") {
+        const base = Array.isArray(chosen.a) ? chosen.a : [];
+        const tree = algoSegmentTree(base);
+        const highlight = new Set();
+        if (context.puzzle.id === "segment-tree-update") { let position = base.length + Math.round(values.index); while (position >= 1) { highlight.add(position); position >>= 1; } }
+        const shownTree = isNumberList(context.actual) && context.actual.length === tree.length ? context.actual : (isNumberList(context.expected) && context.expected.length === tree.length ? context.expected : tree);
+        out.push(...segmentTreeLayers(shownTree, style, { highlight }));
+        if (context.puzzle.id === "segment-tree-query") out.push(label("query leaves " + Math.min(Math.round(values.l), Math.round(values.r)) + " to " + Math.max(Math.round(values.l), Math.round(values.r)), "input", { row: 3 }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "tree") {
+        const n = chosen.a || 1, bosses = chosen.b || [];
+        const positions = treeLayoutFromBosses(n, bosses);
+        for (let v = 2; v <= n; v += 1) out.push(segments([[positions[bosses[v - 2]], positions[v]]], "muted", { weight: 1.5 }));
+        for (let v = 1; v <= n; v += 1) out.push(point(positions[v], String(v), "input"));
+        const perNode = (list, styleName, dy) => { if (!isNumberList(list) || list.length !== n) return; list.forEach((value, i) => out.push(label(String(value), styleName, { at: { x: positions[i + 1].x + 0.25, y: positions[i + 1].y + dy } }))); };
+        perNode(context.expected, "expected", 0.45);
+        perNode(context.actual, style, -0.35);
+        if (Array.isArray(context.actual) && Array.isArray(context.actual[0]) && context.puzzle.id === "binary-lifting-table") {
+          for (let v = 1; v <= n; v += 1) out.push(label("2^1→" + context.actual[1][v], style, { at: { x: positions[v].x + 0.25, y: positions[v].y - 0.35 } }));
+        }
+        if (context.puzzle.id === "kth-ancestor") out.push(label("node " + Math.round(values.v) + " · k " + Math.round(values.k), "input", { row: 3 }));
+        if (context.puzzle.id === "company-queries-ii" && Array.isArray(chosen.c)) out.push(label("queries " + chosen.c.map((q) => q[0] + "," + q[1]).join(" · "), "input", { row: 3 }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      }
+      out.push(...notes(context, describeAlgo(context.expected), describeAlgo(context.actual)));
+      return out;
+    },
+  };
+  function describeAlgo(value) {
+    if (typeof value === "number") return String(value);
+    if (value === null) return "null";
+    if (Array.isArray(value)) {
+      const textValue = JSON.stringify(value);
+      return textValue.length > 48 ? textValue.slice(0, 45) + "…" : textValue;
+    }
+    return describe(value);
+  }
   const SCENES = {
     "dial": dialScene,
     "vector": vectorScene,
@@ -2007,6 +2303,7 @@
     "estimation": estimationScene,
     "bayes": bayesScene,
     "nature": natureScene,
+    "algo": algoScene,
   };
 
   function layers(context) {

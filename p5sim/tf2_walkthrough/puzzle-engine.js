@@ -134,7 +134,7 @@
     }
     const expected = result.reference.value;
     if (!result.learner.ok) return liveResult(result.learner.error.kind, result.learner.error.message, { expected, error: result.learner.error });
-    if (result.learner.inputMutated) return liveResult("mutation", MUTATION_MESSAGE, { expected, actual: result.learner.value, error: { kind: "mutation", message: MUTATION_MESSAGE } });
+    if (result.learner.inputMutated && !puzzle.allowMutation) return liveResult("mutation", MUTATION_MESSAGE, { expected, actual: result.learner.value, error: { kind: "mutation", message: MUTATION_MESSAGE } });
     const comparison = compareOutput(puzzle.comparator, result.learner.value, expected, puzzle.tolerance);
     if (comparison.pass) return liveResult("live-match", LIVE_MATCH_MESSAGE, { expected, actual: result.learner.value, comparison });
     const diagnosis = diagnose(puzzle, result.learner.value, result.variants);
@@ -154,7 +154,7 @@
       if (!result.learner.ok) {
         return { pass: false, kind: result.learner.error.kind, message: result.learner.error.message + " Case: " + testCase.label + ".", caseIndex: index, testCase };
       }
-      if (result.learner.inputMutated) return { pass: false, kind: "mutation", message: MUTATION_MESSAGE + " Case: " + testCase.label + ".", caseIndex: index, testCase };
+      if (result.learner.inputMutated && !puzzle.allowMutation) return { pass: false, kind: "mutation", message: MUTATION_MESSAGE + " Case: " + testCase.label + ".", caseIndex: index, testCase };
       const comparison = compareOutput(puzzle.comparator, result.learner.value, testCase.expected, puzzle.tolerance);
       if (!comparison.pass) {
         const diagnosis = diagnose(puzzle, result.learner.value, result.variants);

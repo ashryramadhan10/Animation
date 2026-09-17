@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="A p5.js coding puzzle lab for learning TF2 geometry from vectors to a time-aware transform buffer." />
-    <title>TF2 Puzzle Lab</title>
+    <meta name="description" content="A judge-style p5.js puzzle lab for the core techniques of the CSES Problem Set." />
+    <title>Algo Lab · CSES Core</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="puzzle-lab.css" />
   </head>
@@ -12,17 +12,16 @@
     <main class="app-shell puzzle-shell">
       <header class="topbar lab-topbar">
         <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true">TF</span>
+          <span class="brand-mark" aria-hidden="true">CS</span>
           <div>
-            <p class="overline">Build geometry from tiny parts</p>
-            <h1>TF2 Puzzle Lab</h1>
+            <p class="overline">CSES techniques, brick by brick</p>
+            <h1>Algo Lab</h1>
           </div>
         </div>
         <div class="top-actions">
           <span id="saveStatus" class="save-status" aria-live="polite">Saved locally</span>
-          <a class="button button-secondary" href="index.html">Walkthrough</a>
+          <a class="button button-secondary" href="puzzle-lab.html">TF2 Puzzle Lab</a>
           <a class="button button-secondary" href="side-lab.html">Side Lab</a>
-          <a class="button button-secondary" href="algo-lab.html">Algo Lab</a>
         </div>
       </header>
 
@@ -30,7 +29,7 @@
         <aside class="curriculum-card" aria-labelledby="curriculumHeading">
           <div class="lab-card-heading">
             <div>
-              <p class="card-kicker">Three tracks, one ladder</p>
+              <p class="card-kicker">Six sections, one ladder</p>
               <h2 id="curriculumHeading">Geometry builds</h2>
             </div>
             <span id="puzzleCounter" class="counter-pill">01 / 27</span>
@@ -54,7 +53,7 @@
               <p id="puzzleConcept" class="puzzle-concept"></p>
               <div class="brief-links">
                 <code id="puzzleSignature" class="signature"></code>
-                <a id="walkthroughLink" class="concept-link" href="index.html">Review concept ↗</a>
+                <a id="walkthroughLink" class="concept-link" href="https://cses.fi/problemset/" target="_blank" rel="noopener">Open on CSES ↗</a>
                 <a id="referenceLink" class="concept-link" href="#" target="_blank" rel="noopener" hidden>Reference ↗</a>
                 <a id="readingLink" class="concept-link" href="#" target="_blank" rel="noopener" hidden>Also read ↗</a>
               </div>
@@ -149,12 +148,24 @@
     </main>
 
     <script src="../libraries/p5.min.js"></script>
-    <script src="puzzles.js"></script>
+    <script src="algo-puzzles.js"></script>
     <script src="puzzle-runtime.js"></script>
     <script src="puzzle-engine.js"></script>
     <script src="puzzle-scenes.js"></script>
     <script src="puzzle-sketch.js"></script>
     <script src="puzzle-editor.js"></script>
+    <script>
+      window.PUZZLE_LAB_CONFIG = {
+        puzzles: window.ALGO_PUZZLES,
+        tracks: window.ALGO_PUZZLE_TRACKS,
+        storageKey: "algo-lab:v1",
+        title: "Algo Lab",
+        heading: "algorithm builds",
+        checkTimeoutMs: 4000,
+        resetNote: "The other labs are not affected.",
+        conceptLink: function (puzzle) { return { href: "https://cses.fi/problemset/task/" + puzzle.walkthroughChapter + "/", label: "CSES · " + puzzle.cses.name + " ↗" }; },
+      };
+    </script>
     <script src="puzzle-lab.js"></script>
   </body>
 </html>

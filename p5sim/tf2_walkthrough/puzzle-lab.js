@@ -73,9 +73,15 @@
     }
     const rows = [["Case", result.testCase.label], ["Input", result.testCase.args], ["Expected", result.testCase.expected], ["Yours", result.actual === undefined ? null : result.actual]];
     dom.caseComparison.innerHTML = rows.map((row) => (
-      "<div class=\"case-row\"><span>" + row[0] + "</span><code>" + escapeHtml(typeof row[1] === "string" ? row[1] : JSON.stringify(row[1], null, 2)) + "</code></div>"
+      "<div class=\"case-row\"><span>" + row[0] + "</span><code>" + escapeHtml(preview(row[1])) + "</code></div>"
     )).join("");
     dom.caseComparison.hidden = false;
+  }
+
+  function preview(value) {
+    const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    if (typeof text !== "string") return String(text);
+    return text.length > 600 ? text.slice(0, 600) + "\n… (" + (text.length - 600) + " more characters)" : text;
   }
 
   function stageProgress(stage) {
@@ -483,7 +489,7 @@
       dom.feedbackPanel.classList.add("is-error");
       return;
     }
-    session = root.createLiveSession({ workerUrl: "puzzle-worker.js" });
+    session = root.createLiveSession({ workerUrl: "puzzle-worker.js", checkTimeoutMs: config.checkTimeoutMs || 750 });
     dom.curriculumHeading.textContent = puzzles.length + " " + config.heading;
     if (typeof root.createCodeEditor === "function") editor = root.createCodeEditor(dom.codeEditor);
     currentIndex = initialIndex();
