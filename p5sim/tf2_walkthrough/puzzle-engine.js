@@ -184,6 +184,8 @@
     return base.concat(extra);
   }
 
+  function releaseCases(puzzle) { hiddenCaseCache.delete(puzzle); }
+
   function unlockedIds(puzzles, tracks, progress) {
     const states = new Map(trackStates(tracks, progress).map((entry) => [entry.id, entry.state]));
     const byTrack = new Map();
@@ -432,7 +434,7 @@
     STORAGE_KEY, SCHEMA_VERSION, COMPARATORS, MUTATION_MESSAGE,
     compareOutput, diagnose, evaluateLive, evaluateCheck,
     createProgress, loadProgress, saveProgress, completePuzzle, dependentPuzzleIds, resetPuzzle,
-    collectDependencyIds, buildProgram, trackStates, createLiveSession, validateCatalog, resolveCases, unlockedIds,
+    collectDependencyIds, buildProgram, trackStates, createLiveSession, validateCatalog, resolveCases, releaseCases, unlockedIds,
   });
 
   Object.assign(root, api);

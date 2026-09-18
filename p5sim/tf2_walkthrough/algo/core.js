@@ -88,6 +88,7 @@
   function diagnosis(id, message, fn) { return Object.freeze({ id, message, source: src(fn) }); }
   function book(section, title) { return Object.freeze({ label: "Handbook · " + section + " " + title, url: BOOK_URL }); }
   function preset(id, options, extra) {
+    if (Array.isArray(id)) { extra = id; id = undefined; options = undefined; }
     const handle = { id: "preset", type: "selector", label: "input" };
     if (options) { handle.value = options[0]; handle.options = options; }
     return [handle].concat(extra || []);

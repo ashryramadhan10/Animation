@@ -2151,6 +2151,8 @@
       roundedA: (values) => Math.round(values.a),
       roundedB: (values) => Math.round(values.b),
       roundedKString: (values) => String(Math.round(values.k)),
+      roundedDelta: (values) => Math.round(values.delta),
+      roundedBAtLeastA: (values) => Math.max(Math.round(values.a), Math.round(values.b)),
       rangeLo: (values) => Math.min(Math.round(values.l), Math.round(values.r)),
       rangeHi: (values) => Math.max(Math.round(values.l), Math.round(values.r)),
       pushItem: (values) => [Math.round(values.key), 99],

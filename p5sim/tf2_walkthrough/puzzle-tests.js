@@ -169,6 +169,7 @@
         });
       });
       puzzle.diagnoses.forEach((entry) => assert(variantDiffers[entry.id], puzzle.id + " diagnosis " + entry.id + " never differs from the reference"));
+      requireApi(engine, "puzzle-engine.js").releaseCases(puzzle);
     });
   }
 
@@ -883,16 +884,16 @@
       same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["intro", "sorting", "dp", "graphs", "range", "trees"]);
       const idsOf = (track) => puzzleList().filter((puzzle) => puzzle.track === track).map((puzzle) => puzzle.id);
       same(idsOf("intro"), ["weird-algorithm", "missing-number", "repetitions", "increasing-array", "permutations", "number-spiral", "two-knights", "two-sets", "bit-strings", "trailing-zeros", "coin-piles", "palindrome-reorder", "gray-code", "tower-of-hanoi", "creating-strings", "apple-division", "chessboard-and-queens", "raab-game-i", "mex-grid-construction", "knight-moves-grid", "grid-coloring-i", "digit-queries", "string-reorder", "grid-path-description"]);
-      same(idsOf("sorting"), ["distinct-numbers", "prefix-sums", "lower-bound", "sum-of-two-values", "maximum-subarray-sum", "ferris-wheel"]);
+      same(idsOf("sorting"), ["distinct-numbers", "apartments", "ferris-wheel", "lower-bound", "upper-bound", "fenwick-add", "fenwick-prefix", "fenwick-kth", "concert-tickets", "restaurant-customers", "movie-festival", "sum-of-two-values", "maximum-subarray-sum", "stick-lengths", "missing-coin-sum", "collecting-numbers", "collecting-numbers-ii", "playlist", "towers", "traffic-lights", "distinct-values-subarrays", "distinct-values-subsequences", "josephus-problem-i", "josephus-problem-ii", "nested-ranges-check", "nested-ranges-count", "heap-push", "heap-pop", "room-allocation", "factory-machines", "tasks-and-deadlines", "reading-books", "sum-of-three-values", "sum-of-four-values", "nearest-smaller-values", "prefix-sums", "subarray-sums-i", "subarray-sums-ii", "subarray-divisibility", "distinct-values-subarrays-ii", "array-division", "movie-festival-ii", "maximum-subarray-sum-ii"]);
       same(idsOf("dp"), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "grid-paths", "book-shop"]);
-      same(idsOf("graphs"), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "heap-push", "heap-pop", "shortest-routes"]);
+      same(idsOf("graphs"), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "shortest-routes"]);
       same(idsOf("range"), ["static-range-sum-queries", "build-segment-tree", "segment-tree-update", "segment-tree-query", "dynamic-range-sum-queries"]);
       same(idsOf("trees"), ["subordinates", "tree-diameter", "tree-distances", "binary-lifting-table", "kth-ancestor", "company-queries-ii"]);
       puzzleList().forEach((puzzle, index) => {
         assert(puzzle.number === index + 1, puzzle.id + " is numbered " + puzzle.number);
         assert(/^https:\/\/cses\.fi\/book\//.test(puzzle.reference.url), puzzle.id + " should link the handbook");
         assert(/^\d+$/.test(puzzle.walkthroughChapter), puzzle.id + " should carry its CSES task id");
-        const singleOperation = ["chessboard-and-queens", "lower-bound", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor", "coin-piles", "tower-of-hanoi", "creating-strings", "apple-division", "raab-game-i", "mex-grid-construction", "grid-path-description"].includes(puzzle.id);
+        const singleOperation = ["chessboard-and-queens", "lower-bound", "upper-bound", "fenwick-add", "fenwick-prefix", "fenwick-kth", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor", "coin-piles", "tower-of-hanoi", "creating-strings", "apple-division", "raab-game-i", "mex-grid-construction", "grid-path-description"].includes(puzzle.id);
         assert(singleOperation || puzzle.hidden.length > 0, puzzle.id + " needs a hidden time-limit case");
         const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
         assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes");

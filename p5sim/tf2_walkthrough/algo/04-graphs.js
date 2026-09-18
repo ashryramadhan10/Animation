@@ -1,6 +1,7 @@
 (function defineAlgoSection(core) {
   "use strict";
   const { MOD, BIG, lazy, rng, randomInts, randomGrid, randomTreeBosses, edgesFromBosses, lines, starter, example, run, hidden, diagnosis, book, preset } = core;
+  const { heapPush, heapPop } = core.shared;
   // ------------------------------------------------------------------ 4 · graph algorithms
   function countingRooms(grid) {
     const rows = grid.length, cols = grid[0].length;
@@ -94,36 +95,6 @@
       }
     }
     return team.slice(1);
-  }
-  function heapPush(heap, item) {
-    heap.push(item);
-    let index = heap.length - 1;
-    while (index > 0) {
-      const parent = (index - 1) >> 1;
-      if (heap[parent][0] <= heap[index][0]) break;
-      const swap = heap[parent]; heap[parent] = heap[index]; heap[index] = swap;
-      index = parent;
-    }
-    return heap;
-  }
-  function heapPop(heap) {
-    if (heap.length === 0) return { item: null, heap };
-    const item = heap[0];
-    const last = heap.pop();
-    if (heap.length > 0) {
-      heap[0] = last;
-      let index = 0;
-      while (true) {
-        const left = 2 * index + 1, right = left + 1;
-        let smallest = index;
-        if (left < heap.length && heap[left][0] < heap[smallest][0]) smallest = left;
-        if (right < heap.length && heap[right][0] < heap[smallest][0]) smallest = right;
-        if (smallest === index) break;
-        const swap = heap[smallest]; heap[smallest] = heap[index]; heap[index] = swap;
-        index = smallest;
-      }
-    }
-    return { item, heap };
   }
   function shortestRoutes(n, edges, source) {
     const adjacency = [];
@@ -242,49 +213,6 @@
       ],
     },
     {
-      id: "heap-push", track: "graphs", title: "Heap Push", cses: { id: 1671, name: "Shortest Routes I (brick)" },
-      goal: "Append an item to a binary min-heap array and sift it up. Items are [key, value]; the heap is modified in place and returned.",
-      concept: "JavaScript has no priority queue, so Dijkstra needs one you wrote. The array form: children of i are 2i + 1 and 2i + 2.",
-      functionName: "heapPush", signature: "heapPush(heap, item) → heap",
-      starterSource: starter("heapPush", "heap, item", "Push, then while the parent's key is larger, swap upward."),
-      solve: heapPush, comparator: "deep", allowMutation: true,
-      reference: book("4.5", "Other structures · priority queue"),
-      scene: { kind: "algo", view: "heap", handles: preset("heap-push", ["small heap", "empty", "chain"], [{ id: "key", type: "slider", label: "key to push (rounded)", value: 0, min: 0, max: 20 }]), args: [{ fixture: "presetA" }, { fixture: "pushItem" }] },
-      diagnoses: [
-        diagnosis("no-sift", "Appending alone breaks the heap order; swap the item upward while its parent has a larger key.", function heapPush(heap, item) { heap.push(item); return heap; }),
-        diagnosis("wrong-parent-index", "The parent of index i is (i − 1) >> 1, not i >> 1.", function heapPush(heap, item) { heap.push(item); let index = heap.length - 1; while (index > 0) { const parent = index >> 1; if (heap[parent][0] <= heap[index][0]) break; const swap = heap[parent]; heap[parent] = heap[index]; heap[index] = swap; index = parent; } return heap; }),
-      ],
-      hints: ["heap.push(item); index = heap.length − 1.", "parent = (index − 1) >> 1; stop when heap[parent][0] <= heap[index][0].", "Otherwise swap and continue from the parent."],
-      cases: [
-        example([[[1, 10], [3, 20], [2, 30]], [0, 40]], [[0, 40], [1, 10], [2, 30], [3, 20]], "new minimum"),
-        example([[], [5, 1]], [[5, 1]], "empty heap"),
-        example([[[1, 10], [3, 20], [2, 30]], [9, 40]], [[1, 10], [3, 20], [2, 30], [9, 40]], "stays at the end"),
-        example([[[1, 10], [3, 20], [2, 30]], [2, 40]], [[1, 10], [2, 40], [2, 30], [3, 20]], "one swap"),
-        example([[[2, 10], [3, 20]], [1, 30]], [[1, 30], [3, 20], [2, 10]], "lands at index 2"),
-      ],
-    },
-    {
-      id: "heap-pop", track: "graphs", title: "Heap Pop", cses: { id: 1671, name: "Shortest Routes I (brick)" },
-      goal: "Remove the minimum item: move the last item to the root and sift it down. Return { item, heap }.",
-      concept: "Sift down picks the smaller child each step, so the root is always the minimum afterwards.",
-      functionName: "heapPop", signature: "heapPop(heap) → { item, heap }",
-      starterSource: starter("heapPop", "heap", "Empty heap → { item: null, heap }."),
-      solve: heapPop, comparator: "deep", allowMutation: true,
-      reference: book("4.5", "Other structures · priority queue"),
-      scene: { kind: "algo", view: "heap", handles: preset("heap-pop", ["small heap", "two items", "chain"]), args: [{ fixture: "presetA" }] },
-      diagnoses: [
-        diagnosis("pops-last", "The minimum is at index 0, not at the end.", function heapPop(heap) { if (heap.length === 0) return { item: null, heap }; const item = heap.pop(); return { item, heap }; }),
-        diagnosis("no-sift-down", "After moving the last item to the root it must sift down.", function heapPop(heap) { if (heap.length === 0) return { item: null, heap }; const item = heap[0]; const last = heap.pop(); if (heap.length > 0) heap[0] = last; return { item, heap }; }),
-      ],
-      hints: ["Remember heap[0]; pop the last item; if the heap is not empty put it at index 0.", "At index i compare with children 2i + 1 and 2i + 2; swap with the smaller if it is smaller than you.", "Stop when neither child is smaller."],
-      cases: [
-        example([[[0, 40], [1, 10], [2, 30], [3, 20]]], { item: [0, 40], heap: [[1, 10], [3, 20], [2, 30]] }, "sift down left"),
-        example([[[1, 10], [2, 20]]], { item: [1, 10], heap: [[2, 20]] }, "two items"),
-        example([[]], { item: null, heap: [] }, "empty"),
-        example([[[1, 1], [5, 2], [2, 3], [6, 4], [7, 5]]], { item: [1, 1], heap: [[2, 3], [5, 2], [7, 5], [6, 4]] }, "sift down right"),
-      ],
-    },
-    {
       id: "shortest-routes", track: "graphs", title: "Shortest Routes I", cses: { id: 1671, name: "Shortest Routes I" },
       goal: "Dijkstra: shortest distance from the source to every node in a directed weighted graph (−1 if unreachable).",
       concept: "Always settle the closest unsettled node. The heap gives it to you in O(log n); stale entries are skipped when their node is already settled.",
@@ -306,6 +234,5 @@
       ],
     },
   ];
-  core.share({ heapPush, heapPop });
   core.define("graphs", GRAPHS);
 })(typeof window !== "undefined" ? window.AlgoCore : require("./core.js"));
