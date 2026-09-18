@@ -1623,7 +1623,8 @@
       hints: ["counts[0] = 1 for the empty prefix.", "remainder = ((remainder + v) % n + n) % n.", "Add counts[remainder] to the answer, then increment it."],
       cases: [
         example([[3, 1, 2, 7, 4]], 1, "CSES sample"),
-        example([[-1, 2, -3, 4]], 2, "negatives"),
+        example([[-1, 2, -3, 4]], 1, "negatives"),
+        example([[-2, -2]], 3, "all negative"),
         example([[5]], 1, "single"),
         hidden("n = 200 000, time limit", () => [randomInts(48, BIG, -1000000000, 1000000000)]),
       ],

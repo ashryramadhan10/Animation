@@ -2152,6 +2152,7 @@
       roundedB: (values) => Math.round(values.b),
       roundedKString: (values) => String(Math.round(values.k)),
       roundedDelta: (values) => Math.round(values.delta),
+      roundedM: (values) => Math.round(values.m),
       roundedBAtLeastA: (values) => Math.max(Math.round(values.a), Math.round(values.b)),
       rangeLo: (values) => Math.min(Math.round(values.l), Math.round(values.r)),
       rangeHi: (values) => Math.max(Math.round(values.l), Math.round(values.r)),
@@ -2210,12 +2211,18 @@
           chosen.a.forEach((price, i) => out.push(point({ x: -4.5 + 8.5 * price / maxPrice, y: -2.8 + 5 * chosen.b[i] / maxPages }, price + " → " + chosen.b[i] + "p", "input")));
           out.push(marker({ x: -4.5 + 8.5 * Math.min(1, Math.round(values.x) / maxPrice), y: -2.8 }, "budget " + Math.round(values.x), "muted", { height: 0.5 }));
         }
-        if (view === "number") out.push(label("n = " + Math.round(values.n), "input", { row: 3 }));
+        if (view === "number") { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" · "), "input", { row: 3 })); }
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "rectangle") {
+        const rows = Math.round(values.n !== undefined ? values.n : values.a), cols = Math.round(values.m !== undefined ? values.m : values.b);
+        if (rows >= 1 && cols >= 1 && rows * cols <= 400) { const cells = []; for (let r = 0; r < rows; r += 1) cells.push(".".repeat(cols)); out.push(...algoGridLayers(cells)); }
+        out.push(label(rows + " × " + cols, "input", { row: 3 }));
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "text") {
         const input = typeof chosen.a === "string" ? chosen.a : "";
         const cell = Math.min(0.9, 10 / Math.max(1, input.length));
         for (let i = 0; i < input.length && i < 60; i += 1) out.push(label(input[i], "input", { at: { x: -5 + (i + 0.5) * cell - 0.1, y: 1.4 } }));
+        if (typeof chosen.b === "string") { const cellB = Math.min(0.9, 10 / Math.max(1, chosen.b.length)); for (let i = 0; i < chosen.b.length && i < 60; i += 1) out.push(label(chosen.b[i], "muted", { at: { x: -5 + (i + 0.5) * cellB - 0.1, y: 0.6 } })); }
         const drawText = (value, styleName, y) => { if (typeof value !== "string") return; for (let i = 0; i < value.length && i < 60; i += 1) out.push(label(value[i], styleName, { at: { x: -5 + (i + 0.5) * cell - 0.1, y } })); };
         drawText(context.expected, "expected", -0.2);
         drawText(context.actual, style, -1.2);
@@ -2228,7 +2235,7 @@
           const xOf = (v) => -4.8 + 9.6 * (v - lo) / span;
           list.forEach((p, i) => {
             const y = 2.6 - i * (4.4 / Math.max(1, list.length));
-            out.push(segments([[{ x: xOf(p[0]), y }, { x: xOf(p[1]), y }]], "input", { weight: 4 }), label(p[0] + "–" + p[1], "muted", { at: { x: xOf(p[1]) + 0.15, y: y + 0.12 } }));
+            out.push(segments([[{ x: xOf(p[0]), y }, { x: xOf(p[1]), y }]], "input", { weight: 4 }), label(p[0] + "–" + p[1] + (p.length > 2 ? " · " + p[2] : ""), "muted", { at: { x: xOf(p[1]) + 0.15, y: y + 0.12 } }));
           });
         }
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));

@@ -885,7 +885,7 @@
       const idsOf = (track) => puzzleList().filter((puzzle) => puzzle.track === track).map((puzzle) => puzzle.id);
       same(idsOf("intro"), ["weird-algorithm", "missing-number", "repetitions", "increasing-array", "permutations", "number-spiral", "two-knights", "two-sets", "bit-strings", "trailing-zeros", "coin-piles", "palindrome-reorder", "gray-code", "tower-of-hanoi", "creating-strings", "apple-division", "chessboard-and-queens", "raab-game-i", "mex-grid-construction", "knight-moves-grid", "grid-coloring-i", "digit-queries", "string-reorder", "grid-path-description"]);
       same(idsOf("sorting"), ["distinct-numbers", "apartments", "ferris-wheel", "lower-bound", "upper-bound", "fenwick-add", "fenwick-prefix", "fenwick-kth", "concert-tickets", "restaurant-customers", "movie-festival", "sum-of-two-values", "maximum-subarray-sum", "stick-lengths", "missing-coin-sum", "collecting-numbers", "collecting-numbers-ii", "playlist", "towers", "traffic-lights", "distinct-values-subarrays", "distinct-values-subsequences", "josephus-problem-i", "josephus-problem-ii", "nested-ranges-check", "nested-ranges-count", "heap-push", "heap-pop", "room-allocation", "factory-machines", "tasks-and-deadlines", "reading-books", "sum-of-three-values", "sum-of-four-values", "nearest-smaller-values", "prefix-sums", "subarray-sums-i", "subarray-sums-ii", "subarray-divisibility", "distinct-values-subarrays-ii", "array-division", "movie-festival-ii", "maximum-subarray-sum-ii"]);
-      same(idsOf("dp"), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "grid-paths", "book-shop"]);
+      same(idsOf("dp"), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "removing-digits", "grid-paths", "book-shop", "array-description", "counting-towers", "edit-distance", "longest-common-subsequence", "rectangle-cutting", "minimal-grid-path", "money-sums", "removal-game", "two-sets-ii", "mountain-range", "increasing-subsequence", "projects", "elevator-rides", "counting-tilings", "counting-numbers", "increasing-subsequence-ii"]);
       same(idsOf("graphs"), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "shortest-routes"]);
       same(idsOf("range"), ["static-range-sum-queries", "build-segment-tree", "segment-tree-update", "segment-tree-query", "dynamic-range-sum-queries"]);
       same(idsOf("trees"), ["subordinates", "tree-diameter", "tree-distances", "binary-lifting-table", "kth-ancestor", "company-queries-ii"]);
@@ -931,7 +931,7 @@
   });
 
   test("algo catalog references pass their cases and diagnoses differ", () => {
-    withCatalog(algoApi(), () => checkStageRange(1, 36));
+    withCatalog(algoApi(), () => checkStageRange(1, puzzleList().length));
   });
 
   test("scenes: algo views build valid arguments and analytic checks hold", () => {
