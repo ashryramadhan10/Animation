@@ -228,14 +228,14 @@
     same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["tf2", "toolkit", "advanced", "correction", "estimation", "bayes"]);
     assert(api.TF2_PUZZLE_TRACKS[5].unlockAfter === "ekf-localize-step", "track 6 unlocks after the EKF localization step");
     assert(api.TF2_PUZZLE_TRACKS[5].stages.length === 3, "track 6 lists three stages");
-    assert(api.TF2_PUZZLE_TRACKS[4].unlockAfter === "aisle-correction-step", "track 5 unlocks after the map → odom capstone");
+    assert(api.TF2_PUZZLE_TRACKS[4].unlockAfter === "vision-correction-transform", "track 5 unlocks after the vision correction transform");
     assert(api.TF2_PUZZLE_TRACKS[4].stages.length === 3, "track 5 lists three stages");
     assert(api.TF2_PUZZLE_TRACKS[1].unlockAfter === "stamped-lookup", "track 2 unlocks after the capstone");
     assert(api.TF2_PUZZLE_TRACKS[1].stages.length === 5, "track 2 lists five stages");
     assert(api.TF2_PUZZLE_TRACKS[2].unlockAfter === "icp-match", "track 3 unlocks after the ICP finale");
     assert(api.TF2_PUZZLE_TRACKS[2].stages.length === 3, "track 3 lists three stages");
     assert(api.TF2_PUZZLE_TRACKS[3].unlockAfter === "buffer-lookup", "track 4 unlocks after the buffer finale");
-    assert(api.TF2_PUZZLE_TRACKS[3].stages.length === 3, "track 4 lists three stages");
+    assert(api.TF2_PUZZLE_TRACKS[3].stages.length === 4, "track 4 lists four stages");
   });
 
   // ---------------------------------------------------------------- worker
@@ -727,7 +727,7 @@
   });
 
   test("catalog track 4 stage 18 contains the aisle correction ladder", () => {
-    same(idsInRange(72, 75), ["centerline-from-racks", "single-rack-centerline", "corrected-pose", "aisle-correction-step"]);
+    same(idsInRange(72, 75), ["centerline-from-racks", "single-rack-centerline", "corrected-pose-shift", "aisle-correction-step"]);
     assert(puzzleList().length >= 75, "catalog should hold at least 75 puzzles");
   });
 
@@ -748,16 +748,52 @@
     near(result.correctedPose.yaw, values.robot.yaw - values.aisle.yaw);
   });
 
+  test("catalog track 4 stage 19 contains the vision node bricks", () => {
+    same(idsInRange(76, 83), ["heading-gate", "consensus-outlier-gate", "rate-limit-heading", "aisle-state-blend", "dual-centerline-check", "low-pass-step-limit", "lateral-jump-guard", "vision-correction-transform"]);
+    puzzleList().filter((puzzle) => puzzle.track === "correction").forEach((puzzle) => {
+      assert(/^p5sim\/navigation · scripts\/[a-z_]+\.js · /.test(puzzle.reference.label), puzzle.id + " should name the navigation module it mirrors");
+      assert(/^\.\.\/navigation\/[a-z-]+\/index\.html$/.test(puzzle.reference.url), puzzle.id + " should link a navigation page");
+    });
+  });
+
+  test("catalog stage 19 references pass their cases and diagnoses differ", () => {
+    checkStageRange(76, 83);
+  });
+
+  test("scenes: the vision node bricks agree with the line-based correction", () => {
+    const api = puzzlesApi();
+    const cfg = { emaAlpha: 0.05, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 };
+    const guard = api.getPuzzle("lateral-jump-guard");
+    let step = referenceOutput(guard, [null, 0.2, cfg]);
+    step = referenceOutput(guard, [step.state, 0.55, cfg]);
+    assert(step.held && step.filteredM === 0.2, "an isolated jump is held");
+    step = referenceOutput(guard, [step.state, 0.2, cfg]);
+    assert(!step.held && step.state.pendingJumpCount === 0, "back to normal clears the pending jump");
+    step = referenceOutput(guard, [step.state, 0.55, cfg]); step = referenceOutput(guard, [step.state, 0.56, cfg]); step = referenceOutput(guard, [step.state, 0.55, cfg]);
+    assert(!step.held && step.filteredM > 0.2 && step.filteredM <= 0.2 + cfg.maxStepM + 1e-9, "three repeated frames confirm the jump and ease it in by at most one step");
+    const shift = api.getPuzzle("corrected-pose-shift");
+    const tf = api.getPuzzle("vision-correction-transform");
+    const raw = { x: 1.3, y: 0.7, yaw: 0.4 }, heading = 0.25, c = -0.35;
+    const centerline = { a: -Math.sin(heading), b: Math.cos(heading), c };
+    const corrected = referenceOutput(shift, [raw, centerline, heading, 0]);
+    const edges = referenceOutput(tf, [raw, { x: corrected.x, y: corrected.y }, heading]);
+    near(edges.mapFromOdom.x, 0); near(edges.mapFromOdom.y, c); near(edges.mapFromOdom.yaw, -heading);
+    near(edges.correctedPose.y, centerline.a * raw.x + centerline.b * raw.y + centerline.c);
+    near(edges.correctedPose.yaw, raw.yaw - heading);
+    const blend = referenceOutput(api.getPuzzle("aisle-state-blend"), [{ headingRad: 3.1, centerlineC: 0, halfWidthM: 1.6 }, { headingRad: -3.1, centerlineC: 0, halfWidthM: 1.6, dualSide: true }, 0.5]);
+    assert(Math.abs(Math.abs(blend.headingRad) - Math.PI) < 1e-9, "the aisle state blends headings on the circle");
+  });
+
   // ---------------------------------------------------------------- estimation track
   test("catalog track 5 contains kinematics, uncertainty, and estimation ladders", () => {
-    same(idsInRange(76, 78), ["diff-drive-twist", "integrate-gyro", "twist-in-sensor-frame"]);
-    same(idsInRange(79, 82), ["covariance-propagate-motion", "compose-uncertain", "mahalanobis-distance", "covariance-ellipse"]);
-    same(idsInRange(83, 87), ["ekf-predict", "ekf-update-position", "particle-weights", "resample-particles", "ekf-localize-step"]);
-    assert(puzzleList().length >= 87, "catalog should hold at least 87 puzzles");
+    same(idsInRange(84, 86), ["diff-drive-twist", "integrate-gyro", "twist-in-sensor-frame"]);
+    same(idsInRange(87, 90), ["covariance-propagate-motion", "compose-uncertain", "mahalanobis-distance", "covariance-ellipse"]);
+    same(idsInRange(91, 95), ["ekf-predict", "ekf-update-position", "particle-weights", "resample-particles", "ekf-localize-step"]);
+    assert(puzzleList().length >= 95, "catalog should hold at least 95 puzzles");
   });
 
   test("catalog stages 19 to 21 references pass their cases and diagnoses differ", () => {
-    checkStageRange(76, 87);
+    checkStageRange(84, 95);
   });
 
   test("scenes: estimation views build valid arguments and analytic checks hold", () => {
@@ -777,10 +813,10 @@
 
   // ---------------------------------------------------------------- bayesian filters track
   test("catalog track 6 contains the scalar, multivariate, and nonlinear ladders", () => {
-    same(idsInRange(88, 92), ["gh-filter-step", "discrete-predict", "discrete-update", "gaussian-multiply", "kalman-1d-step"]);
-    same(idsInRange(93, 98), ["mat-mul-2", "mat-inv-2", "constant-velocity-model", "kf-predict", "kf-update", "kalman-track-step"]);
-    same(idsInRange(99, 102), ["sigma-points", "unscented-transform", "unscented-polar", "rts-smoother-step"]);
-    assert(puzzleList().length === 102, "catalog should hold 102 puzzles");
+    same(idsInRange(96, 100), ["gh-filter-step", "discrete-predict", "discrete-update", "gaussian-multiply", "kalman-1d-step"]);
+    same(idsInRange(101, 106), ["mat-mul-2", "mat-inv-2", "constant-velocity-model", "kf-predict", "kf-update", "kalman-track-step"]);
+    same(idsInRange(107, 110), ["sigma-points", "unscented-transform", "unscented-polar", "rts-smoother-step"]);
+    assert(puzzleList().length === 110, "catalog should hold 110 puzzles");
     puzzleList().filter((puzzle) => puzzle.track === "bayes").forEach((puzzle) => {
       assert(/rlabbe\/Kalman-and-Bayesian-Filters-in-Python/.test(puzzle.reference.url), puzzle.id + " should link the book");
     });
@@ -795,7 +831,7 @@
   });
 
   test("catalog stages 22 to 24 references pass their cases and diagnoses differ", () => {
-    checkStageRange(88, 102);
+    checkStageRange(96, 110);
   });
 
   test("scenes: bayes views build valid arguments and analytic checks hold", () => {

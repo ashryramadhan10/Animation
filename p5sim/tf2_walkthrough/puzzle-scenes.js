@@ -1309,6 +1309,16 @@
       rightOffsetLine: (values) => ({ a: 0, b: 1, c: -values.rightOffset }),
       visibleLine: (values) => lineOf(DEFAULT_AISLE, values.rack),
       mapCenterline: () => ({ a: 0, b: 1, c: 0 }),
+      shiftCenterline: (values) => ({ a: 0, b: 1, c: values.c }),
+      gateBeam: (values) => ({ lineExtentM: values.extent, inlierCount: Math.round(values.inliers), inlierRatio: values.ratio }),
+      gateLimits: () => ({ minExtentM: 2, minInliers: 500, minInlierRatio: 0.35 }),
+      outlierSamples: (values) => [{ trackId: 1, headingRad: values.beamA, weight: 2 }, { trackId: 2, headingRad: values.beamB, weight: 2 }, { trackId: 3, headingRad: values.beamC, weight: 1 }],
+      blendState: () => ({ headingRad: 0, centerlineC: -0.4, halfWidthM: 1.6 }),
+      blendMeas: (values) => ({ headingRad: values.measHeading, centerlineC: values.measC, halfWidthM: 1.5, dualSide: true }),
+      rightSkewedLine: (values) => ({ a: -Math.sin(values.rightSkew), b: Math.cos(values.rightSkew), c: -Math.cos(values.rightSkew) * values.rightOffset }),
+      guardState: (values) => ({ filtered: 0.2, lastAcceptedRaw: 0.2, pendingJumpRaw: values.pending === "none" ? null : 0.6, pendingJumpCount: values.pending === "none" ? 0 : (values.pending === "one frame" ? 1 : 2) }),
+      guardConfig: () => ({ emaAlpha: 0.5, jumpThresholdM: 0.25, jumpConfirmFrames: 3, jumpClusterThresholdM: 0.08, maxStepM: 0.04 }),
+      correctedFromC: (values) => ({ x: values.robot.x - values.c * Math.sin(values.aisle), y: values.robot.y + values.c * Math.cos(values.aisle) }),
       correctionFrame: (values) => {
         const toLaser = invert(compose(values.robot, AISLE_LASER));
         return { odomFromBase: values.robot, baseFromLaser: AISLE_LASER, leftPoints: rackFace(values.aisle, "left").map((p) => applyPoint(toLaser, p)), rightPoints: rackFace(values.aisle, "right").map((p) => applyPoint(toLaser, p)) };
@@ -1373,10 +1383,77 @@
         drawRacks(DEFAULT_AISLE, "muted");
         out.push(glyph(context.values.robot, "robot", "input"), ...lineLayers(lineOf(DEFAULT_AISLE, context.values.rack), "input", context.values.rack + " rack (visible)", false));
         out.push(...lineLayers(context.expected, "expected", "expected centerline", true), ...lineLayers(context.actual, resultStyle(context), resultLabel(context), false));
-      } else if (view === "correct") {
-        out.push(...lineLayers({ a: 0, b: 1, c: 0 }, "muted", "centerline", false), glyph(context.values.robot, "robot", "input"));
-        if (isTransform(context.expected)) out.push(glyph(context.expected, "expected", "expected", { dashed: true }));
+      } else if (view === "shift") {
+        const line = { a: 0, b: 1, c: context.values.c };
+        out.push(...lineLayers(line, "input", "centerline in odom (c = " + fmt(context.values.c) + ")", false), lineNormalArrow(line, "input"), glyph(context.values.robot, "robot (odom)", "input"));
+        out.push(...lineLayers({ a: 0, b: 1, c: 0 }, "muted", "where the centerline lands after the shift", true));
+        if (isTransform(context.expected)) out.push(arrow(context.values.robot, context.expected, "expected", { dashed: true }), glyph(context.expected, "expected", "expected", { dashed: true }));
         if (isTransform(context.actual)) { out.push(glyph(context.actual, resultLabel(context), resultStyle(context))); out.push(...errorArrow(context, context.actual, context.expected)); }
+        out.push(label("every odom point moves by c along the normal; the robot's new y is its real distance from the middle", "muted", { row: 3 }));
+      } else if (view === "gate") {
+        drawRacks(DEFAULT_AISLE, "muted");
+        const half = context.values.extent * 0.5;
+        out.push(segments([[{ x: -half, y: RACK_HALF_WIDTH }, { x: half, y: RACK_HALF_WIDTH }]], "input", { weight: 4 }));
+        out.push(label("fit: " + fmt(context.values.extent) + " m, " + Math.round(context.values.inliers) + " inliers, ratio " + fmt(context.values.ratio), "input", { at: { x: -2.4, y: RACK_HALF_WIDTH + 0.45 } }));
+        out.push(label("limits: 2.00 m, 500 inliers, ratio 0.35", "muted", { at: { x: -2.4, y: -RACK_HALF_WIDTH - 0.45 } }));
+        const gateText = (v) => v && typeof v === "object" ? (v.valid ? "votes on the heading" : "rejected (" + String(v.reason) + ")") : "-";
+        if (context.expected) out.push(label("expected: " + gateText(context.expected), "expected", { row: 3 }));
+        if (context.actual && typeof context.actual === "object") out.push(label(resultLabel(context) + ": " + gateText(context.actual), resultStyle(context), { row: 4 }));
+      } else if (view === "outliers") {
+        [["A", context.values.beamA, 2, 2.6], ["B", context.values.beamB, 2, 2.0], ["C", context.values.beamC, 1, 1.4]].forEach(([name, yaw, weight, radius]) => {
+          out.push(arrow({ x: 0, y: 0 }, direction(yaw, radius), "input", { weight: 1 + weight }), label("beam " + name + " ×" + weight + " " + degrees(yaw), "input", { at: direction(yaw, radius + 0.3) }));
+        });
+        const selText = (v) => v && typeof v === "object" ? (v.valid ? "heading " + degrees(v.headingRad) : "no consensus") + " · accepted " + (Array.isArray(v.accepted) ? v.accepted.join(",") || "-" : "?") + " · rejected " + (Array.isArray(v.rejected) ? v.rejected.join(",") || "-" : "?") : "-";
+        if (context.expected && context.expected.valid) out.push(arrow({ x: 0, y: 0 }, direction(context.expected.headingRad, 1.8), "expected", { dashed: true }));
+        if (context.actual && context.actual.valid && Number.isFinite(context.actual.headingRad)) out.push(arrow({ x: 0, y: 0 }, direction(context.actual.headingRad, 1.5), resultStyle(context), { weight: 3 }));
+        out.push(label("gate 0.10 rad (5.7°) around the first weighted mean", "muted", { row: 3 }));
+        if (context.expected) out.push(label("expected: " + selText(context.expected), "expected", { row: 4 }));
+        if (context.actual) out.push(label(resultLabel(context) + ": " + selText(context.actual), resultStyle(context), { row: 5 }));
+      } else if (view === "rate") {
+        const previous = 0.1, dt = (context.values.dt > 0 && context.values.dt <= 1) ? context.values.dt : 1 / 30, maxStep = 0.4 * dt;
+        out.push(arrow({ x: 0, y: 0 }, direction(previous, 2.4), "muted", { dashed: true }), label("published " + degrees(previous), "muted", { at: direction(previous, 2.7) }));
+        out.push(arrow({ x: 0, y: 0 }, direction(context.values.heading, 2.2), "input", { weight: 1.5 }), label("consensus " + degrees(context.values.heading), "input", { at: direction(context.values.heading, 2.5) }));
+        out.push(arc({ x: 0, y: 0 }, 1.2, previous - maxStep, previous + maxStep, "muted", { arrowhead: false }));
+        out.push(label("allowed step ±" + degrees(maxStep) + " = 0.4 rad/s × dt " + fmt(dt) + " s" + (dt !== context.values.dt ? " (fallback 1/30)" : ""), "muted", { row: 3 }));
+        if (typeof context.expected === "number") out.push(arrow({ x: 0, y: 0 }, direction(context.expected, 1.8), "expected", { dashed: true }));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(arrow({ x: 0, y: 0 }, direction(context.actual, 1.5), resultStyle(context), { weight: 3 }));
+      } else if (view === "blend") {
+        const lineFrom = (v) => v && typeof v === "object" && Number.isFinite(v.headingRad) && Number.isFinite(v.centerlineC) ? { a: -Math.sin(v.headingRad), b: Math.cos(v.headingRad), c: v.centerlineC } : null;
+        out.push(...lineLayers(lineFrom({ headingRad: 0, centerlineC: -0.4 }), "muted", "state: heading 0°, c −0.40, half width 1.60", false));
+        out.push(...lineLayers(lineFrom({ headingRad: context.values.measHeading, centerlineC: context.values.measC }), "input", "measurement " + degrees(context.values.measHeading) + ", c " + fmt(context.values.measC) + " (dual, half width 1.50)", false));
+        out.push(...lineLayers(lineFrom(context.expected), "expected", "expected blend", true), ...lineLayers(lineFrom(context.actual), resultStyle(context), resultLabel(context), false));
+      } else if (view === "dual-check") {
+        const right = { a: -Math.sin(context.values.rightSkew), b: Math.cos(context.values.rightSkew), c: -Math.cos(context.values.rightSkew) * context.values.rightOffset };
+        out.push(...lineLayers({ a: 0, b: 1, c: -context.values.leftOffset }, "input", "left rack", false), ...lineLayers(right, "input", "right rack (skew " + degrees(context.values.rightSkew) + ")", false));
+        out.push(...lineLayers(context.expected, "expected", "expected centerline", true), ...lineLayers(context.actual, resultStyle(context), resultLabel(context), false));
+        if (context.expected === null && !context.error) out.push(label("expected: rejected (null)", "expected", { row: 3 }));
+        if (context.actual === null && !context.error) out.push(label(resultLabel(context) + ": rejected (null)", resultStyle(context), { row: 4 }));
+        out.push(label("checks: normals dot ≥ 0.7, half width in [0.3, 6] m", "muted", { row: 5 }));
+      } else if (view === "lowpass") {
+        out.push(...lineLayers({ a: 0, b: 1, c: -0.2 }, "muted", "current filtered c = 0.20", false), ...lineLayers({ a: 0, b: 1, c: -context.values.raw }, "input", "raw c " + fmt(context.values.raw), false));
+        if (typeof context.expected === "number") out.push(...lineLayers({ a: 0, b: 1, c: -context.expected }, "expected", "expected " + fmt(context.expected), true));
+        if (typeof context.actual === "number" && Number.isFinite(context.actual)) out.push(...lineLayers({ a: 0, b: 1, c: -context.actual }, resultStyle(context), resultLabel(context) + " " + fmt(context.actual), false));
+      } else if (view === "jump-guard") {
+        const pendingText = context.values.pending === "none" ? "no pending jump" : "pending jump at 0.60 seen for " + context.values.pending;
+        out.push(...lineLayers({ a: 0, b: 1, c: -0.2 }, "muted", "filtered c 0.20, last accepted 0.20 · " + pendingText, false), ...lineLayers({ a: 0, b: 1, c: -context.values.raw }, "input", "raw c " + fmt(context.values.raw), false));
+        const outText = (v) => v && typeof v === "object" && Number.isFinite(v.filteredM) ? "c " + fmt(v.filteredM) + (v.held ? " (HELD)" : " (accepted)") : "-";
+        if (context.expected && Number.isFinite(context.expected.filteredM)) out.push(...lineLayers({ a: 0, b: 1, c: -context.expected.filteredM }, "expected", "expected " + outText(context.expected), true));
+        if (context.actual && typeof context.actual === "object" && Number.isFinite(context.actual.filteredM)) out.push(...lineLayers({ a: 0, b: 1, c: -context.actual.filteredM }, resultStyle(context), resultLabel(context) + " " + outText(context.actual), false));
+        out.push(label("jump threshold 0.25 · confirm 3 frames · cluster 0.08 · alpha 0.5 · max step 0.04", "muted", { row: 3 }));
+      } else if (view === "vision-tf") {
+        const h = context.values.aisle, n = { x: -Math.sin(h), y: Math.cos(h) };
+        out.push(frame(identity(), "odom", "muted"), ...lineLayers({ a: n.x, b: n.y, c: context.values.c }, "input", "centerline in odom (c " + fmt(context.values.c) + ", heading " + degrees(h) + ")", false), glyph(context.values.robot, "raw FCU (odom)", "input"));
+        const corrected = { x: context.values.robot.x + context.values.c * n.x, y: context.values.robot.y + context.values.c * n.y };
+        out.push(arrow(context.values.robot, corrected, "input", { weight: 1.5 }), point(corrected, "shifted by c", "input"));
+        if (context.expected && isTransform(context.expected.mapFromOdom)) {
+          out.push(frame(context.expected.mapFromOdom, "expected map→odom", "expected", { size: 0.8, alpha: 170 }));
+          if (isTransform(context.expected.correctedPose)) out.push(glyph(context.expected.correctedPose, "expected corrected_pose (map)", "expected", { dashed: true }));
+        }
+        if (context.actual && isTransform(context.actual.mapFromOdom)) {
+          out.push(frame(context.actual.mapFromOdom, resultLabel(context) + " map→odom", resultStyle(context), { size: 0.8, alpha: 170 }));
+          if (isTransform(context.actual.correctedPose)) out.push(glyph(context.actual.correctedPose, resultLabel(context) + " corrected_pose", resultStyle(context)));
+        }
+        out.push(label("corrected_pose.y must equal the raw pose's signed distance to the centerline", "muted", { row: 3 }));
       } else {
         out.push(...lineLayers({ a: 0, b: 1, c: -RACK_HALF_WIDTH }, "muted", "map left rack", false), ...lineLayers({ a: 0, b: 1, c: RACK_HALF_WIDTH }, "muted", "map right rack", false), frame(identity(), "map", "muted"));
         out.push(frame(context.values.aisle, "aisle drift (odom)", "input"), glyph(context.values.robot, "robot (odom)", "input"));

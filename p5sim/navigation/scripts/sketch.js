@@ -2,7 +2,6 @@
 "use strict";
 
 const Demos = global.VisionPipelineP5Demos;
-const Core = global.VisionPipelineCore;
 
 function canvasSize() {
   const host = document.getElementById("canvasHost");
@@ -17,10 +16,10 @@ function canvasSize() {
 
 function populateDemoSelect(selectEl) {
   selectEl.innerHTML = "";
-  for (const id of Core.DemoIds) {
+  for (const id of Demos.DemoIds) {
     const option = document.createElement("option");
     option.value = id;
-    option.textContent = Core.DemoLabels[id] || id;
+    option.textContent = Demos.DemoLabels[id] || id;
     selectEl.appendChild(option);
   }
 }
