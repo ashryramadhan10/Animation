@@ -157,7 +157,7 @@
       const compiled = api.compileProgram(referenceProgram(puzzle));
       assert(compiled.learner.ok, puzzle.id + " reference failed to compile: " + (compiled.learner.ok ? "" : compiled.learner.error.message));
       compiled.variants.forEach((variant) => assert(variant.compiled.ok, puzzle.id + " variant " + variant.id + " failed to compile"));
-      const cases = puzzle.publicCases.concat(puzzle.checkCases);
+      const cases = requireApi(engine, "puzzle-engine.js").resolveCases(puzzle);
       const variantDiffers = {};
       cases.forEach((testCase) => {
         const result = api.evaluateCompiled(compiled, testCase.args);
@@ -874,28 +874,59 @@
     return { TF2_PUZZLES: api.ALGO_PUZZLES, TF2_PUZZLE_TRACKS: api.ALGO_PUZZLE_TRACKS, getPuzzle: api.getPuzzle };
   }
 
-  test("algo catalog lists the six CSES sections and validates", () => {
+  test("algo catalog lists its sections in site order and validates", () => {
     withCatalog(algoApi(), () => {
       const engineApi = requireApi(engine, "puzzle-engine.js");
       const status = engineApi.validateCatalog(puzzleList(), scenesApi().SCENE_KINDS);
       assert(status.valid, status.message);
-      assert(puzzleList().length === 36, "algo catalog should hold 36 puzzles");
-      same(puzzlesApi().TF2_PUZZLE_TRACKS.map((track) => track.id), ["intro", "sorting", "dp", "graphs", "range", "trees"]);
-      same(idsInRange(1, 6), ["weird-algorithm", "missing-number", "increasing-array", "permutations", "two-sets", "chessboard-and-queens"]);
-      same(idsInRange(7, 12), ["distinct-numbers", "prefix-sums", "lower-bound", "sum-of-two-values", "maximum-subarray-sum", "ferris-wheel"]);
-      same(idsInRange(13, 18), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "grid-paths", "book-shop"]);
-      same(idsInRange(19, 25), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "heap-push", "heap-pop", "shortest-routes"]);
-      same(idsInRange(26, 30), ["static-range-sum-queries", "build-segment-tree", "segment-tree-update", "segment-tree-query", "dynamic-range-sum-queries"]);
-      same(idsInRange(31, 36), ["subordinates", "tree-diameter", "tree-distances", "binary-lifting-table", "kth-ancestor", "company-queries-ii"]);
-      puzzleList().forEach((puzzle) => {
+      const api = puzzlesApi();
+      same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["intro", "sorting", "dp", "graphs", "range", "trees"]);
+      const idsOf = (track) => puzzleList().filter((puzzle) => puzzle.track === track).map((puzzle) => puzzle.id);
+      same(idsOf("intro"), ["weird-algorithm", "missing-number", "increasing-array", "permutations", "two-sets", "chessboard-and-queens"]);
+      same(idsOf("sorting"), ["distinct-numbers", "prefix-sums", "lower-bound", "sum-of-two-values", "maximum-subarray-sum", "ferris-wheel"]);
+      same(idsOf("dp"), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "grid-paths", "book-shop"]);
+      same(idsOf("graphs"), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "heap-push", "heap-pop", "shortest-routes"]);
+      same(idsOf("range"), ["static-range-sum-queries", "build-segment-tree", "segment-tree-update", "segment-tree-query", "dynamic-range-sum-queries"]);
+      same(idsOf("trees"), ["subordinates", "tree-diameter", "tree-distances", "binary-lifting-table", "kth-ancestor", "company-queries-ii"]);
+      puzzleList().forEach((puzzle, index) => {
+        assert(puzzle.number === index + 1, puzzle.id + " is numbered " + puzzle.number);
         assert(/^https:\/\/cses\.fi\/book\//.test(puzzle.reference.url), puzzle.id + " should link the handbook");
         assert(/^\d+$/.test(puzzle.walkthroughChapter), puzzle.id + " should carry its CSES task id");
-        const singleOperation = [6, 9, 23, 24, 28, 29, 35].includes(puzzle.number);
-        assert(singleOperation || puzzle.cases.some((entry) => /time limit/.test(entry.label)), puzzle.id + " needs a hidden time-limit case");
+        const singleOperation = ["chessboard-and-queens", "lower-bound", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor"].includes(puzzle.id);
+        assert(singleOperation || puzzle.hidden.length > 0, puzzle.id + " needs a hidden time-limit case");
         const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
         assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes");
       });
+      const unlocked = engineApi.unlockedIds(puzzleList(), api.TF2_PUZZLE_TRACKS, engineApi.createProgress());
+      same(Array.from(unlocked), ["weird-algorithm", "distinct-numbers", "dice-combinations", "counting-rooms", "static-range-sum-queries", "subordinates"]);
     });
+  });
+
+  test("engine unlocks by prefix inside each available track", () => {
+    const api = requireApi(engine, "puzzle-engine.js");
+    const puzzles = [
+      { id: "a1", track: "a", number: 1 }, { id: "a2", track: "a", number: 2 }, { id: "a3", track: "a", number: 3 },
+      { id: "b1", track: "b", number: 4 }, { id: "b2", track: "b", number: 5 },
+    ];
+    const tracks = [{ id: "a", stages: [] }, { id: "b", unlockAfter: "a3", stages: [] }];
+    const fresh = api.createProgress();
+    same(Array.from(api.unlockedIds(puzzles, tracks, fresh)), ["a1"]);
+    fresh.solved.a1 = { completedAt: "now" };
+    same(Array.from(api.unlockedIds(puzzles, tracks, fresh)), ["a1", "a2"]);
+    fresh.solved.a2 = { completedAt: "now" };
+    fresh.solved.a3 = { completedAt: "now" };
+    same(Array.from(api.unlockedIds(puzzles, tracks, fresh)), ["a1", "a2", "a3", "b1"]);
+  });
+
+  test("engine resolves hidden cases lazily and caches them", () => {
+    const api = requireApi(engine, "puzzle-engine.js");
+    let calls = 0;
+    const puzzle = { publicCases: [{ args: [1], expected: 2, label: "public" }], checkCases: [], hidden: [{ label: "hidden", make: () => { calls += 1; return [5]; } }], solve: (n) => n + 1 };
+    const first = api.resolveCases(puzzle);
+    const second = api.resolveCases(puzzle);
+    same(first.map((entry) => entry.label), ["public", "hidden"]);
+    same(first[1].expected, 6);
+    assert(calls === 1 && second.length === 2, "hidden cases should be generated once");
   });
 
   test("algo catalog references pass their cases and diagnoses differ", () => {
@@ -905,6 +936,17 @@
   test("scenes: algo views build valid arguments and analytic checks hold", () => {
     withCatalog(algoApi(), () => {
       checkSceneKinds(["algo"]);
+      puzzleList().forEach((puzzle) => {
+        if (typeof puzzle.brute !== "function" || typeof puzzle.small !== "function") return;
+        const next = requireApi(algoCatalog, "algo-puzzles.js");
+        for (let round = 0; round < 60; round += 1) {
+          const args = puzzle.small(round);
+          const fast = puzzle.solve.apply(null, JSON.parse(JSON.stringify(args)));
+          const slow = puzzle.brute.apply(null, JSON.parse(JSON.stringify(args)));
+          assert(valuesMatch(puzzle.comparator, fast, slow), puzzle.id + " disagrees with its brute force on " + JSON.stringify(args) + ": " + JSON.stringify(fast) + " vs " + JSON.stringify(slow));
+        }
+        assert(next, "catalog present");
+      });
       const api = puzzlesApi();
       const values = [3, 2, 4, 5, 1, 1, 5, 3];
       const prefix = referenceOutput(api.getPuzzle("prefix-sums"), [values]);

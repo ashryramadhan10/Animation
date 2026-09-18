@@ -2030,7 +2030,7 @@
     "company-queries-ii": { "CSES sample": { a: 5, b: [1, 1, 2, 3], c: [[4, 5], [4, 2], [3, 5]] }, chain: { a: 5, b: [1, 2, 3, 4], c: [[5, 2], [3, 3]] }, star: { a: 5, b: [1, 1, 1, 1], c: [[2, 3], [4, 5]] } },
   };
   function algoPreset(values, puzzle) {
-    const table = ALGO_PRESETS[puzzle.id] || {};
+    const table = puzzle.presets || ALGO_PRESETS[puzzle.id] || {};
     return table[values.preset] || table[Object.keys(table)[0]] || {};
   }
   function algoSegmentTree(list) {
@@ -2205,6 +2205,31 @@
           out.push(marker({ x: -4.5 + 8.5 * Math.min(1, Math.round(values.x) / maxPrice), y: -2.8 }, "budget " + Math.round(values.x), "muted", { height: 0.5 }));
         }
         if (view === "number") out.push(label("n = " + Math.round(values.n), "input", { row: 3 }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "text") {
+        const input = typeof chosen.a === "string" ? chosen.a : "";
+        const cell = Math.min(0.9, 10 / Math.max(1, input.length));
+        for (let i = 0; i < input.length && i < 60; i += 1) out.push(label(input[i], "input", { at: { x: -5 + (i + 0.5) * cell - 0.1, y: 1.4 } }));
+        const drawText = (value, styleName, y) => { if (typeof value !== "string") return; for (let i = 0; i < value.length && i < 60; i += 1) out.push(label(value[i], styleName, { at: { x: -5 + (i + 0.5) * cell - 0.1, y } })); };
+        drawText(context.expected, "expected", -0.2);
+        drawText(context.actual, style, -1.2);
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "intervals") {
+        const list = Array.isArray(chosen.a) ? chosen.a.filter((p) => Array.isArray(p) && p.length >= 2) : [];
+        if (list.length) {
+          const lo = Math.min(...list.map((p) => p[0])), hi = Math.max(...list.map((p) => p[1]));
+          const span = Math.max(1, hi - lo);
+          const xOf = (v) => -4.8 + 9.6 * (v - lo) / span;
+          list.forEach((p, i) => {
+            const y = 2.6 - i * (4.4 / Math.max(1, list.length));
+            out.push(segments([[{ x: xOf(p[0]), y }, { x: xOf(p[1]), y }]], "input", { weight: 4 }), label(p[0] + "–" + p[1], "muted", { at: { x: xOf(p[1]) + 0.15, y: y + 0.12 } }));
+          });
+        }
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "two-arrays") {
+        const a = Array.isArray(chosen.a) ? chosen.a : [], b = Array.isArray(chosen.b) ? chosen.b : [];
+        if (a.length) out.push(algoBars(a, "input", { base: 0.4, height: 2.2, weight: 8 }), label("a", "input", { at: { x: -5.4, y: 0.5 } }));
+        if (b.length) out.push(algoBars(b, "muted", { base: -3.2, height: 2.2, weight: 8 }), label("b", "muted", { at: { x: -5.4, y: -3.1 } }));
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "graph") {
         const positions = chosen.c || [];

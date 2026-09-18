@@ -146,7 +146,7 @@
       const error = (response && response.error) || { kind: "worker", message: "The code runner did not return a result." };
       return { pass: false, kind: error.kind || "worker", message: error.message };
     }
-    const cases = puzzle.publicCases.concat(puzzle.checkCases);
+    const cases = resolveCases(puzzle);
     for (let index = 0; index < cases.length; index += 1) {
       const result = response.results[index];
       const testCase = cases[index];
@@ -166,6 +166,40 @@
       }
     }
     return { pass: true, kind: "success", message: "All behaviors match. Component unlocked.", actual: response.results[0] ? response.results[0].learner.value : null, testCase: cases[0] || null };
+  }
+
+  const hiddenCaseCache = new WeakMap();
+  function resolveCases(puzzle) {
+    const base = puzzle.publicCases.concat(puzzle.checkCases);
+    if (!Array.isArray(puzzle.hidden) || puzzle.hidden.length === 0 || typeof puzzle.solve !== "function") return base;
+    let extra = hiddenCaseCache.get(puzzle);
+    if (!extra) {
+      extra = puzzle.hidden.map((entry) => {
+        const args = entry.make();
+        const expected = puzzle.solve.apply(null, JSON.parse(JSON.stringify(args)));
+        return { label: entry.label, args, expected };
+      });
+      hiddenCaseCache.set(puzzle, extra);
+    }
+    return base.concat(extra);
+  }
+
+  function unlockedIds(puzzles, tracks, progress) {
+    const states = new Map(trackStates(tracks, progress).map((entry) => [entry.id, entry.state]));
+    const byTrack = new Map();
+    puzzles.forEach((puzzle) => {
+      if (!byTrack.has(puzzle.track)) byTrack.set(puzzle.track, []);
+      byTrack.get(puzzle.track).push(puzzle);
+    });
+    const unlocked = new Set();
+    byTrack.forEach((members, trackId) => {
+      if (states.has(trackId) && states.get(trackId) !== "available") return;
+      for (let i = 0; i < members.length; i += 1) {
+        unlocked.add(members[i].id);
+        if (!progress.solved[members[i].id]) break;
+      }
+    });
+    return unlocked;
   }
 
   function createProgress() {
@@ -398,7 +432,7 @@
     STORAGE_KEY, SCHEMA_VERSION, COMPARATORS, MUTATION_MESSAGE,
     compareOutput, diagnose, evaluateLive, evaluateCheck,
     createProgress, loadProgress, saveProgress, completePuzzle, dependentPuzzleIds, resetPuzzle,
-    collectDependencyIds, buildProgram, trackStates, createLiveSession, validateCatalog,
+    collectDependencyIds, buildProgram, trackStates, createLiveSession, validateCatalog, resolveCases, unlockedIds,
   });
 
   Object.assign(root, api);

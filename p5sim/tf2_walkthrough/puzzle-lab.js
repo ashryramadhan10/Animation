@@ -39,6 +39,13 @@
 
   function twoDigits(number) { return String(number).padStart(2, "0"); }
   function currentPuzzle() { return puzzles[currentIndex]; }
+  function unlockedNow() { return root.unlockedIds(puzzles, tracks, progress); }
+  function isUnlocked(index) { return index >= 0 && index < puzzles.length && unlockedNow().has(puzzles[index].id); }
+  function firstOpenIndex() {
+    const open = unlockedNow();
+    const index = puzzles.findIndex((puzzle) => open.has(puzzle.id) && !progress.solved[puzzle.id]);
+    return index >= 0 ? index : 0;
+  }
   function escapeHtml(value) { const node = document.createElement("span"); node.textContent = value; return node.innerHTML; }
 
   function save() {
@@ -91,6 +98,7 @@
 
   function renderMap() {
     dom.stageMap.innerHTML = "";
+    const open = unlockedNow();
     const states = root.trackStates(tracks, progress);
     tracks.forEach((track) => {
       const state = states.find((entry) => entry.id === track.id).state;
@@ -128,7 +136,7 @@
           stageMembers.forEach((puzzle) => {
             const index = puzzle.number - 1;
             const solvedPuzzle = Boolean(progress.solved[puzzle.id]);
-            const locked = index > progress.highestUnlocked;
+            const locked = !open.has(puzzle.id);
             const button = document.createElement("button");
             button.type = "button";
             button.className = "puzzle-map-button";
@@ -189,7 +197,7 @@
     const next = puzzles[currentIndex + 1];
     dom.previousPuzzle.disabled = !previous;
     dom.previousPuzzleLabel.textContent = previous ? previous.title : "Start";
-    const nextLocked = Boolean(next) && currentIndex + 1 > progress.highestUnlocked;
+    const nextLocked = Boolean(next) && !isUnlocked(currentIndex + 1);
     dom.nextPuzzle.disabled = !next || nextLocked;
     dom.nextPuzzle.title = nextLocked ? "Press Check (Ctrl+Shift+Enter) on this puzzle to unlock the next one." : "";
     dom.nextPuzzleLabel.textContent = next ? (nextLocked ? "Check to unlock · " + next.title : next.title) : "Track complete";
@@ -288,7 +296,7 @@
   }
 
   function navigate(index, options) {
-    if (index < 0 || index >= puzzles.length || index > progress.highestUnlocked) return;
+    if (!isUnlocked(index)) return;
     currentIndex = index;
     progress.currentPuzzleId = currentPuzzle().id;
     save();
@@ -301,10 +309,10 @@
   function initialIndex() {
     const hashId = root.location.hash.replace(/^#/, "");
     const hashIndex = puzzles.findIndex((puzzle) => puzzle.id === hashId);
-    if (hashIndex >= 0 && hashIndex <= progress.highestUnlocked) return hashIndex;
+    if (hashIndex >= 0 && isUnlocked(hashIndex)) return hashIndex;
     const savedIndex = puzzles.findIndex((puzzle) => puzzle.id === progress.currentPuzzleId);
-    if (savedIndex >= 0 && savedIndex <= progress.highestUnlocked) return savedIndex;
-    return Math.min(progress.highestUnlocked, puzzles.length - 1);
+    if (savedIndex >= 0 && isUnlocked(savedIndex)) return savedIndex;
+    return firstOpenIndex();
   }
 
   function updateCursorStatus() {
@@ -386,7 +394,7 @@
     setFeedback("Checking every case…", "ready");
     sketch.setState({ running: true });
     storeDraft();
-    const cases = puzzle.publicCases.concat(puzzle.checkCases);
+    const cases = root.resolveCases(puzzle);
     let response;
     try {
       response = await session.check(program, cases);
@@ -471,8 +479,8 @@
     root.addEventListener("hashchange", () => {
       const id = root.location.hash.replace(/^#/, "");
       const index = puzzles.findIndex((puzzle) => puzzle.id === id);
-      if (index >= 0 && index <= progress.highestUnlocked) navigate(index);
-      else if (index > progress.highestUnlocked) setFeedback("That build is still locked. Complete the preceding components first.", "error");
+      if (index >= 0 && isUnlocked(index)) navigate(index);
+      else if (index >= 0) setFeedback("That build is still locked. Complete the preceding components first.", "error");
     });
   }
 
