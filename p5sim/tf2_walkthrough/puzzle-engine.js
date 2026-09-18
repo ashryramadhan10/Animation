@@ -107,6 +107,14 @@
     return compareValue(actual, expected, epsilon, "result", angleFields);
   }
 
+  function matchOutput(puzzle, args, actual, expected) {
+    if (typeof puzzle.accept !== "function") return compareOutput(puzzle.comparator, actual, expected, puzzle.tolerance);
+    let verdict;
+    try { verdict = puzzle.accept(JSON.parse(JSON.stringify(args || [])), actual, expected); } catch (error) { verdict = "The answer could not be checked: " + error.message; }
+    const pass = verdict === true;
+    return { pass, message: pass ? "Values match." : (typeof verdict === "string" ? verdict : "The answer is not valid for this input."), delta: pass ? null : { path: "result", actual, expected } };
+  }
+
   function diagnose(puzzle, actual, variants) {
     if (!variants) return null;
     for (const entry of puzzle.diagnoses) {
@@ -121,7 +129,7 @@
     return { kind, message, expected: null, actual: null, comparison: null, diagnosis: null, error: null, ...(extra || {}) };
   }
 
-  function evaluateLive(puzzle, response) {
+  function evaluateLive(puzzle, response, args) {
     if (!response || !response.ok) {
       const error = (response && response.error) || { kind: "worker", message: "The code runner did not return a result." };
       return liveResult(error.kind || "worker", error.message, { error });
@@ -135,7 +143,7 @@
     const expected = result.reference.value;
     if (!result.learner.ok) return liveResult(result.learner.error.kind, result.learner.error.message, { expected, error: result.learner.error });
     if (result.learner.inputMutated && !puzzle.allowMutation) return liveResult("mutation", MUTATION_MESSAGE, { expected, actual: result.learner.value, error: { kind: "mutation", message: MUTATION_MESSAGE } });
-    const comparison = compareOutput(puzzle.comparator, result.learner.value, expected, puzzle.tolerance);
+    const comparison = matchOutput(puzzle, args, result.learner.value, expected);
     if (comparison.pass) return liveResult("live-match", LIVE_MATCH_MESSAGE, { expected, actual: result.learner.value, comparison });
     const diagnosis = diagnose(puzzle, result.learner.value, result.variants);
     return liveResult("live-mismatch", diagnosis ? diagnosis.message : comparison.message, { expected, actual: result.learner.value, comparison, diagnosis });
@@ -155,7 +163,7 @@
         return { pass: false, kind: result.learner.error.kind, message: result.learner.error.message + " Case: " + testCase.label + ".", caseIndex: index, testCase };
       }
       if (result.learner.inputMutated && !puzzle.allowMutation) return { pass: false, kind: "mutation", message: MUTATION_MESSAGE + " Case: " + testCase.label + ".", caseIndex: index, testCase };
-      const comparison = compareOutput(puzzle.comparator, result.learner.value, testCase.expected, puzzle.tolerance);
+      const comparison = matchOutput(puzzle, testCase.args, result.learner.value, testCase.expected);
       if (!comparison.pass) {
         const diagnosis = diagnose(puzzle, result.learner.value, result.variants);
         return {
@@ -432,7 +440,7 @@
 
   const api = Object.freeze({
     STORAGE_KEY, SCHEMA_VERSION, COMPARATORS, MUTATION_MESSAGE,
-    compareOutput, diagnose, evaluateLive, evaluateCheck,
+    compareOutput, matchOutput, diagnose, evaluateLive, evaluateCheck,
     createProgress, loadProgress, saveProgress, completePuzzle, dependentPuzzleIds, resetPuzzle,
     collectDependencyIds, buildProgram, trackStates, createLiveSession, validateCatalog, resolveCases, releaseCases, unlockedIds,
   });

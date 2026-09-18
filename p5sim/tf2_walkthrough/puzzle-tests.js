@@ -148,6 +148,10 @@
       return valuesMatch(comparator, actual[key], expected[key]);
     });
   }
+  function accepted(puzzle, args, actual, expected) {
+    if (typeof puzzle.accept !== "function") return valuesMatch(puzzle.comparator, actual, expected);
+    return puzzle.accept(JSON.parse(JSON.stringify(args)), actual, expected) === true;
+  }
   function checkStageRange(from, to) {
     const api = requireApi(runtime, "puzzle-runtime.js");
     puzzleList().filter((puzzle) => puzzle.number >= from && puzzle.number <= to).forEach((puzzle) => {
@@ -163,9 +167,9 @@
         const result = api.evaluateCompiled(compiled, testCase.args);
         assert(result.learner.ok, puzzle.id + " reference threw on " + testCase.label + ": " + (result.learner.ok ? "" : result.learner.error.message));
         assert(puzzle.allowMutation || !result.learner.inputMutated, puzzle.id + " reference mutated input on " + testCase.label);
-        assert(valuesMatch(puzzle.comparator, result.learner.value, testCase.expected), puzzle.id + " reference mismatch on " + testCase.label + ": " + JSON.stringify(result.learner.value));
+        assert(accepted(puzzle, testCase.args, result.learner.value, testCase.expected), puzzle.id + " reference mismatch on " + testCase.label + ": " + JSON.stringify(result.learner.value).slice(0, 200));
         puzzle.diagnoses.forEach((entry) => {
-          if (!valuesMatch(puzzle.comparator, result.variants[entry.id], testCase.expected)) variantDiffers[entry.id] = true;
+          if (!accepted(puzzle, testCase.args, result.variants[entry.id], testCase.expected)) variantDiffers[entry.id] = true;
         });
       });
       puzzle.diagnoses.forEach((entry) => assert(variantDiffers[entry.id], puzzle.id + " diagnosis " + entry.id + " never differs from the reference"));
@@ -886,14 +890,14 @@
       same(idsOf("intro"), ["weird-algorithm", "missing-number", "repetitions", "increasing-array", "permutations", "number-spiral", "two-knights", "two-sets", "bit-strings", "trailing-zeros", "coin-piles", "palindrome-reorder", "gray-code", "tower-of-hanoi", "creating-strings", "apple-division", "chessboard-and-queens", "raab-game-i", "mex-grid-construction", "knight-moves-grid", "grid-coloring-i", "digit-queries", "string-reorder", "grid-path-description"]);
       same(idsOf("sorting"), ["distinct-numbers", "apartments", "ferris-wheel", "lower-bound", "upper-bound", "fenwick-add", "fenwick-prefix", "fenwick-kth", "concert-tickets", "restaurant-customers", "movie-festival", "sum-of-two-values", "maximum-subarray-sum", "stick-lengths", "missing-coin-sum", "collecting-numbers", "collecting-numbers-ii", "playlist", "towers", "traffic-lights", "distinct-values-subarrays", "distinct-values-subsequences", "josephus-problem-i", "josephus-problem-ii", "nested-ranges-check", "nested-ranges-count", "heap-push", "heap-pop", "room-allocation", "factory-machines", "tasks-and-deadlines", "reading-books", "sum-of-three-values", "sum-of-four-values", "nearest-smaller-values", "prefix-sums", "subarray-sums-i", "subarray-sums-ii", "subarray-divisibility", "distinct-values-subarrays-ii", "array-division", "movie-festival-ii", "maximum-subarray-sum-ii"]);
       same(idsOf("dp"), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "removing-digits", "grid-paths", "book-shop", "array-description", "counting-towers", "edit-distance", "longest-common-subsequence", "rectangle-cutting", "minimal-grid-path", "money-sums", "removal-game", "two-sets-ii", "mountain-range", "increasing-subsequence", "projects", "elevator-rides", "counting-tilings", "counting-numbers", "increasing-subsequence-ii"]);
-      same(idsOf("graphs"), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "shortest-routes"]);
+      same(idsOf("graphs"), ["counting-rooms", "labyrinth", "labyrinth-path", "building-roads", "message-route", "building-teams", "round-trip", "monsters", "shortest-routes", "shortest-routes-ii", "high-score", "flight-discount", "cycle-finding", "flight-routes", "round-trip-ii", "course-schedule", "longest-flight-route", "game-routes", "investigation", "planets-queries-i", "planets-queries-ii", "planets-cycles", "dsu-find", "dsu-union", "road-reparation", "road-construction", "flight-routes-check", "planets-and-kingdoms", "giant-pizza", "coin-collector", "mail-delivery", "de-bruijn-sequence", "teleporters-path", "hamiltonian-flights", "knights-tour", "max-flow", "download-speed", "police-chase", "school-dance", "distinct-routes"]);
       same(idsOf("range"), ["static-range-sum-queries", "build-segment-tree", "segment-tree-update", "segment-tree-query", "dynamic-range-sum-queries"]);
       same(idsOf("trees"), ["subordinates", "tree-diameter", "tree-distances", "binary-lifting-table", "kth-ancestor", "company-queries-ii"]);
       puzzleList().forEach((puzzle, index) => {
         assert(puzzle.number === index + 1, puzzle.id + " is numbered " + puzzle.number);
         assert(/^https:\/\/cses\.fi\/book\//.test(puzzle.reference.url), puzzle.id + " should link the handbook");
         assert(/^\d+$/.test(puzzle.walkthroughChapter), puzzle.id + " should carry its CSES task id");
-        const singleOperation = ["chessboard-and-queens", "lower-bound", "upper-bound", "fenwick-add", "fenwick-prefix", "fenwick-kth", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor", "coin-piles", "tower-of-hanoi", "creating-strings", "apple-division", "raab-game-i", "mex-grid-construction", "grid-path-description"].includes(puzzle.id);
+        const singleOperation = ["chessboard-and-queens", "lower-bound", "upper-bound", "fenwick-add", "fenwick-prefix", "fenwick-kth", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor", "dsu-find", "dsu-union", "knights-tour", "coin-piles", "tower-of-hanoi", "creating-strings", "apple-division", "raab-game-i", "mex-grid-construction", "grid-path-description"].includes(puzzle.id);
         assert(singleOperation || puzzle.hidden.length > 0, puzzle.id + " needs a hidden time-limit case");
         const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
         assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes");

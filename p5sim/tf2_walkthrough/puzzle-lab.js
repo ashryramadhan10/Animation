@@ -363,7 +363,7 @@
     try { args = scenes.toArgs(puzzle, values); } catch (error) { applyLiveResult(errorResult({ kind: "worker", message: error.message })); return; }
     session.evaluate(program, args).then((response) => {
       if (currentPuzzle() !== puzzle) return;
-      applyLiveResult(root.evaluateLive(puzzle, response));
+      applyLiveResult(root.evaluateLive(puzzle, response, args));
     }).catch((error) => {
       if (!error || error.kind === "superseded" || error.kind === "disposed") return;
       if (currentPuzzle() !== puzzle) return;

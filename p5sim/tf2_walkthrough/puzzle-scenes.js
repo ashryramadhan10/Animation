@@ -2094,7 +2094,7 @@
         const ch = grid[r][c];
         const a = { x: left + c * size, y: top - r * size }, b = { x: left + (c + 1) * size, y: top - (r + 1) * size };
         if (ch === "#" || ch === "*") out.push(shade(a, b, "input"), shade({ x: a.x + size * 0.15, y: a.y - size * 0.15 }, { x: b.x - size * 0.15, y: b.y + size * 0.15 }, "input"));
-        else if (ch === "A" || ch === "B") out.push(label(ch, "input", { at: { x: a.x + size * 0.3, y: b.y + size * 0.35 } }));
+        else if (/^[A-Z]$/.test(ch)) out.push(label(ch, "input", { at: { x: a.x + size * 0.3, y: b.y + size * 0.35 } }));
         if (opts.cellLabels && opts.cellLabels[r] && opts.cellLabels[r][c] !== undefined) out.push(label(String(opts.cellLabels[r][c]), opts.style || "muted", { at: { x: a.x + size * 0.25, y: b.y + size * 0.35 } }));
       }
     }
@@ -2134,11 +2134,17 @@
     }
     return out;
   }
+  function ellipseLayout(n) {
+    const out = [];
+    for (let i = 0; i < n; i += 1) { const angle = -Math.PI / 2 + 2 * Math.PI * i / Math.max(1, n); out.push({ x: 4 * Math.cos(angle), y: 2.4 * Math.sin(angle) }); }
+    return out;
+  }
   const algoScene = {
     fixtures: {
       presetA: (values, puzzle) => algoPreset(values, puzzle).a,
       presetB: (values, puzzle) => algoPreset(values, puzzle).b,
       presetC: (values, puzzle) => algoPreset(values, puzzle).c,
+      presetD: (values, puzzle) => algoPreset(values, puzzle).d,
       presetEdges: (values, puzzle) => algoPreset(values, puzzle).b.map((boss, i) => [boss, i + 2]),
       roundedN: (values) => Math.round(values.n),
       roundedX: (values) => Math.round(values.x),
@@ -2262,18 +2268,22 @@
           out.push(segments(lines, "muted", { weight: 1 }));
         };
         if (view === "letter-grid") { drawCells(chosen.a, -5, "input"); out.push(label("input", "input", { at: { x: -5, y: 3.3 } })); }
-        else out.push(label("n = " + Math.round(values.n), "input", { at: { x: -5, y: 3.3 } }));
+        else { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" \u00b7 "), "input", { at: { x: -5, y: 3.3 } })); }
         const shown = Array.isArray(context.actual) ? context.actual : (Array.isArray(context.expected) ? context.expected : null);
         if (shown) { drawCells(shown, 0.4, Array.isArray(context.actual) ? style : "expected"); out.push(label(Array.isArray(context.actual) ? text : "expected", Array.isArray(context.actual) ? style : "expected", { at: { x: 0.4, y: 3.3 } })); }
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "graph") {
-        const positions = chosen.c || [];
-        const edges = chosen.b || [];
+        const nodeCount = Array.isArray(chosen.a) ? chosen.a.length : (Number.isFinite(chosen.a) ? chosen.a : 0);
+        const hasPositions = (list) => Array.isArray(list) && list.length > 0 && list[0] && typeof list[0] === "object" && !Array.isArray(list[0]);
+        const positions = hasPositions(chosen.positions) ? chosen.positions : (hasPositions(chosen.c) ? chosen.c : ellipseLayout(Math.min(nodeCount, 60)));
+        const edges = Array.isArray(chosen.b) ? chosen.b : (chosen.functional && Array.isArray(chosen.a) ? chosen.a.map((t, i) => [i + 1, t]) : []);
+        const directed = chosen.directed !== undefined ? chosen.directed : edges.some((edge) => edge.length > 2);
         edges.forEach((edge) => {
           const a = positions[edge[0] - 1], b = positions[edge[1] - 1];
           if (!a || !b) return;
-          if (edge.length > 2) out.push(arrow(a, b, "muted", { weight: 1.5 }), label(String(edge[2]), "muted", { at: { x: (a.x + b.x) / 2 + 0.1, y: (a.y + b.y) / 2 + 0.2 } }));
-          else out.push(segments([[a, b]], "muted", { weight: 2 }));
+          if (edge[0] === edge[1]) { out.push(label("\u21ba", "muted", { at: { x: a.x + 0.25, y: a.y + 0.3 } })); return; }
+          if (directed) out.push(arrow(a, b, "muted", { weight: 1.5 })); else out.push(segments([[a, b]], "muted", { weight: 2 }));
+          if (edge.length > 2) out.push(label(String(edge[2]), "muted", { at: { x: (a.x + b.x) / 2 + 0.1, y: (a.y + b.y) / 2 + 0.2 } }));
         });
         positions.forEach((at, i) => out.push(point(at, String(i + 1), "input")));
         const roads = (list, styleName, dashed) => list.forEach((road) => { const a = positions[road[0] - 1], b = positions[road[1] - 1]; if (a && b) out.push(segments([[a, b]], styleName, { weight: 2, dashed })); });
