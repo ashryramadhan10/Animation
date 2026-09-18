@@ -882,7 +882,7 @@
       const api = puzzlesApi();
       same(api.TF2_PUZZLE_TRACKS.map((track) => track.id), ["intro", "sorting", "dp", "graphs", "range", "trees"]);
       const idsOf = (track) => puzzleList().filter((puzzle) => puzzle.track === track).map((puzzle) => puzzle.id);
-      same(idsOf("intro"), ["weird-algorithm", "missing-number", "increasing-array", "permutations", "two-sets", "chessboard-and-queens"]);
+      same(idsOf("intro"), ["weird-algorithm", "missing-number", "repetitions", "increasing-array", "permutations", "number-spiral", "two-knights", "two-sets", "bit-strings", "trailing-zeros", "coin-piles", "palindrome-reorder", "gray-code", "tower-of-hanoi", "creating-strings", "apple-division", "chessboard-and-queens", "raab-game-i", "mex-grid-construction", "knight-moves-grid", "grid-coloring-i", "digit-queries", "string-reorder", "grid-path-description"]);
       same(idsOf("sorting"), ["distinct-numbers", "prefix-sums", "lower-bound", "sum-of-two-values", "maximum-subarray-sum", "ferris-wheel"]);
       same(idsOf("dp"), ["dice-combinations", "minimizing-coins", "coin-combinations-i", "coin-combinations-ii", "grid-paths", "book-shop"]);
       same(idsOf("graphs"), ["counting-rooms", "labyrinth", "building-roads", "building-teams", "heap-push", "heap-pop", "shortest-routes"]);
@@ -892,7 +892,7 @@
         assert(puzzle.number === index + 1, puzzle.id + " is numbered " + puzzle.number);
         assert(/^https:\/\/cses\.fi\/book\//.test(puzzle.reference.url), puzzle.id + " should link the handbook");
         assert(/^\d+$/.test(puzzle.walkthroughChapter), puzzle.id + " should carry its CSES task id");
-        const singleOperation = ["chessboard-and-queens", "lower-bound", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor"].includes(puzzle.id);
+        const singleOperation = ["chessboard-and-queens", "lower-bound", "heap-push", "heap-pop", "segment-tree-update", "segment-tree-query", "kth-ancestor", "coin-piles", "tower-of-hanoi", "creating-strings", "apple-division", "raab-game-i", "mex-grid-construction", "grid-path-description"].includes(puzzle.id);
         assert(singleOperation || puzzle.hidden.length > 0, puzzle.id + " needs a hidden time-limit case");
         const lanes = puzzle.scene.handles.filter((handle) => handle.type === "slider" || handle.type === "timeline").length;
         assert(lanes <= 3, puzzle.id + " has " + lanes + " slider lanes");
@@ -937,15 +937,18 @@
     withCatalog(algoApi(), () => {
       checkSceneKinds(["algo"]);
       puzzleList().forEach((puzzle) => {
-        if (typeof puzzle.brute !== "function" || typeof puzzle.small !== "function") return;
-        const next = requireApi(algoCatalog, "algo-puzzles.js");
+        if (typeof puzzle.small !== "function") return;
         for (let round = 0; round < 60; round += 1) {
           const args = puzzle.small(round);
           const fast = puzzle.solve.apply(null, JSON.parse(JSON.stringify(args)));
-          const slow = puzzle.brute.apply(null, JSON.parse(JSON.stringify(args)));
-          assert(valuesMatch(puzzle.comparator, fast, slow), puzzle.id + " disagrees with its brute force on " + JSON.stringify(args) + ": " + JSON.stringify(fast) + " vs " + JSON.stringify(slow));
+          if (typeof puzzle.brute === "function") {
+            const slow = puzzle.brute.apply(null, JSON.parse(JSON.stringify(args)));
+            assert(valuesMatch(puzzle.comparator, fast, slow), puzzle.id + " disagrees with its brute force on " + JSON.stringify(args) + ": " + JSON.stringify(fast) + " vs " + JSON.stringify(slow));
+          }
+          if (typeof puzzle.check === "function") {
+            assert(puzzle.check.apply(null, [JSON.parse(JSON.stringify(args)), fast]), puzzle.id + " produced an invalid answer on " + JSON.stringify(args) + ": " + JSON.stringify(fast));
+          }
         }
-        assert(next, "catalog present");
       });
       const api = puzzlesApi();
       const values = [3, 2, 4, 5, 1, 1, 5, 3];

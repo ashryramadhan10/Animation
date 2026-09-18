@@ -2147,6 +2147,10 @@
       roundedValue: (values) => Math.round(values.value),
       roundedV: (values) => Math.round(values.v),
       roundedK: (values) => Math.round(values.k),
+      roundedY: (values) => Math.round(values.y),
+      roundedA: (values) => Math.round(values.a),
+      roundedB: (values) => Math.round(values.b),
+      roundedKString: (values) => String(Math.round(values.k)),
       rangeLo: (values) => Math.min(Math.round(values.l), Math.round(values.r)),
       rangeHi: (values) => Math.max(Math.round(values.l), Math.round(values.r)),
       pushItem: (values) => [Math.round(values.key), 99],
@@ -2230,6 +2234,28 @@
         const a = Array.isArray(chosen.a) ? chosen.a : [], b = Array.isArray(chosen.b) ? chosen.b : [];
         if (a.length) out.push(algoBars(a, "input", { base: 0.4, height: 2.2, weight: 8 }), label("a", "input", { at: { x: -5.4, y: 0.5 } }));
         if (b.length) out.push(algoBars(b, "muted", { base: -3.2, height: 2.2, weight: 8 }), label("b", "muted", { at: { x: -5.4, y: -3.1 } }));
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "letter-grid" || view === "number-grid") {
+        const drawCells = (rows, left, styleName) => {
+          if (!Array.isArray(rows) || !rows.length) return;
+          const height = rows.length, width = Array.isArray(rows[0]) ? rows[0].length : String(rows[0]).length;
+          const size = Math.min(4.6 / width, 5.4 / height, 1.1);
+          const top = 3;
+          for (let r = 0; r < height; r += 1) {
+            for (let c = 0; c < width; c += 1) {
+              const cell = Array.isArray(rows[r]) ? rows[r][c] : rows[r][c];
+              out.push(label(String(cell), styleName, { at: { x: left + c * size + size * 0.25, y: top - r * size - size * 0.7 } }));
+            }
+          }
+          const lines = [];
+          for (let r = 0; r <= height; r += 1) lines.push([{ x: left, y: top - r * size }, { x: left + width * size, y: top - r * size }]);
+          for (let c = 0; c <= width; c += 1) lines.push([{ x: left + c * size, y: top }, { x: left + c * size, y: top - height * size }]);
+          out.push(segments(lines, "muted", { weight: 1 }));
+        };
+        if (view === "letter-grid") { drawCells(chosen.a, -5, "input"); out.push(label("input", "input", { at: { x: -5, y: 3.3 } })); }
+        else out.push(label("n = " + Math.round(values.n), "input", { at: { x: -5, y: 3.3 } }));
+        const shown = Array.isArray(context.actual) ? context.actual : (Array.isArray(context.expected) ? context.expected : null);
+        if (shown) { drawCells(shown, 0.4, Array.isArray(context.actual) ? style : "expected"); out.push(label(Array.isArray(context.actual) ? text : "expected", Array.isArray(context.actual) ? style : "expected", { at: { x: 0.4, y: 3.3 } })); }
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "graph") {
         const positions = chosen.c || [];
