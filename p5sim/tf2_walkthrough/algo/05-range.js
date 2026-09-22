@@ -1548,6 +1548,6 @@
       ],
     },
   ];
-  core.share({ buildSegmentTree, segmentTreeUpdate, segmentTreeQuery, sparseTable, mergeSubarrayNodes });
+  core.share({ buildSegmentTree, segmentTreeUpdate, segmentTreeQuery, sparseTable, mergeSubarrayNodes, distinctValuesQueries });
   core.define("range", RANGE);
 })(typeof window !== "undefined" ? window.AlgoCore : require("./core.js"));

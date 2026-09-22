@@ -2130,25 +2130,67 @@
     }
     return up;
   }
-  function treeLayoutFromBosses(n, bosses) {
+  function parentsFromBosses(n, bosses) {
+    const parent = new Array(n + 1).fill(0);
+    for (let v = 2; v <= n; v += 1) parent[v] = bosses[v - 2];
+    return parent;
+  }
+  function parentsFromEdges(n, edges) {
+    const adjacency = [];
+    for (let v = 0; v <= n; v += 1) adjacency.push([]);
+    edges.forEach((edge) => { if (adjacency[edge[0]] && adjacency[edge[1]]) { adjacency[edge[0]].push(edge[1]); adjacency[edge[1]].push(edge[0]); } });
+    const parent = new Array(n + 1).fill(0);
+    const seen = new Array(n + 1).fill(false);
+    const queue = [1];
+    seen[1] = true;
+    for (let i = 0; i < queue.length; i += 1) {
+      const v = queue[i];
+      adjacency[v].forEach((u) => { if (!seen[u]) { seen[u] = true; parent[u] = v; queue.push(u); } });
+    }
+    return parent;
+  }
+  function treeLayoutFromParents(n, parent) {
     const children = [];
     for (let v = 0; v <= n; v += 1) children.push([]);
-    for (let v = 2; v <= n; v += 1) children[bosses[v - 2]].push(v);
+    for (let v = 1; v <= n; v += 1) if (parent[v] >= 1) children[parent[v]].push(v);
     const depth = new Array(n + 1).fill(0);
-    for (let v = 2; v <= n; v += 1) depth[v] = depth[bosses[v - 2]] + 1;
+    const order = [1];
+    for (let i = 0; i < order.length; i += 1) { const v = order[i]; children[v].forEach((u) => { depth[u] = depth[v] + 1; order.push(u); }); }
     const x = new Array(n + 1).fill(0);
+    const pointer = new Array(n + 1).fill(0);
+    const stack = [1];
     let slot = 0;
-    const visit = (v) => {
-      if (children[v].length === 0) { x[v] = slot; slot += 1; return; }
-      children[v].forEach(visit);
-      x[v] = (x[children[v][0]] + x[children[v][children[v].length - 1]]) / 2;
-    };
-    visit(1);
+    while (stack.length) {
+      const v = stack[stack.length - 1];
+      if (pointer[v] < children[v].length) { const u = children[v][pointer[v]]; pointer[v] += 1; stack.push(u); continue; }
+      if (children[v].length === 0) { x[v] = slot; slot += 1; }
+      else x[v] = (x[children[v][0]] + x[children[v][children[v].length - 1]]) / 2;
+      stack.pop();
+    }
     const width = Math.max(1, slot - 1);
     const maxDepth = Math.max(1, ...depth.slice(1));
     const positions = [null];
     for (let v = 1; v <= n; v += 1) positions.push({ x: -4 + 8 * x[v] / width, y: 2.6 - 4.2 * depth[v] / maxDepth });
     return positions;
+  }
+  function algoRootedAncestors(n, edges) {
+    const parent = parentsFromEdges(n, edges);
+    const depth = new Array(n + 1).fill(0);
+    const children = [];
+    for (let v = 0; v <= n; v += 1) children.push([]);
+    for (let v = 1; v <= n; v += 1) if (parent[v] >= 1) children[parent[v]].push(v);
+    const order = [1];
+    for (let i = 0; i < order.length; i += 1) { const v = order[i]; children[v].forEach((u) => { depth[u] = depth[v] + 1; order.push(u); }); }
+    let levels = 1;
+    while ((1 << levels) <= n) levels += 1;
+    const up = [parent.slice()];
+    for (let j = 1; j < levels; j += 1) {
+      const previous = up[j - 1];
+      const row = new Array(n + 1).fill(0);
+      for (let v = 1; v <= n; v += 1) row[v] = previous[previous[v]];
+      up.push(row);
+    }
+    return { parent, depth, order, up };
   }
   function algoBars(list, style, options) {
     const opts = options || {};
@@ -2242,6 +2284,7 @@
       pushItem: (values) => [Math.round(values.key), 99],
       builtTree: (values, puzzle) => algoSegmentTree(algoPreset(values, puzzle).a),
       liftingTable: (values, puzzle) => algoLifting(algoPreset(values, puzzle).a, algoPreset(values, puzzle).b, 3),
+      ancestorTable: (values, puzzle) => algoRootedAncestors(algoPreset(values, puzzle).a, algoPreset(values, puzzle).b),
     },
     layers(context) {
       const view = context.puzzle.scene.view;
@@ -2391,9 +2434,11 @@
         if (context.puzzle.id === "segment-tree-query") out.push(label("query leaves " + Math.min(Math.round(values.l), Math.round(values.r)) + " to " + Math.max(Math.round(values.l), Math.round(values.r)), "input", { row: 3 }));
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "tree") {
-        const n = chosen.a || 1, bosses = chosen.b || [];
-        const positions = treeLayoutFromBosses(n, bosses);
-        for (let v = 2; v <= n; v += 1) out.push(segments([[positions[bosses[v - 2]], positions[v]]], "muted", { weight: 1.5 }));
+        const n = Number.isFinite(chosen.a) ? chosen.a : (Array.isArray(chosen.d) ? chosen.d.length : 1);
+        const links = Array.isArray(chosen.b) ? chosen.b : [];
+        const parentOf = links.length > 0 && Array.isArray(links[0]) ? parentsFromEdges(n, links) : parentsFromBosses(n, links);
+        const positions = treeLayoutFromParents(n, parentOf);
+        for (let v = 1; v <= n; v += 1) if (parentOf[v] >= 1) out.push(segments([[positions[parentOf[v]], positions[v]]], "muted", { weight: 1.5 }));
         for (let v = 1; v <= n; v += 1) out.push(point(positions[v], String(v), "input"));
         const perNode = (list, styleName, dy) => { if (!isNumberList(list) || list.length !== n) return; list.forEach((value, i) => out.push(label(String(value), styleName, { at: { x: positions[i + 1].x + 0.25, y: positions[i + 1].y + dy } }))); };
         perNode(context.expected, "expected", 0.45);
@@ -2403,6 +2448,7 @@
         }
         if (context.puzzle.id === "kth-ancestor") out.push(label("node " + Math.round(values.v) + " · k " + Math.round(values.k), "input", { row: 3 }));
         if (context.puzzle.id === "company-queries-ii" && Array.isArray(chosen.c)) out.push(label("queries " + chosen.c.map((q) => q[0] + "," + q[1]).join(" · "), "input", { row: 3 }));
+        if (Array.isArray(chosen.d) && chosen.d.length === n) out.push(label("values " + chosen.d.join(" "), "input", { row: 3 }));
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       }
       out.push(...notes(context, describeAlgo(context.expected), describeAlgo(context.actual)));
