@@ -37,7 +37,7 @@ Each phase is one spec-plan-build-verify-commit cycle of roughly 20 to 40 puzzle
 | 5 | Range Queries | 25 | Fenwick tree, sparse table, lazy segment tree, persistent tree, offline sorting |
 | 6 | Tree Algorithms | 16 | Euler tour + segment tree, centroid decomposition, small-to-large merging |
 | 7 | Mathematics | 37 | modular BigInt arithmetic, sieve, factorials and inverses, matrix power, Gaussian elimination, Grundy |
-| 8 | String Algorithms | 20 | polynomial hashing, Z-function, KMP, Manacher, suffix array, Aho-Corasick |
+| 8 | String Algorithms | 21 | polynomial hashing, Z-function, KMP, Manacher, suffix array, Aho-Corasick |
 | 9 | Geometry | 16 | cross product, convex hull, sweep line |
 | 10 | Sliding Window, Bitwise Operations, Construction Problems | 30 | monotonic deque, order-statistic structure, xor basis, SOS DP |
 | 11 | Advanced Techniques | 26 | meet in the middle, treap, offline DSU, Knuth optimisation, FFT |
@@ -62,7 +62,7 @@ Each phase is one spec-plan-build-verify-commit cycle of roughly 20 to 40 puzzle
 
 **Mathematics (37):** Josephus Queries 2164, Exponentiation 1095, Exponentiation II 1712, Counting Divisors 1713, Common Divisors 1081, Sum of Divisors 1082, Divisor Analysis 2182, Prime Multiples 2185, Counting Coprime Pairs 2417, Next Prime 3396, Binomial Coefficients 1079, Creating Strings II 1715, Distributing Apples 1716, Christmas Party 1717, Permutation Order 3397, Permutation Rounds 3398, Bracket Sequences I 2064, Bracket Sequences II 2187, Counting Necklaces 2209, Counting Grids 2210, Fibonacci Numbers 1722, Throwing Dice 1096, Graph Paths I 1723, Graph Paths II 1724, System of Linear Equations 3154, Sum of Four Squares 3355, Triangle Number Sums 3406, Dice Probability 1725, Moving Robots 1726, Candy Lottery 1727, Inversion Probability 1728, Stick Game 1729, Nim Game I 1730, Nim Game II 1098, Stair Game 1099, Grundy's Game 2207, Another Game 2208.
 
-**String Algorithms (20):** Word Combinations 1731, String Matching 1753, Finding Borders 1732, Finding Periods 1733, Minimal Rotation 1110, Longest Palindrome 1111, All Palindromes 3138, Required Substring 1112, Palindrome Queries 2420, Finding Patterns 2102, Counting Patterns 2103, Pattern Positions 2104, Distinct Substrings 2105, Distinct Subsequences 1149, Repeating Substring 2106, String Functions 2107, Inverse Suffix Array 3225, String Transform 1113, Substring Order I 2108, Substring Order II 2109, Substring Distribution 2110.
+**String Algorithms (21):** Word Combinations 1731, String Matching 1753, Finding Borders 1732, Finding Periods 1733, Minimal Rotation 1110, Longest Palindrome 1111, All Palindromes 3138, Required Substring 1112, Palindrome Queries 2420, Finding Patterns 2102, Counting Patterns 2103, Pattern Positions 2104, Distinct Substrings 2105, Distinct Subsequences 1149, Repeating Substring 2106, String Functions 2107, Inverse Suffix Array 3225, String Transform 1113, Substring Order I 2108, Substring Order II 2109, Substring Distribution 2110.
 
 **Geometry (16):** Point Location Test 2189, Line Segment Intersection 2190, Polygon Area 2191, Point in Polygon 2192, Polygon Lattice Points 2193, Minimum Euclidean Distance 2194, Convex Hull 2195, Maximum Manhattan Distances 3410, All Manhattan Distances 3411, Intersection Points 1740, Line Segments Trace I 3427, Line Segments Trace II 3428, Lines and Queries I 3429, Lines and Queries II 3430, Area of Rectangles 1741, Robot Path 1742.
 
