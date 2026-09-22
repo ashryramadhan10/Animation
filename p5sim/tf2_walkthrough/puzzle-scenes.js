@@ -2149,6 +2149,23 @@
     }
     return parent;
   }
+  function algoFactorials(limit) {
+    const m = 1000000007;
+    const mul = (a, b) => { const high = Math.floor(a / 65536), low = a % 65536; return ((high * b % m) * 65536 + low * b) % m; };
+    const fact = [1];
+    for (let i = 1; i <= limit; i += 1) fact.push(mul(fact[i - 1], i));
+    const inverseFact = new Array(limit + 1).fill(1);
+    let power = 1, left = m - 2, factor = fact[limit];
+    while (left > 0) { if (left % 2 === 1) power = mul(power, factor); factor = mul(factor, factor); left = Math.floor(left / 2); }
+    inverseFact[limit] = power;
+    for (let i = limit; i >= 1; i -= 1) inverseFact[i - 1] = mul(inverseFact[i], i);
+    return { fact, inverseFact };
+  }
+  function algoSpf(limit) {
+    const spf = new Array(limit + 1).fill(0);
+    for (let i = 2; i <= limit; i += 1) { if (spf[i] !== 0) continue; for (let j = i; j <= limit; j += i) if (spf[j] === 0) spf[j] = i; }
+    return spf;
+  }
   function treeLayoutFromParents(n, parent) {
     const children = [];
     for (let v = 0; v <= n; v += 1) children.push([]);
@@ -2276,6 +2293,9 @@
       roundedA: (values) => Math.round(values.a),
       roundedB: (values) => Math.round(values.b),
       roundedKString: (values) => String(Math.round(values.k)),
+      roundedNString: (values) => String(Math.round(values.n)),
+      factorialTable: (values, puzzle) => algoFactorials(algoPreset(values, puzzle).a),
+      spfTable: (values, puzzle) => algoSpf(algoPreset(values, puzzle).a),
       roundedDelta: (values) => Math.round(values.delta),
       roundedM: (values) => Math.round(values.m),
       roundedBAtLeastA: (values) => Math.max(Math.round(values.a), Math.round(values.b)),
@@ -2387,7 +2407,8 @@
           for (let c = 0; c <= width; c += 1) lines.push([{ x: left + c * size, y: top }, { x: left + c * size, y: top - height * size }]);
           out.push(segments(lines, "muted", { weight: 1 }));
         };
-        if (view === "letter-grid") { drawCells(chosen.a, -5, "input"); out.push(label("input", "input", { at: { x: -5, y: 3.3 } })); }
+        const inputRows = Array.isArray(chosen.a) && chosen.a.length > 0 && (Array.isArray(chosen.a[0]) || typeof chosen.a[0] === "string") ? chosen.a : null;
+        if (view === "letter-grid" || inputRows) { drawCells(inputRows, -5, "input"); out.push(label("input", "input", { at: { x: -5, y: 3.3 } })); }
         else { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" \u00b7 "), "input", { at: { x: -5, y: 3.3 } })); }
         const shown = Array.isArray(context.actual) ? context.actual : (Array.isArray(context.expected) ? context.expected : null);
         if (shown) { drawCells(shown, 0.4, Array.isArray(context.actual) ? style : "expected"); out.push(label(Array.isArray(context.actual) ? text : "expected", Array.isArray(context.actual) ? style : "expected", { at: { x: 0.4, y: 3.3 } })); }
