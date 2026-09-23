@@ -2,7 +2,7 @@
   "use strict";
   const inNode = typeof module !== "undefined" && module.exports;
   const core = inNode ? require("./algo/core.js") : root.AlgoCore;
-  if (inNode) ["01-introductory", "02-sorting", "03-dp", "04-graphs", "05-range", "06-trees", "07-math", "07-math-ii", "08-strings"].forEach((name) => require("./algo/" + name + ".js"));
+  if (inNode) ["01-introductory", "02-sorting", "03-dp", "04-graphs", "05-range", "06-trees", "07-math", "07-math-ii", "08-strings", "09-geometry"].forEach((name) => require("./algo/" + name + ".js"));
   const built = core.build();
   const byId = new Map(built.PUZZLES.map((entry) => [entry.id, entry]));
   function getPuzzle(id) { return byId.get(id) || null; }

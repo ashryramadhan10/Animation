@@ -2281,6 +2281,8 @@
       presetB: (values, puzzle) => algoPreset(values, puzzle).b,
       presetC: (values, puzzle) => algoPreset(values, puzzle).c,
       presetD: (values, puzzle) => algoPreset(values, puzzle).d,
+      presetE: (values, puzzle) => algoPreset(values, puzzle).e,
+      presetF: (values, puzzle) => algoPreset(values, puzzle).f,
       presetEdges: (values, puzzle) => algoPreset(values, puzzle).b.map((boss, i) => [boss, i + 2]),
       roundedN: (values) => Math.round(values.n),
       roundedX: (values) => Math.round(values.x),
@@ -2372,6 +2374,28 @@
         const drawText = (value, styleName, y) => { if (typeof value !== "string") return; for (let i = 0; i < value.length && i < 60; i += 1) out.push(label(value[i], styleName, { at: { x: -5 + (i + 0.5) * cell - 0.1, y } })); };
         drawText(context.expected, "expected", -0.2);
         drawText(context.actual, style, -1.2);
+        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
+      } else if (view === "plane") {
+        const rowsOf = (list) => (Array.isArray(list) ? list.filter((row) => Array.isArray(row) && row.length >= 2 && row.every(Number.isFinite)) : []);
+        const spots = rowsOf(chosen.points), loop = rowsOf(chosen.polygon), sticks = rowsOf(chosen.segments), marks = rowsOf(chosen.marks), boxes = rowsOf(chosen.rectangles), rays = rowsOf(chosen.lines);
+        const xs = [], ys = [];
+        spots.concat(loop, marks).forEach((p) => { xs.push(p[0]); ys.push(p[1]); });
+        sticks.concat(boxes).forEach((s) => { xs.push(s[0], s[2]); ys.push(s[1], s[3]); });
+        const xlo = Number.isFinite(chosen.xlo) ? chosen.xlo : 0, xhi = Number.isFinite(chosen.xhi) ? chosen.xhi : 8;
+        if (rays.length) { xs.push(xlo, xhi); rays.forEach((line) => { ys.push(line[0] * xlo + line[1], line[0] * xhi + line[1]); }); }
+        if (xs.length) {
+          const minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+          const minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+          const scale = Math.min(9 / Math.max(1, maxX - minX), 5 / Math.max(1, maxY - minY));
+          const at = (x, y) => ({ x: -4.5 + (x - minX) * scale, y: -2.4 + (y - minY) * scale });
+          rays.forEach((line) => out.push(segments([[at(xlo, line[0] * xlo + line[1]), at(xhi, line[0] * xhi + line[1])]], "muted", { weight: 2 })));
+          boxes.forEach((r) => out.push(segments([[at(r[0], r[1]), at(r[2], r[1])], [at(r[2], r[1]), at(r[2], r[3])], [at(r[2], r[3]), at(r[0], r[3])], [at(r[0], r[3]), at(r[0], r[1])]], "input", { weight: 2 })));
+          if (loop.length > 1) { const edges = []; for (let i = 0; i < loop.length; i += 1) { const q = loop[(i + 1) % loop.length]; edges.push([at(loop[i][0], loop[i][1]), at(q[0], q[1])]); } out.push(segments(edges, "input", { weight: 3 })); }
+          sticks.forEach((s) => out.push(segments([[at(s[0], s[1]), at(s[2], s[3])]], "input", { weight: 3 })));
+          const named = spots.concat(loop).length <= 12;
+          spots.concat(loop).forEach((p) => out.push(point(at(p[0], p[1]), named ? "(" + p[0] + ", " + p[1] + ")" : "", "input")));
+          marks.forEach((p) => out.push(point(at(p[0], p[1]), "(" + p[0] + ", " + p[1] + ")", "expected", { dashed: true })));
+        }
         numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "intervals") {
         const list = Array.isArray(chosen.a) ? chosen.a.filter((p) => Array.isArray(p) && p.length >= 2) : [];
