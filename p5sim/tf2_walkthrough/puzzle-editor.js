@@ -265,7 +265,11 @@
     textarea.addEventListener("keydown", (event) => {
       const value = textarea.value, start = textarea.selectionStart, end = textarea.selectionEnd;
       const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
-      if (event.key === "Tab") {
+      if (event.key.toLowerCase() === "m" && event.ctrlKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        const target = document.getElementById("hintButton");
+        if (target) target.focus();
+      } else if (event.key === "Tab") {
         event.preventDefault();
         apply(event.shiftKey ? outdentSelection(value, start, end) : (start === end ? rebuild(value, start, end, UNIT, start + UNIT.length, start + UNIT.length) : indentSelection(value, start, end)));
       } else if (event.key === "Enter" && plain) {

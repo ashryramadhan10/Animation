@@ -22,6 +22,7 @@
     let celebrationStarted = 0;
     let activeGrip = null;
     let hoverGrip = null;
+    let labelBoxes = [];
 
     const instance = new p5((p) => {
       function color(style, alpha) {
@@ -53,11 +54,47 @@
         }
       }
 
-      function drawText(text, x, y, style, size) {
+      function fitText(value, width) {
+        let label = String(value);
+        if (p.textWidth(label) <= width) return label;
+        while (label.length && p.textWidth(label + "…") > width) label = label.slice(0, -1);
+        return label + "…";
+      }
+
+      function textBox(x, y, width, height) {
+        return { left: x - 2, right: x + width + 2, top: y - height - 2, bottom: y + 3 };
+      }
+
+      function overlapArea(a, b) {
+        return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+          * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      }
+
+      function drawText(text, x, y, style, size, options) {
+        if (text === null || text === undefined || text === "") return;
+        const settings = options || {};
+        const height = size || 11;
+        p.textSize(height);
+        const label = fitText(text, Math.max(24, Math.min(p.width - 20, settings.hud ? p.width - x - 10 : p.width - 20)));
+        const width = p.textWidth(label);
+        const offsets = settings.floating
+          ? [[0, 0], [0, -17], [0, 17], [15, 0], [-width - 15, 0], [15, -17], [-width - 15, -17], [15, 17], [-width - 15, 17], [0, -34], [0, 34]]
+          : [[0, 0]];
+        let selected = null;
+        offsets.forEach(([dx, dy], index) => {
+          const left = Math.max(8, Math.min(p.width - width - 8, x + dx));
+          const baseline = Math.max(height + 5, Math.min(p.height - 7, y + dy));
+          const box = textBox(left, baseline, width, height);
+          const score = labelBoxes.reduce((total, other) => total + overlapArea(box, other), 0) + index * 0.01;
+          if (!selected || score < selected.score) selected = { x: left, y: baseline, box, score };
+        });
+        if (!settings.hud) labelBoxes.push(selected.box);
+        p.push();
         p.noStroke();
         p.fill.apply(p, color(style || "muted"));
-        p.textSize(size || 11);
-        p.text(text, x, y);
+        p.textSize(height);
+        p.text(label, selected.x, selected.y);
+        p.pop();
       }
 
       function strokeLine(from, to, style, options) {
@@ -87,7 +124,7 @@
       function drawArrow(primitive) {
         const ends = strokeLine(primitive.from, primitive.to, primitive.style, primitive);
         arrowHead(ends.b, Math.atan2(ends.b.y - ends.a.y, ends.b.x - ends.a.x), primitive.style, primitive.alpha);
-        if (primitive.label) drawText(primitive.label, ends.b.x + 8, ends.b.y - 8, primitive.style);
+        if (primitive.label) drawText(primitive.label, ends.b.x + 8, ends.b.y - 8, primitive.style, 11, { floating: true });
       }
 
       function drawFrame(primitive) {
@@ -109,7 +146,7 @@
         p.circle(at.x, at.y, 9);
         setDash(false);
         p.pop();
-        if (primitive.label) drawText(primitive.label, at.x + 8, at.y + 16, primitive.style);
+        if (primitive.label) drawText(primitive.label, at.x + 8, at.y + 16, primitive.style, 11, { floating: true });
       }
 
       function drawPoint(primitive) {
@@ -123,7 +160,7 @@
         p.circle(at.x, at.y, 13);
         setDash(false);
         p.pop();
-        if (primitive.label) drawText(primitive.label, at.x + 9, at.y - 9, primitive.style);
+        if (primitive.label) drawText(primitive.label, at.x + 9, at.y - 9, primitive.style, 11, { floating: true });
       }
 
       function drawArc(primitive) {
@@ -172,7 +209,7 @@
         p.triangle(size, 0, -size * 0.7, size * 0.6, -size * 0.7, -size * 0.6);
         setDash(false);
         p.pop();
-        if (primitive.label) drawText(primitive.label, at.x + size + 6, at.y + 4, primitive.style);
+        if (primitive.label) drawText(primitive.label, at.x + size + 6, at.y + 4, primitive.style, 11, { floating: true });
       }
 
       function drawLane(primitive) {
@@ -184,11 +221,11 @@
           p.strokeWeight(1);
           p.line(at.x, at.y - 5, at.x, at.y + 5);
           p.pop();
-          if (mark.label) drawText(mark.label, at.x - 8, at.y + 17, "muted", 10);
+          if (mark.label) drawText(mark.label, at.x - 8, at.y + 17, "muted", 10, { floating: true });
         });
         if (primitive.label) {
           const at = toScreen(primitive.from);
-          drawText(primitive.label, at.x, at.y - 9, primitive.style, 10);
+          drawText(primitive.label, at.x, at.y - 9, primitive.style, 10, { floating: true });
         }
       }
 
@@ -205,7 +242,7 @@
         p.fill.apply(p, color(primitive.style));
         p.circle(at.x, at.y, 7);
         p.pop();
-        if (primitive.label) drawText(primitive.label, at.x + 6, at.y - height - 4, primitive.style, 10);
+        if (primitive.label) drawText(primitive.label, at.x + 6, at.y - height - 4, primitive.style, 10, { floating: true });
       }
 
       function drawShade(primitive) {
@@ -221,9 +258,9 @@
       function drawLabel(primitive) {
         if (primitive.at) {
           const at = toScreen(primitive.at);
-          drawText(primitive.text, at.x, at.y, primitive.style);
+          drawText(primitive.text, at.x, at.y, primitive.style, 11, { floating: true });
         } else {
-          drawText(primitive.text, 18, 28 + (primitive.row || 0) * 19, primitive.style);
+          drawText(primitive.text, 18, 28 + (primitive.row || 0) * 19, primitive.style, 11, { hud: true });
         }
       }
 
@@ -466,6 +503,13 @@
         drawGrid();
         if (!state.primitives.length) drawText("Choose a puzzle to begin.", 18, 28, "muted");
         const primitives = state.primitives.slice();
+        labelBoxes = [];
+        p.textSize(11);
+        primitives.filter((item) => item.kind === "label" && !item.at).forEach((item) => {
+          const y = 28 + (item.row || 0) * 19;
+          const text = fitText(item.text, Math.max(24, p.width - 28));
+          labelBoxes.push(textBox(18, y, p.textWidth(text), 11));
+        });
         primitives.filter((item) => item.kind === "shade").forEach(drawPrimitive);
         primitives.filter((item) => item.kind !== "shade" && item.kind !== "label").forEach(drawPrimitive);
         drawGrips();

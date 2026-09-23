@@ -7,6 +7,8 @@
     storageKey: root.STORAGE_KEY,
     title: "TF2 Puzzle Lab",
     heading: "geometry builds",
+    curriculumLabel: (count) => count + " connected tracks",
+    sceneKicker: "Live geometry",
     resetNote: "The walkthrough is not affected.",
     conceptLink: (puzzle) => ({ href: "index.html#" + puzzle.walkthroughChapter, label: "Review " + puzzle.walkthroughChapter.replaceAll("-", " ") + " ↗" }),
   }, root.PUZZLE_LAB_CONFIG || {});
@@ -16,7 +18,7 @@
   const scenes = root.PuzzleScenes;
   const stageById = new Map(stages.map((stage) => [stage.id, stage]));
   const EDIT_DEBOUNCE_MS = 150;
-  const READY_MESSAGE = "Drag the scene or edit the code. The canvas runs your function as you go. Check when it matches.";
+  const READY_MESSAGE = "Edit the code or change an input. The scene updates automatically. Check all cases when it looks right.";
 
   let progress = root.loadProgress(root.localStorage, config.storageKey);
   let currentIndex = 0;
@@ -27,6 +29,8 @@
   let values = {};
   let live = null;
   let editTimer = 0;
+  const expandedTracks = new Set();
+  const expandedStages = new Set();
 
   const dom = {};
   const ids = [
@@ -35,14 +39,16 @@
     "componentShelf", "componentCount", "codeEditor", "runButton", "checkButton", "resetCodeButton",
     "hintButton", "hintPanel", "feedbackPanel", "caseComparison", "previousPuzzle", "previousPuzzleLabel",
     "nextPuzzle", "nextPuzzleLabel", "resetProgress", "solvedCount", "progressFill", "lineStatus",
-    "focusToggle",
+    "focusToggle", "labCurriculumLabel", "mapToggle", "mapContent", "puzzleSearch", "continuePuzzle",
+    "visualizerKicker", "visualizerHeading", "inputLegend", "checkPanel", "preciseControls", "handleControls",
   ];
 
   const FOCUS_KEY = "tf2-lab-focus-mode";
   function setFocusMode(on) {
     document.body.classList.toggle("is-focused", on);
-    dom.focusToggle.setAttribute("aria-pressed", on ? "true" : "false");
-    dom.focusToggle.textContent = on ? "Show puzzles" : "Focus mode";
+    dom.focusToggle.setAttribute("aria-expanded", on ? "false" : "true");
+    dom.focusToggle.setAttribute("aria-label", on ? "Show puzzle sidebar" : "Hide puzzle sidebar");
+    dom.focusToggle.title = on ? "Show puzzle sidebar" : "Hide puzzle sidebar";
     try { localStorage.setItem(FOCUS_KEY, on ? "1" : "0"); } catch (error) { /* private mode */ }
     if (editor) editor.refresh();
   }
@@ -86,6 +92,25 @@
     dom.runState.classList.toggle("is-error", kind === "error" && !busy);
   }
 
+  function setCheckFeedback(message, kind) {
+    dom.checkPanel.hidden = false;
+    dom.checkPanel.textContent = message;
+    dom.checkPanel.classList.toggle("is-success", kind === "success");
+    dom.checkPanel.classList.toggle("is-error", kind === "error");
+  }
+
+  function clearCheckFeedback() {
+    dom.checkPanel.hidden = true;
+    dom.checkPanel.textContent = "";
+    renderComparison(null);
+  }
+
+  function setMapOpen(open) {
+    dom.mapContent.hidden = !open;
+    dom.mapToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    dom.mapToggle.textContent = open ? "Hide puzzles" : "Browse puzzles";
+  }
+
   function renderComparison(result) {
     if (!result || !result.testCase || result.pass) {
       dom.caseComparison.hidden = true;
@@ -114,14 +139,58 @@
     dom.stageMap.innerHTML = "";
     const open = unlockedNow();
     const states = root.trackStates(tracks, progress);
+    const query = dom.puzzleSearch.value.trim().toLowerCase();
+    const active = currentPuzzle();
+    function matches(puzzle, stage, track) {
+      if (!query) return true;
+      if (/^\d+$/.test(query)) return puzzle.number === Number(query);
+      return [String(puzzle.number), twoDigits(puzzle.number), puzzle.title, stage.title, track.title]
+        .some((value) => value.toLowerCase().includes(query));
+    }
+    function puzzleList(members) {
+      const list = document.createElement("div");
+      list.className = "puzzle-list";
+      members.forEach((puzzle) => {
+        const index = puzzle.number - 1;
+        const solvedPuzzle = Boolean(progress.solved[puzzle.id]);
+        const locked = !open.has(puzzle.id);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "puzzle-map-button";
+        if (solvedPuzzle) button.classList.add("is-solved");
+        if (index === currentIndex) button.classList.add("is-current");
+        button.disabled = locked;
+        button.setAttribute("aria-current", index === currentIndex ? "step" : "false");
+        button.setAttribute("aria-label", twoDigits(puzzle.number) + " " + puzzle.title + (locked ? ", locked" : solvedPuzzle ? ", solved" : ", available"));
+        button.title = locked ? "Complete the previous build in this track to unlock." : puzzle.title;
+        button.innerHTML =
+          "<span class=\"map-number\">" + twoDigits(puzzle.number) + "</span>" +
+          "<span class=\"map-title\">" + escapeHtml(puzzle.title) + "</span>" +
+          "<span class=\"map-state\" aria-hidden=\"true\">" + (locked ? "·" : solvedPuzzle ? "✓" : index === currentIndex ? "◆" : "○") + "</span>";
+        button.addEventListener("click", () => navigate(index));
+        list.append(button);
+      });
+      return list;
+    }
     tracks.forEach((track) => {
       const state = states.find((entry) => entry.id === track.id).state;
-      const block = document.createElement("section");
+      const visibleStages = track.stages.map((stage) => ({
+        stage,
+        members: puzzles.filter((puzzle) => puzzle.stage === stage.id && matches(puzzle, stage, track)),
+      })).filter((entry) => entry.members.length || (!query && !puzzles.some((puzzle) => puzzle.stage === entry.stage.id)));
+      if (!visibleStages.length) return;
+      const block = document.createElement("details");
       block.className = "track-block";
       if (state === "locked") block.classList.add("is-locked");
+      block.open = Boolean(query) || expandedTracks.has(track.id) || track.id === active.track;
+      block.addEventListener("toggle", () => {
+        if (dom.puzzleSearch.value.trim()) return;
+        if (block.open) expandedTracks.add(track.id);
+        else expandedTracks.delete(track.id);
+      });
       const members = puzzles.filter((puzzle) => puzzle.track === track.id);
       const solved = members.filter((puzzle) => progress.solved[puzzle.id]).length;
-      const heading = document.createElement("h3");
+      const heading = document.createElement("summary");
       heading.className = "track-name";
       heading.innerHTML = "<span>" + escapeHtml(track.title) + "</span><span>" + (members.length ? solved + "/" + members.length : state) + "</span>";
       block.append(heading);
@@ -131,12 +200,22 @@
         note.textContent = state === "locked" ? track.note : "Available. Puzzles arrive with the next track.";
         block.append(note);
       }
-      track.stages.forEach((stage) => {
-        const section = document.createElement("section");
-        section.className = "stage-group";
-        const stageHeading = document.createElement("h3");
-        stageHeading.className = "stage-name";
+      visibleStages.forEach(({ stage, members: visibleMembers }) => {
         const stageMembers = puzzles.filter((puzzle) => puzzle.stage === stage.id);
+        if (track.stages.length === 1 && stage.title === track.title.replace(/^\d+ · /, "")) {
+          block.append(puzzleList(visibleMembers));
+          return;
+        }
+        const section = document.createElement("details");
+        section.className = "stage-group";
+        section.open = Boolean(query) || expandedStages.has(stage.id) || stage.id === active.stage;
+        section.addEventListener("toggle", () => {
+          if (dom.puzzleSearch.value.trim()) return;
+          if (section.open) expandedStages.add(stage.id);
+          else expandedStages.delete(stage.id);
+        });
+        const stageHeading = document.createElement("summary");
+        stageHeading.className = "stage-name";
         stageHeading.innerHTML = "<span>" + escapeHtml(stage.title) + "</span><span>" + (stageMembers.length ? stageProgress(stage) : "—") + "</span>";
         section.append(stageHeading);
         if (!stageMembers.length) {
@@ -145,32 +224,18 @@
           placeholder.textContent = stage.subtitle;
           section.append(placeholder);
         } else {
-          const list = document.createElement("div");
-          list.className = "puzzle-list";
-          stageMembers.forEach((puzzle) => {
-            const index = puzzle.number - 1;
-            const solvedPuzzle = Boolean(progress.solved[puzzle.id]);
-            const locked = !open.has(puzzle.id);
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "puzzle-map-button";
-            if (solvedPuzzle) button.classList.add("is-solved");
-            if (index === currentIndex) button.classList.add("is-current");
-            button.disabled = locked;
-            button.setAttribute("aria-current", index === currentIndex ? "step" : "false");
-            button.innerHTML =
-              "<span class=\"map-number\">" + twoDigits(puzzle.number) + "</span>" +
-              "<span class=\"map-title\">" + escapeHtml(puzzle.title) + "</span>" +
-              "<span class=\"map-state\" aria-hidden=\"true\">" + (locked ? "·" : solvedPuzzle ? "✓" : index === currentIndex ? "◆" : "○") + "</span>";
-            button.addEventListener("click", () => navigate(index));
-            list.append(button);
-          });
-          section.append(list);
+          section.append(puzzleList(visibleMembers));
         }
         block.append(section);
       });
       dom.stageMap.append(block);
     });
+    if (!dom.stageMap.children.length) {
+      const empty = document.createElement("p");
+      empty.className = "stage-placeholder";
+      empty.textContent = "No puzzles match that search.";
+      dom.stageMap.append(empty);
+    }
   }
 
   function renderComponents() {
@@ -178,20 +243,39 @@
     const requiredIds = new Set(root.collectDependencyIds(puzzles, puzzle));
     const solvedPuzzles = puzzles.filter((entry) => progress.solved[entry.id]);
     dom.componentShelf.innerHTML = "";
-    if (!solvedPuzzles.length) {
-      dom.componentShelf.innerHTML = "<div class=\"empty-shelf\">Solve a component and it will live here.</div>";
+    const required = puzzles.filter((entry) => requiredIds.has(entry.id));
+    if (!required.length) {
+      dom.componentShelf.innerHTML = "<div class=\"empty-shelf\">This build needs no earlier components.</div>";
     } else {
-      solvedPuzzles.forEach((entry) => {
+      required.forEach((entry) => {
         const chip = document.createElement("span");
         chip.className = "component-chip";
-        if (requiredIds.has(entry.id)) chip.classList.add("is-required");
-        chip.textContent = entry.functionName + "()";
-        chip.title = (requiredIds.has(entry.id) ? "Used by this puzzle · " : "") + entry.signature;
+        if (progress.solved[entry.id]) chip.classList.add("is-required");
+        else chip.classList.add("is-missing");
+        chip.textContent = entry.functionName + "()" + (progress.solved[entry.id] ? "" : " · missing");
+        chip.title = entry.signature;
         dom.componentShelf.append(chip);
       });
     }
-    const missing = Array.from(requiredIds).filter((id) => !progress.solved[id]);
-    dom.componentCount.textContent = missing.length ? missing.length + " dependency missing" : solvedPuzzles.length + " ready";
+    if (solvedPuzzles.length) {
+      const all = document.createElement("details");
+      all.className = "all-components";
+      const summary = document.createElement("summary");
+      summary.textContent = "View all " + solvedPuzzles.length + " solved components";
+      const chips = document.createElement("div");
+      chips.className = "component-shelf all-component-chips";
+      solvedPuzzles.forEach((entry) => {
+        const chip = document.createElement("span");
+        chip.className = "component-chip";
+        chip.textContent = entry.functionName + "()";
+        chip.title = entry.signature;
+        chips.append(chip);
+      });
+      all.append(summary, chips);
+      dom.componentShelf.append(all);
+    }
+    const ready = required.filter((entry) => progress.solved[entry.id]).length;
+    dom.componentCount.textContent = required.length ? ready + "/" + required.length + " needed" : solvedPuzzles.length + " solved";
   }
 
   function renderHints() {
@@ -209,7 +293,7 @@
     const solved = Object.keys(progress.solved).length;
     const previous = puzzles[currentIndex - 1];
     const next = puzzles[currentIndex + 1];
-    dom.previousPuzzle.disabled = !previous;
+    dom.previousPuzzle.disabled = !previous || !isUnlocked(currentIndex - 1);
     dom.previousPuzzleLabel.textContent = previous ? previous.title : "Start";
     const nextLocked = Boolean(next) && !isUnlocked(currentIndex + 1);
     dom.nextPuzzle.disabled = !next || nextLocked;
@@ -217,6 +301,10 @@
     dom.nextPuzzleLabel.textContent = next ? (nextLocked ? "Check to unlock · " + next.title : next.title) : "Track complete";
     dom.solvedCount.textContent = solved + " solved";
     dom.progressFill.style.width = (solved / puzzles.length * 100) + "%";
+    const open = unlockedNow();
+    const unsolved = puzzles.findIndex((puzzle) => open.has(puzzle.id) && !progress.solved[puzzle.id]);
+    dom.continuePuzzle.disabled = unsolved < 0;
+    dom.continuePuzzle.textContent = unsolved < 0 ? "All solved" : "Next unsolved";
   }
 
   function renderSelectors() {
@@ -240,6 +328,63 @@
       select.addEventListener("change", () => { values[handle.id] = select.value; renderScene(); requestLive(); });
       field.append(caption, select);
       dom.selectorStrip.append(field);
+    });
+  }
+
+  function renderHandleControls() {
+    const handles = currentPuzzle().scene.handles.filter((handle) => handle.type !== "selector");
+    dom.preciseControls.hidden = handles.length === 0;
+    dom.handleControls.replaceChildren();
+    handles.forEach((handle) => {
+      const row = document.createElement("div");
+      row.className = "handle-control";
+      const name = document.createElement("strong");
+      name.textContent = handle.label || handle.id;
+      const fields = document.createElement("div");
+      fields.className = "handle-fields";
+      const scalar = ["slider", "timeline", "dial"].includes(handle.type);
+      const keys = scalar ? ["value"] : (handle.type === "frame" || handle.type === "pose") ? ["x", "y", "yaw"] : ["x", "y"];
+      keys.forEach((key) => {
+        const field = document.createElement("label");
+        field.className = "handle-field";
+        const caption = document.createElement("span");
+        caption.textContent = key === "value" ? (handle.type === "dial" ? "angle °" : "value") : key === "yaw" ? "yaw °" : key;
+        const input = document.createElement("input");
+        input.type = handle.type === "slider" || handle.type === "timeline" ? "range" : "number";
+        input.step = input.type === "range" ? "any" : "0.1";
+        input.dataset.handleId = handle.id;
+        input.dataset.key = key;
+        if (input.type === "range") {
+          input.min = String(Number.isFinite(handle.start) ? handle.start : handle.min);
+          input.max = String(Number.isFinite(handle.end) ? handle.end : handle.max);
+        }
+        const readout = document.createElement("output");
+        input.addEventListener(input.type === "range" ? "input" : "change", () => {
+          const number = Number(input.value);
+          if (!Number.isFinite(number)) return;
+          if (scalar) values[handle.id] = handle.type === "dial" ? number * Math.PI / 180 : number;
+          else values[handle.id] = { ...values[handle.id], [key]: key === "yaw" ? number * Math.PI / 180 : number };
+          readout.textContent = number.toFixed(2);
+          renderScene();
+          requestLive();
+        });
+        field.append(caption, input, readout);
+        fields.append(field);
+      });
+      row.append(name, fields);
+      dom.handleControls.append(row);
+    });
+    syncHandleControls();
+  }
+
+  function syncHandleControls() {
+    dom.handleControls.querySelectorAll("input[data-handle-id]").forEach((input) => {
+      const handle = currentPuzzle().scene.handles.find((entry) => entry.id === input.dataset.handleId);
+      const raw = input.dataset.key === "value" ? values[handle.id] : values[handle.id][input.dataset.key];
+      const number = handle.type === "dial" || input.dataset.key === "yaw" ? raw * 180 / Math.PI : raw;
+      if (!Number.isFinite(number)) return;
+      input.value = String(Number(number.toFixed(2)));
+      input.nextElementSibling.textContent = number.toFixed(2);
     });
   }
 
@@ -271,6 +416,11 @@
     dom.puzzleGoal.textContent = puzzle.goal;
     dom.puzzleConcept.textContent = puzzle.concept;
     dom.puzzleSignature.textContent = puzzle.signature;
+    const hasDrag = puzzle.scene.handles.some((handle) => handle.type !== "selector");
+    const hasSelector = puzzle.scene.handles.some((handle) => handle.type === "selector");
+    dom.visualizerKicker.textContent = config.sceneKicker;
+    dom.visualizerHeading.textContent = hasDrag && hasSelector ? "Drag or choose an input" : hasDrag ? "Drag an input to explore" : hasSelector ? "Choose an input to explore" : "Watch your function run";
+    dom.inputLegend.hidden = !hasDrag;
     const concept = config.conceptLink(puzzle);
     dom.walkthroughLink.href = concept.href;
     dom.walkthroughLink.textContent = concept.label;
@@ -302,9 +452,10 @@
     renderHints();
     renderFooter();
     renderSelectors();
+    renderHandleControls();
     updateCursorStatus();
     setFeedback(progress.solved[puzzle.id] ? "Solved. Improve this component or continue building." : READY_MESSAGE, progress.solved[puzzle.id] ? "success" : "ready");
-    renderComparison(null);
+    clearCheckFeedback();
     renderScene();
     requestLive();
   }
@@ -388,6 +539,7 @@
   function scheduleLiveFromEdit() {
     storeDraft();
     updateCursorStatus();
+    clearCheckFeedback();
     clearTimeout(editTimer);
     editTimer = setTimeout(requestLive, EDIT_DEBOUNCE_MS);
   }
@@ -405,7 +557,7 @@
     busy = true;
     dom.runButton.disabled = true;
     dom.checkButton.disabled = true;
-    setFeedback("Checking every case…", "ready");
+    setCheckFeedback("Checking every case…", "ready");
     sketch.setState({ running: true });
     storeDraft();
     const cases = root.resolveCases(puzzle);
@@ -420,7 +572,7 @@
     dom.runButton.disabled = false;
     dom.checkButton.disabled = false;
     sketch.setState({ running: false });
-    setFeedback(result.message, result.pass ? "success" : "error");
+    setCheckFeedback(result.message, result.pass ? "success" : "error");
     renderComparison(result);
     if (result.pass) {
       const before = root.trackStates(tracks, progress);
@@ -432,7 +584,7 @@
       renderFooter();
       const after = root.trackStates(tracks, progress);
       const unlocked = tracks.filter((track, index) => before[index].state === "locked" && after[index].state === "available");
-      if (unlocked.length) setFeedback(result.message + " " + unlocked.map((track) => track.title).join(" and ") + " is now available.", "success");
+      if (unlocked.length) setCheckFeedback(result.message + " " + unlocked.map((track) => track.title).join(" and ") + " is now available.", "success");
     }
     requestLive();
   }
@@ -472,6 +624,9 @@
 
   function bindEvents() {
     dom.focusToggle.addEventListener("click", () => setFocusMode(!document.body.classList.contains("is-focused")));
+    dom.mapToggle.addEventListener("click", () => setMapOpen(dom.mapContent.hidden));
+    dom.puzzleSearch.addEventListener("input", renderMap);
+    dom.continuePuzzle.addEventListener("click", () => navigate(firstOpenIndex()));
     dom.codeEditor.addEventListener("input", scheduleLiveFromEdit);
     dom.codeEditor.addEventListener("click", updateCursorStatus);
     dom.codeEditor.addEventListener("keyup", updateCursorStatus);
@@ -488,7 +643,7 @@
       else if (event.ctrlKey && event.key === "Enter") { event.preventDefault(); clearTimeout(editTimer); requestLive(); }
       else if (event.altKey && event.key === "ArrowLeft") { event.preventDefault(); navigate(currentIndex - 1); }
       else if (event.altKey && event.key === "ArrowRight") { event.preventDefault(); navigate(currentIndex + 1); }
-      else if (event.key === "Escape") { renderComparison(null); dom.hintPanel.hidden = true; }
+      else if (event.key === "Escape") { dom.hintPanel.hidden = true; }
     });
 
     root.addEventListener("hashchange", () => {
@@ -514,12 +669,21 @@
     }
     session = root.createLiveSession({ workerUrl: "puzzle-worker.js", checkTimeoutMs: config.checkTimeoutMs || 750 });
     dom.curriculumHeading.textContent = puzzles.length + " " + config.heading;
+    dom.labCurriculumLabel.textContent = typeof config.curriculumLabel === "function" ? config.curriculumLabel(tracks.length) : config.curriculumLabel;
+    dom.runButton.textContent = "Run input";
+    dom.checkButton.textContent = "Check all";
     if (typeof root.createCodeEditor === "function") editor = root.createCodeEditor(dom.codeEditor);
     restoreFocusMode();
     currentIndex = initialIndex();
+    expandedTracks.add(currentPuzzle().track);
+    expandedStages.add(currentPuzzle().stage);
+    const narrow = root.matchMedia("(max-width: 1260px)");
+    setMapOpen(!narrow.matches);
+    narrow.addEventListener("change", (event) => setMapOpen(!event.matches));
     sketch = root.createPuzzleSketch(dom.canvasHost, {
       onDrag(grip, worldPoint) {
         values = scenes.dragHandle(currentPuzzle(), values, grip, worldPoint);
+        syncHandleControls();
         renderScene();
         requestLive();
       },

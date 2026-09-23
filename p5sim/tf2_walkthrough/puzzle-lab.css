@@ -12,6 +12,19 @@
 .lab-topbar {
   border-radius: var(--radius);
   margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.lab-topbar .top-actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.lab-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 .lab-topbar a {
@@ -54,6 +67,71 @@
   flex-direction: column;
   max-height: calc(100vh - 24px);
   padding: 16px;
+}
+
+.sidebar-toggle {
+  display: grid;
+  flex: 0 0 40px;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+.sidebar-toggle-icon {
+  width: 21px;
+  height: 21px;
+}
+
+.sidebar-expand-arrow {
+  display: none;
+}
+
+body.is-focused .sidebar-collapse-arrow {
+  display: none;
+}
+
+body.is-focused .sidebar-expand-arrow {
+  display: inline;
+}
+
+.map-toggle {
+  display: none;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.map-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.map-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.puzzle-search {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--border-bright);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.continue-button {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  font-size: 0.72rem;
 }
 
 .lab-card-heading,
@@ -126,9 +204,50 @@
 .state-locked { background: #2b3341; }
 
 .stage-map {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding-right: 5px;
   scrollbar-color: var(--border-bright) transparent;
+}
+
+.track-name,
+.stage-name {
+  position: relative;
+  cursor: pointer;
+  list-style: none;
+  padding-left: 15px;
+}
+
+.track-name::-webkit-details-marker,
+.stage-name::-webkit-details-marker {
+  display: none;
+}
+
+.track-name::before,
+.stage-name::before {
+  position: absolute;
+  left: 1px;
+  content: "▸";
+  color: var(--accent);
+}
+
+details[open] > .track-name::before,
+details[open] > .stage-name::before {
+  content: "▾";
+}
+
+.track-name:focus-visible,
+.stage-name:focus-visible,
+.all-components summary:focus-visible,
+.precise-controls summary:focus-visible,
+.puzzle-search:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.track-block > .puzzle-list {
+  margin-top: 9px;
 }
 
 .stage-group + .stage-group {
@@ -352,6 +471,28 @@
   color: #bad1ff;
 }
 
+.component-chip.is-missing {
+  color: #ffb5bd;
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+
+.all-components {
+  width: 100%;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.all-components summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.all-component-chips {
+  max-height: 200px;
+  overflow: auto;
+}
+
 .empty-shelf {
   width: 100%;
   border-style: dashed;
@@ -414,10 +555,10 @@ body.is-focused .curriculum-card {
 }
 
 body.is-focused .lab-layout {
-  grid-template-columns: minmax(420px, 1.3fr) minmax(430px, 1fr);
+  grid-template-columns: minmax(360px, 1fr) minmax(460px, 1.4fr);
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 900px) {
   body.is-focused .lab-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -566,6 +707,19 @@ body.is-focused .lab-layout {
   background: rgba(255, 124, 139, 0.07);
 }
 
+.check-panel {
+  margin-top: 10px;
+}
+
+.check-panel::before {
+  display: block;
+  margin-bottom: 4px;
+  content: "CHECK ALL CASES";
+  color: var(--faint);
+  font: 700 0.64rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.08em;
+}
+
 .case-comparison {
   display: grid;
   gap: 7px;
@@ -682,6 +836,74 @@ body.is-focused .lab-layout {
   margin-top: 10px;
 }
 
+.precise-controls {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.precise-controls summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.handle-controls {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.handle-control {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.handle-control strong {
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.handle-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.handle-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font: 650 0.7rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.handle-field input[type="number"] {
+  width: 78px;
+  min-height: 32px;
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.handle-field input[type="range"] {
+  width: min(220px, 38vw);
+  accent-color: var(--accent);
+}
+
+.handle-field output {
+  min-width: 4ch;
+  color: var(--accent);
+  text-align: right;
+}
+
 .selector-field {
   display: inline-flex;
   align-items: center;
@@ -744,11 +966,17 @@ body.is-focused .lab-layout {
 
 @media (max-width: 1260px) {
   .lab-layout {
-    grid-template-columns: minmax(220px, 0.65fr) minmax(0, 2fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .curriculum-card {
-    grid-row: span 2;
+    position: static;
+    grid-column: 1 / -1;
+    max-height: 350px;
+  }
+
+  .map-toggle {
+    display: block;
   }
 }
 
@@ -758,10 +986,21 @@ body.is-focused .lab-layout {
   }
 
   .curriculum-card {
-    position: static;
     grid-row: auto;
     max-height: none;
   }
+
+  .visual-column,
+  .code-column {
+    display: contents;
+  }
+
+  .curriculum-card { grid-row: 1; }
+  .puzzle-brief { grid-row: 2; }
+  .editor-card { grid-row: 3; }
+  .feedback-card { grid-row: 4; }
+  .visualizer-card { grid-row: 5; }
+  .component-card { grid-row: 6; }
 
   .stage-map {
     display: grid;
@@ -804,8 +1043,13 @@ body.is-focused .lab-layout {
   }
 
   .top-actions .button {
-    flex: 1;
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
     text-align: center;
+  }
+
+  .save-status {
+    flex: 1 1 100%;
   }
 
   .stage-map {

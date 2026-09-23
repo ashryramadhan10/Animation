@@ -11,6 +11,13 @@
   <body class="lab-body">
     <main class="app-shell puzzle-shell">
       <header class="topbar lab-topbar">
+        <div class="lab-topbar-left">
+          <button id="focusToggle" class="button button-secondary sidebar-toggle" type="button" aria-expanded="true" aria-controls="curriculumSidebar" aria-label="Hide puzzle sidebar" title="Hide puzzle sidebar">
+            <svg class="sidebar-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" />
+              <path class="sidebar-collapse-arrow" d="m16 9-3 3 3 3" /><path class="sidebar-expand-arrow" d="m13 9 3 3-3 3" />
+            </svg>
+          </button>
         <div class="brand-lockup">
           <span class="brand-mark" aria-hidden="true">CS</span>
           <div>
@@ -18,22 +25,29 @@
             <h1>Algo Lab</h1>
           </div>
         </div>
+        </div>
         <div class="top-actions">
           <span id="saveStatus" class="save-status" aria-live="polite">Saved locally</span>
-          <button id="focusToggle" class="button button-secondary" type="button" aria-pressed="false" title="Hide the puzzle list to give the code and the scene more room">Focus mode</button>
           <a class="button button-secondary" href="puzzle-lab.html">TF2 Puzzle Lab</a>
           <a class="button button-secondary" href="side-lab.html">Side Lab</a>
         </div>
       </header>
 
       <div class="lab-layout">
-        <aside class="curriculum-card" aria-labelledby="curriculumHeading">
+        <aside id="curriculumSidebar" class="curriculum-card" aria-labelledby="curriculumHeading">
           <div class="lab-card-heading">
             <div>
-              <p class="card-kicker">Six sections, one ladder</p>
+              <p id="labCurriculumLabel" class="card-kicker">Twelve open sections</p>
               <h2 id="curriculumHeading">Geometry builds</h2>
             </div>
             <span id="puzzleCounter" class="counter-pill">01 / 27</span>
+          </div>
+          <button id="mapToggle" class="button button-secondary map-toggle" type="button" aria-expanded="true" aria-controls="mapContent">Browse puzzles</button>
+          <div id="mapContent" class="map-content">
+          <div class="map-tools">
+            <label class="sr-only" for="puzzleSearch">Search puzzles</label>
+            <input id="puzzleSearch" class="puzzle-search" type="search" placeholder="Find a puzzle or number" autocomplete="off" />
+            <button id="continuePuzzle" class="button button-secondary continue-button" type="button">Next unsolved</button>
           </div>
           <div class="map-legend" aria-label="Puzzle state legend">
             <span><i class="state-dot state-solved"></i>Solved</span>
@@ -42,6 +56,7 @@
           </div>
           <nav id="stageMap" class="stage-map" aria-label="Puzzle curriculum"></nav>
           <button id="resetProgress" class="button danger-button" type="button">Reset all progress</button>
+          </div>
         </aside>
 
         <section class="visual-column">
@@ -64,15 +79,19 @@
           <section class="visualizer-card" aria-labelledby="visualizerHeading">
             <div class="lab-card-heading">
               <div>
-                <p class="card-kicker">Live geometry</p>
+                <p id="visualizerKicker" class="card-kicker">Live input</p>
                 <h2 id="visualizerHeading">Drag the inputs, watch your function</h2>
               </div>
               <span id="runState" class="run-state">Ready</span>
             </div>
-            <div id="canvasHost" class="puzzle-canvas-host" aria-label="p5.js visualization of the current puzzle"></div>
             <div id="selectorStrip" class="selector-strip" hidden></div>
+            <details id="preciseControls" class="precise-controls" hidden>
+              <summary>Set input values precisely</summary>
+              <div id="handleControls" class="handle-controls"></div>
+            </details>
+            <div id="canvasHost" class="puzzle-canvas-host" role="img" aria-label="p5.js visualization of the current puzzle"></div>
             <div class="visual-legend">
-              <span><i class="input-swatch"></i>Draggable input</span>
+              <span id="inputLegend"><i class="input-swatch"></i>Draggable input</span>
               <span><i class="expected-swatch"></i>Expected</span>
               <span><i class="actual-swatch"></i>Yours</span>
               <span><i class="match-swatch"></i>Match</span>
@@ -105,7 +124,7 @@
             </div>
             <div class="editor-toolbar">
               <span class="file-tab">solution.js</span>
-              <span class="shortcut-hint">Ctrl+Enter run now · Ctrl+Shift+Enter check</span>
+              <span class="shortcut-hint">Ctrl+Enter run · Ctrl+Shift+Enter check · Ctrl+M leave editor</span>
             </div>
             <label class="sr-only" for="codeEditor">JavaScript solution</label>
             <textarea id="codeEditor" class="code-editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
@@ -126,6 +145,7 @@
             <div id="feedbackPanel" class="feedback-panel" aria-live="polite">
               Drag the scene or edit the code. The canvas runs your function as you go. Check when it matches.
             </div>
+            <div id="checkPanel" class="feedback-panel check-panel" role="status" aria-live="polite" hidden></div>
             <div id="caseComparison" class="case-comparison" hidden></div>
             <div id="hintPanel" class="hint-panel" hidden></div>
           </section>
@@ -176,6 +196,8 @@
         storageKey: "algo-lab:v2",
         title: "Algo Lab",
         heading: "algorithm builds",
+        curriculumLabel: function (count) { return count + " open sections"; },
+        sceneKicker: "Live input",
         checkTimeoutMs: 4000,
         resetNote: "The other labs are not affected.",
         conceptLink: function (puzzle) { return { href: "https://cses.fi/problemset/task/" + puzzle.walkthroughChapter + "/", label: "CSES · " + puzzle.cses.name + " ↗" }; },

@@ -1906,8 +1906,7 @@
         drawVector(origin, values.a, "input", false, "a");
         drawVector(origin, values.b, "input", false, "b");
         if (context.puzzle.id === "dot-product") {
-          if (Number.isFinite(context.expected)) out.push(label("expected a·b = " + fmt(context.expected), "expected", { at: { x: -5.2, y: 3.2 } }));
-          if (Number.isFinite(context.actual)) out.push(label(text + " a·b = " + fmt(context.actual), style, { at: { x: -5.2, y: 2.8 } }));
+          out.push(label("a · b", "muted", { row: 3 }));
         } else if (context.puzzle.id === "angle-between") {
           const headingA = Math.atan2(values.a.y, values.a.x);
           const sign = cross(values.a, values.b) >= 0 ? 1 : -1;
@@ -2013,8 +2012,8 @@
       } else if (view === "angle") {
         out.push(ellipse(origin, [[1, 0], [0, 1]], "muted", { scale: 2, dashed: true }), arrow(origin, { x: 2.4, y: 0 }, "muted", { weight: 1 }), label("0", "muted", { at: { x: 2.5, y: 0.1 } }));
         out.push(arc(origin, 1.4, 0, values.angle, "input", { arrowhead: true }), label("angle " + fmt(values.angle) + " rad", "input", { at: { x: -5.2, y: 3.2 } }));
-        if (Number.isFinite(context.expected)) out.push(arc(origin, 1.9, 0, context.expected, "expected", { dashed: true, arrowhead: true }), label("expected " + fmt(context.expected), "expected", { at: { x: -5.2, y: 2.8 } }));
-        if (Number.isFinite(context.actual)) out.push(arc(origin, 1.0, 0, context.actual, style, { arrowhead: true }), label(text + " " + fmt(context.actual), style, { at: { x: -5.2, y: 2.4 } }));
+        if (Number.isFinite(context.expected)) out.push(arc(origin, 1.9, 0, context.expected, "expected", { dashed: true, arrowhead: true }));
+        if (Number.isFinite(context.actual)) out.push(arc(origin, 1.0, 0, context.actual, style, { arrowhead: true }));
       } else if (view === "cone") {
         out.push(ellipse(origin, [[1, 0], [0, 1]], "muted", { scale: 2, dashed: true }));
         out.push(arrow(origin, direction(values.anchor, 2.2), "muted", { weight: 1 }), arc(origin, 1.6, values.anchor - values.constraint, values.anchor + values.constraint, "muted", { weight: 3 }), label("anchor ± constraint", "muted", { at: add(direction(values.anchor, 2.2), { x: 0.1, y: 0.2 }) }));
@@ -2315,7 +2314,6 @@
       const style = resultStyle(context), text = resultLabel(context);
       const chosen = algoPreset(values, context.puzzle);
       const isNumberList = (v) => Array.isArray(v) && v.every(Number.isFinite);
-      const numberRows = (expectedText, actualText) => { out.push(label("expected " + expectedText, "expected", { at: { x: -5.3, y: 3.3 } }), label(text + " " + actualText, style, { at: { x: -5.3, y: 2.9 } })); };
       if (view === "sequence") {
         if (isNumberList(context.expected)) out.push(algoBars(context.expected, "expected", { alpha: 160, shift: -0.05 }));
         if (isNumberList(context.actual)) out.push(algoBars(context.actual, style, { shift: 0.05 }));
@@ -2335,7 +2333,6 @@
         if (isNumberList(context.expected) && context.puzzle.id !== "sum-of-two-values") out.push(algoBars(context.expected, "expected", { base: 0, height: 2.2, alpha: 160, shift: -0.06 }));
         if (isNumberList(context.actual) && context.puzzle.id !== "sum-of-two-values") out.push(algoBars(context.actual, style, { base: 0, height: 2.2, shift: 0.06 }));
         if (context.puzzle.id === "lower-bound" && Number.isFinite(context.actual) && input) out.push(marker({ x: -5 + Math.min(context.actual, input.length) * (10 / input.length), y: -1.0 }, "index " + context.actual, style, { height: 0.5 }));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "sets") {
         const n = Math.round(values.n);
         for (let v = 1; v <= n; v += 1) out.push(point({ x: -4.5 + 9 * (v - 0.5) / n, y: 1.2 }, String(v), "input"));
@@ -2343,10 +2340,8 @@
         drawSets(context.expected, "expected", -0.2);
         drawSets(context.actual, style, -0.35);
         out.push(label("upper marks: set a · lower marks: set b", "muted", { row: 3 }));
-        numberRows(describe(context.expected), describe(context.actual));
       } else if (view === "board" || view === "grid") {
         if (Array.isArray(chosen.a)) out.push(...algoGridLayers(chosen.a));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "number" || view === "coins" || view === "shop") {
         if (view === "coins" && Array.isArray(chosen.a)) {
           const x = Math.round(values.x);
@@ -2360,12 +2355,10 @@
           out.push(marker({ x: -4.5 + 8.5 * Math.min(1, Math.round(values.x) / maxPrice), y: -2.8 }, "budget " + Math.round(values.x), "muted", { height: 0.5 }));
         }
         if (view === "number") { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" · "), "input", { row: 3 })); }
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "rectangle") {
         const rows = Math.round(values.n !== undefined ? values.n : values.a), cols = Math.round(values.m !== undefined ? values.m : values.b);
         if (rows >= 1 && cols >= 1 && rows * cols <= 400) { const cells = []; for (let r = 0; r < rows; r += 1) cells.push(".".repeat(cols)); out.push(...algoGridLayers(cells)); }
         out.push(label(rows + " × " + cols, "input", { row: 3 }));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "text") {
         const input = typeof chosen.a === "string" ? chosen.a : "";
         const cell = Math.min(0.9, 10 / Math.max(1, input.length));
@@ -2374,7 +2367,6 @@
         const drawText = (value, styleName, y) => { if (typeof value !== "string") return; for (let i = 0; i < value.length && i < 60; i += 1) out.push(label(value[i], styleName, { at: { x: -5 + (i + 0.5) * cell - 0.1, y } })); };
         drawText(context.expected, "expected", -0.2);
         drawText(context.actual, style, -1.2);
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "plane") {
         const rowsOf = (list) => (Array.isArray(list) ? list.filter((row) => Array.isArray(row) && row.length >= 2 && row.every(Number.isFinite)) : []);
         const spots = rowsOf(chosen.points), loop = rowsOf(chosen.polygon), sticks = rowsOf(chosen.segments), marks = rowsOf(chosen.marks), boxes = rowsOf(chosen.rectangles), rays = rowsOf(chosen.lines);
@@ -2396,7 +2388,6 @@
           spots.concat(loop).forEach((p) => out.push(point(at(p[0], p[1]), named ? "(" + p[0] + ", " + p[1] + ")" : "", "input")));
           marks.forEach((p) => out.push(point(at(p[0], p[1]), "(" + p[0] + ", " + p[1] + ")", "expected", { dashed: true })));
         }
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "intervals") {
         const list = Array.isArray(chosen.a) ? chosen.a.filter((p) => Array.isArray(p) && p.length >= 2) : [];
         if (list.length) {
@@ -2408,12 +2399,10 @@
             out.push(segments([[{ x: xOf(p[0]), y }, { x: xOf(p[1]), y }]], "input", { weight: 4 }), label(p[0] + "–" + p[1] + (p.length > 2 ? " · " + p[2] : ""), "muted", { at: { x: xOf(p[1]) + 0.15, y: y + 0.12 } }));
           });
         }
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "two-arrays") {
         const a = Array.isArray(chosen.a) ? chosen.a : [], b = Array.isArray(chosen.b) ? chosen.b : [];
         if (a.length) out.push(algoBars(a, "input", { base: 0.4, height: 2.2, weight: 8 }), label("a", "input", { at: { x: -5.4, y: 0.5 } }));
         if (b.length) out.push(algoBars(b, "muted", { base: -3.2, height: 2.2, weight: 8 }), label("b", "muted", { at: { x: -5.4, y: -3.1 } }));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "letter-grid" || view === "number-grid") {
         const drawCells = (rows, left, styleName) => {
           if (!Array.isArray(rows) || !rows.length) return;
@@ -2436,7 +2425,6 @@
         else { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" \u00b7 "), "input", { at: { x: -5, y: 3.3 } })); }
         const shown = Array.isArray(context.actual) ? context.actual : (Array.isArray(context.expected) ? context.expected : null);
         if (shown) { drawCells(shown, 0.4, Array.isArray(context.actual) ? style : "expected"); out.push(label(Array.isArray(context.actual) ? text : "expected", Array.isArray(context.actual) ? style : "expected", { at: { x: 0.4, y: 3.3 } })); }
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "graph") {
         const nodeCount = Array.isArray(chosen.a) ? chosen.a.length : (Number.isFinite(chosen.a) ? chosen.a : 0);
         const hasPositions = (list) => Array.isArray(list) && list.length > 0 && list[0] && typeof list[0] === "object" && !Array.isArray(list[0]);
@@ -2460,7 +2448,6 @@
           perNode(context.expected, "expected", 0.45, "");
           perNode(context.actual, style, -0.35, "");
         }
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "heap") {
         const input = Array.isArray(chosen.a) ? chosen.a : [];
         out.push(...heapTreeLayers(input, "input", -2.6, "input heap"));
@@ -2468,7 +2455,6 @@
         if (shown(context.actual)) out.push(...heapTreeLayers(shown(context.actual), style, 2.6, text + " heap"));
         else if (shown(context.expected)) out.push(...heapTreeLayers(shown(context.expected), "expected", 2.6, "expected heap"));
         if (context.puzzle.id === "heap-push") out.push(label("pushing [" + Math.round(values.key) + ", 99]", "input", { row: 3 }));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "segtree") {
         const base = Array.isArray(chosen.a) ? chosen.a : [];
         const tree = algoSegmentTree(base);
@@ -2477,7 +2463,6 @@
         const shownTree = isNumberList(context.actual) && context.actual.length === tree.length ? context.actual : (isNumberList(context.expected) && context.expected.length === tree.length ? context.expected : tree);
         out.push(...segmentTreeLayers(shownTree, style, { highlight }));
         if (context.puzzle.id === "segment-tree-query") out.push(label("query leaves " + Math.min(Math.round(values.l), Math.round(values.r)) + " to " + Math.max(Math.round(values.l), Math.round(values.r)), "input", { row: 3 }));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       } else if (view === "tree") {
         const n = Number.isFinite(chosen.a) ? chosen.a : (Array.isArray(chosen.d) ? chosen.d.length : 1);
         const links = Array.isArray(chosen.b) ? chosen.b : [];
@@ -2494,7 +2479,6 @@
         if (context.puzzle.id === "kth-ancestor") out.push(label("node " + Math.round(values.v) + " · k " + Math.round(values.k), "input", { row: 3 }));
         if (context.puzzle.id === "company-queries-ii" && Array.isArray(chosen.c)) out.push(label("queries " + chosen.c.map((q) => q[0] + "," + q[1]).join(" · "), "input", { row: 3 }));
         if (Array.isArray(chosen.d) && chosen.d.length === n) out.push(label("values " + chosen.d.join(" "), "input", { row: 3 }));
-        numberRows(describeAlgo(context.expected), describeAlgo(context.actual));
       }
       out.push(...notes(context, describeAlgo(context.expected), describeAlgo(context.actual)));
       return out;
