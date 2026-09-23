@@ -91,6 +91,65 @@
     assert(!html.includes("<\""), "raw < must be escaped");
   });
 
+  test("editor indents and outdents every line of a selection without eating it", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    const source = "let a = 1;\nlet b = 2;\nlet c = 3;";
+    const inward = api.indentSelection(source, 0, source.length);
+    same(inward.value, "  let a = 1;\n  let b = 2;\n  let c = 3;");
+    same(inward.value.slice(inward.start, inward.end), "let a = 1;\n  let b = 2;\n  let c = 3;");
+    const outward = api.outdentSelection(inward.value, inward.start, inward.end);
+    same(outward.value, source);
+    same(api.outdentSelection(source, 0, source.length), null);
+  });
+
+  test("editor toggles line comments on and off over a selection", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    const source = "  if (x) {\n\n    step();\n  }";
+    const commented = api.toggleComment(source, 0, source.length);
+    same(commented.value, "  // if (x) {\n\n  //   step();\n  // }");
+    same(api.toggleComment(commented.value, 0, commented.value.length).value, source);
+    same(api.toggleComment("\n\n", 0, 2), null);
+  });
+
+  test("editor moves and duplicates whole lines", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    const source = "one\ntwo\nthree";
+    same(api.moveLines(source, 4, 4, -1).value, "two\none\nthree");
+    same(api.moveLines(source, 4, 4, 1).value, "one\nthree\ntwo");
+    same(api.moveLines(source, 0, 0, -1), null);
+    same(api.moveLines(source, 10, 10, 1), null);
+    const copied = api.duplicateLines(source, 4, 4);
+    same(copied.value, "one\ntwo\ntwo\nthree");
+    same(copied.start, 8);
+  });
+
+  test("editor keeps indentation when breaking a line and opens a block", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    same(api.breakLine("    step();", 11, 11).value, "    step();\n    ");
+    same(api.breakLine("  if (x) {", 10, 10).value, "  if (x) {\n    ");
+    const wrapped = api.breakLine("  if (x) {}", 10, 10);
+    same(wrapped.value, "  if (x) {\n    \n  }");
+    same(wrapped.start, 15);
+  });
+
+  test("editor closes brackets and quotes, skips over them, and deletes the pair", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    same(api.typeCharacter("", 0, 0, "(").value, "()");
+    same(api.typeCharacter("", 0, 0, "(").start, 1);
+    same(api.typeCharacter("()", 1, 1, ")"), { value: "()", start: 2, end: 2 });
+    same(api.typeCharacter("ab", 0, 2, "(").value, "(ab)");
+    same(api.typeCharacter("x", 0, 0, "("), null, "no pair in front of a word");
+    same(api.typeCharacter("don", 3, 3, "'"), null, "no pair after a word character");
+    same(api.closePair("()", 1, 1).value, "");
+    same(api.closePair("(a)", 1, 1), null);
+  });
+
+  test("editor dedents a closing brace sitting alone on its line", () => {
+    const api = requireApi(load("./puzzle-editor.js", "PuzzleEditor"), "puzzle-editor.js");
+    same(api.dedentClosing("if (x) {\n    ", 13, 13, "}").value, "if (x) {\n  }");
+    same(api.dedentClosing("  step()", 8, 8, "}"), null);
+  });
+
   test("runtime makes dependency sources visible to the compiled function", () => {
     const api = requireApi(runtime, "puzzle-runtime.js");
     const scope = api.compileScope("twice", "function twice(n) { return addOne(addOne(n)); }", [ADD_SOURCE]);

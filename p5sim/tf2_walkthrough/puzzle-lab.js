@@ -35,8 +35,22 @@
     "componentShelf", "componentCount", "codeEditor", "runButton", "checkButton", "resetCodeButton",
     "hintButton", "hintPanel", "feedbackPanel", "caseComparison", "previousPuzzle", "previousPuzzleLabel",
     "nextPuzzle", "nextPuzzleLabel", "resetProgress", "solvedCount", "progressFill", "lineStatus",
+    "focusToggle",
   ];
 
+  const FOCUS_KEY = "tf2-lab-focus-mode";
+  function setFocusMode(on) {
+    document.body.classList.toggle("is-focused", on);
+    dom.focusToggle.setAttribute("aria-pressed", on ? "true" : "false");
+    dom.focusToggle.textContent = on ? "Show puzzles" : "Focus mode";
+    try { localStorage.setItem(FOCUS_KEY, on ? "1" : "0"); } catch (error) { /* private mode */ }
+    if (editor) editor.refresh();
+  }
+  function restoreFocusMode() {
+    let stored = null;
+    try { stored = localStorage.getItem(FOCUS_KEY); } catch (error) { stored = null; }
+    setFocusMode(stored === "1");
+  }
   function twoDigits(number) { return String(number).padStart(2, "0"); }
   function currentPuzzle() { return puzzles[currentIndex]; }
   function unlockedNow() { return root.unlockedIds(puzzles, tracks, progress); }
@@ -457,6 +471,7 @@
   }
 
   function bindEvents() {
+    dom.focusToggle.addEventListener("click", () => setFocusMode(!document.body.classList.contains("is-focused")));
     dom.codeEditor.addEventListener("input", scheduleLiveFromEdit);
     dom.codeEditor.addEventListener("click", updateCursorStatus);
     dom.codeEditor.addEventListener("keyup", updateCursorStatus);
@@ -500,6 +515,7 @@
     session = root.createLiveSession({ workerUrl: "puzzle-worker.js", checkTimeoutMs: config.checkTimeoutMs || 750 });
     dom.curriculumHeading.textContent = puzzles.length + " " + config.heading;
     if (typeof root.createCodeEditor === "function") editor = root.createCodeEditor(dom.codeEditor);
+    restoreFocusMode();
     currentIndex = initialIndex();
     sketch = root.createPuzzleSketch(dom.canvasHost, {
       onDrag(grip, worldPoint) {
