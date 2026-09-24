@@ -2168,6 +2168,9 @@
     for (let i = 2; i <= limit; i += 1) { if (spf[i] !== 0) continue; for (let j = i; j <= limit; j += i) if (spf[j] === 0) spf[j] = i; }
     return spf;
   }
+  // Outputs drawn on the graph view: lists of edges (as lines or arrows) and sets of nodes.
+  const ALGO_EDGE_OUTPUTS = { "building-roads": "roads", "necessary-roads": "roads", "prufer-code": "roads", "network-renovation": "roads", "acyclic-graph-edges": "arrows", "strongly-connected-edges": "arrows", "even-outdegree-edges": "arrows", "new-flight-routes": "arrows" };
+  const ALGO_NODE_SET_OUTPUTS = new Set(["necessary-cities", "tree-centers", "critical-cities", "visiting-cities", "creating-offices"]);
   function treeLayoutFromParents(n, parent) {
     const children = [];
     for (let v = 0; v <= n; v += 1) children.push([]);
@@ -2457,7 +2460,8 @@
         const forest = forestOf(chosen.a);
         const nodeCount = forest ? forest.parent.length - 1 : (Array.isArray(chosen.a) ? chosen.a.length : (Number.isFinite(chosen.a) ? chosen.a : 0));
         const hasPositions = (list) => Array.isArray(list) && list.length > 0 && list[0] && typeof list[0] === "object" && !Array.isArray(list[0]);
-        const positions = hasPositions(chosen.positions) ? chosen.positions : (hasPositions(chosen.c) ? chosen.c : ellipseLayout(Math.min(nodeCount, 60)));
+        const treeLayout = chosen.tree && Array.isArray(chosen.b) && nodeCount <= 60 ? treeLayoutFromParents(nodeCount, parentsFromEdges(nodeCount, chosen.b)).slice(1) : null;
+        const positions = hasPositions(chosen.positions) ? chosen.positions : (hasPositions(chosen.c) ? chosen.c : (treeLayout || ellipseLayout(Math.min(nodeCount, 60))));
         const edges = forest ? forestLinks(forest) : Array.isArray(chosen.b) ? chosen.b : (chosen.functional && Array.isArray(chosen.a) ? chosen.a.map((t, i) => [i + 1, t]) : []);
         const directed = forest ? true : chosen.directed !== undefined ? chosen.directed : edges.some((edge) => edge.length > 2);
         edges.forEach((edge) => {
@@ -2468,19 +2472,40 @@
           if (edge.length > 2) out.push(label(String(edge[2]), "muted", { at: { x: (a.x + b.x) / 2 + 0.1, y: (a.y + b.y) / 2 + 0.2 } }));
         });
         positions.forEach((at, i) => out.push(point(at, String(i + 1), "input")));
+        if (isNumberList(chosen.marks)) chosen.marks.forEach((v) => { const at = positions[v - 1]; if (at) out.push(label("◆", "input", { at: { x: at.x - 0.42, y: at.y + 0.32 } })); });
         const roads = (list, styleName, dashed) => list.forEach((road) => { const a = positions[road[0] - 1], b = positions[road[1] - 1]; if (a && b) out.push(segments([[a, b]], styleName, { weight: 2, dashed })); });
         if (forest) {
           const links = (dsu, styleName, dashed) => forestLinks(dsu).forEach((link) => { const a = positions[link[0] - 1], b = positions[link[1] - 1]; if (a && b) out.push(arrow(a, b, styleName, { weight: 2, dashed })); });
           if (forestOf(context.expected)) links(forestOf(context.expected), "expected", true);
           if (forestOf(context.actual)) links(forestOf(context.actual), style, false);
           out.push(label("arrows point to parents · components " + forest.components + (forestOf(context.actual) ? " → " + forestOf(context.actual).components : ""), "input", { row: 3 }));
-        } else if (context.puzzle.id === "building-roads" || context.puzzle.id === "necessary-roads") {
-          if (Array.isArray(context.expected)) roads(context.expected, "expected", true);
-          if (Array.isArray(context.actual)) roads(context.actual, style, false);
-        } else if (context.puzzle.id === "necessary-cities") {
+        } else if (ALGO_EDGE_OUTPUTS[context.puzzle.id]) {
+          const kind = ALGO_EDGE_OUTPUTS[context.puzzle.id];
+          const draw = (list, styleName, dashed) => { if (!Array.isArray(list)) return; list.forEach((road) => { if (!Array.isArray(road)) return; const a = positions[road[0] - 1], b = positions[road[1] - 1]; if (a && b) out.push(kind === "arrows" ? arrow(a, b, styleName, { weight: 2, dashed }) : segments([[a, b]], styleName, { weight: 2, dashed })); }); };
+          draw(context.expected, "expected", true);
+          draw(context.actual, style, false);
+        } else if (ALGO_NODE_SET_OUTPUTS.has(context.puzzle.id)) {
           const mark = (list, styleName, dy) => { if (!isNumberList(list)) return; list.forEach((v) => { const at = positions[v - 1]; if (at) out.push(marker({ x: at.x, y: at.y + dy }, "", styleName, { height: 0.25 })); }); };
           mark(context.expected, "expected", -0.45);
           mark(context.actual, style, -0.7);
+        } else if (context.puzzle.id === "course-schedule" || context.puzzle.id === "course-schedule-ii") {
+          const places = (list, styleName, dy) => { if (!isNumberList(list)) return; list.forEach((v, i) => { const at = positions[v - 1]; if (at) out.push(label("#" + (i + 1), styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
+          places(context.expected, "expected", 0.45);
+          places(context.actual, style, -0.35);
+          out.push(label("labels are places in the order", "muted", { row: 3 }));
+        } else if (context.puzzle.id === "split-into-two-paths") {
+          const paths = (result, styleName, dashed) => { if (!Array.isArray(result)) return; result.forEach((route) => { if (!Array.isArray(route)) return; for (let i = 1; i < route.length; i += 1) { const a = positions[route[i - 1] - 1], b = positions[route[i] - 1]; if (a && b) out.push(arrow(a, b, styleName, { weight: 2.5, dashed })); } }); };
+          paths(context.expected, "expected", true);
+          paths(context.actual, style, false);
+        } else if ((context.actual && Array.isArray(context.actual.colors)) || (context.expected && Array.isArray(context.expected.colors))) {
+          const colors = (result, styleName, dy) => { if (!result || !Array.isArray(result.colors)) return; result.colors.forEach((c, i) => { const at = positions[i]; if (at) out.push(label("c" + c, styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
+          colors(context.expected, "expected", 0.45);
+          colors(context.actual, style, -0.35);
+        } else if (context.puzzle.id === "centroid-ancestors") {
+          const depths = (result, styleName, dy) => { if (!Array.isArray(result)) return; result.forEach((list, i) => { const at = positions[i]; if (at && Array.isArray(list)) out.push(label("L" + list.length / 2, styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
+          depths(context.expected, "expected", 0.45);
+          depths(context.actual, style, -0.35);
+          out.push(label("labels count the centroids above each node", "muted", { row: 3 }));
         } else if ((context.actual && Array.isArray(context.actual.tin)) || (context.expected && Array.isArray(context.expected.tin))) {
           const tinLow = (result, styleName, dy) => { if (!result || !Array.isArray(result.tin) || !Array.isArray(result.low)) return; result.tin.forEach((t, i) => { const at = positions[i]; if (at) out.push(label(t + "/" + result.low[i], styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
           tinLow(context.expected, "expected", 0.45);
@@ -2515,6 +2540,18 @@
         const shownTree = isNumberList(context.actual) && context.actual.length === tree.length ? context.actual : (isNumberList(context.expected) && context.expected.length === tree.length ? context.expected : tree);
         out.push(...segmentTreeLayers(shownTree, style, { highlight }));
         if (context.puzzle.id === "segment-tree-query") out.push(label("query leaves " + Math.min(Math.round(values.l), Math.round(values.r)) + " to " + Math.max(Math.round(values.l), Math.round(values.r)), "input", { row: 3 }));
+      } else if (view === "two-trees") {
+        const n = Number.isFinite(chosen.a) ? chosen.a : 1;
+        const drawTree = (edges, shift, caption) => {
+          if (!Array.isArray(edges) || n > 60) return;
+          const parentOf = parentsFromEdges(n, edges), laid = treeLayoutFromParents(n, parentOf);
+          const at = (v) => ({ x: laid[v].x * 0.5 + shift, y: laid[v].y });
+          for (let v = 1; v <= n; v += 1) if (parentOf[v] >= 1) out.push(segments([[at(parentOf[v]), at(v)]], "muted", { weight: 1.5 }));
+          for (let v = 1; v <= n; v += 1) out.push(point(at(v), String(v), "input"));
+          out.push(label(caption, "muted", { at: { x: shift - 1.2, y: -3.4 } }));
+        };
+        drawTree(chosen.b, -2.6, "first tree, drawn from 1");
+        drawTree(chosen.c, 2.6, "second tree, drawn from 1");
       } else if (view === "tree") {
         const n = Number.isFinite(chosen.a) ? chosen.a : (Array.isArray(chosen.d) ? chosen.d.length : 1);
         const links = Array.isArray(chosen.b) ? chosen.b : [];
