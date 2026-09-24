@@ -40,7 +40,7 @@ Each phase is one spec-plan-build-verify-commit cycle of roughly 20 to 40 puzzle
 | 8 | String Algorithms | 21 | polynomial hashing, Z-function, KMP, Manacher, suffix array, Aho-Corasick |
 | 9 | Geometry | 16 | cross product, convex hull, sweep line |
 | 10 | Sliding Window, Bitwise Operations, Construction Problems | 30 | monotonic deque, order-statistic structure, xor basis, SOS DP |
-| 11 | Advanced Techniques | 26 | meet in the middle, treap, offline DSU, Knuth optimisation, FFT |
+| 11 | Advanced Techniques | 25 | meet in the middle, treap, offline DSU, Knuth optimisation, FFT |
 | 12 | Advanced Graph Problems | 28 | Prüfer codes, tree hashing, bridges and articulation points, min cost flow |
 | 13 | Counting Problems | 18 | combinatorics on grids, distributions |
 | 14 | Additional Problems I | 29 | mixed |
@@ -66,7 +66,7 @@ Each phase is one spec-plan-build-verify-commit cycle of roughly 20 to 40 puzzle
 
 **Geometry (16):** Point Location Test 2189, Line Segment Intersection 2190, Polygon Area 2191, Point in Polygon 2192, Polygon Lattice Points 2193, Minimum Euclidean Distance 2194, Convex Hull 2195, Maximum Manhattan Distances 3410, All Manhattan Distances 3411, Intersection Points 1740, Line Segments Trace I 3427, Line Segments Trace II 3428, Lines and Queries I 3429, Lines and Queries II 3430, Area of Rectangles 1741, Robot Path 1742.
 
-**Advanced Techniques (26):** Meet in the Middle 1628, Hamming Distance 2136, Corner Subgrid Check 3360, Corner Subgrid Count 2137, Reachable Nodes 2138, Reachability Queries 2143, Cut and Paste 2072, Substring Reversals 2073, Reversals and Sums 2074, Necessary Roads 2076, Necessary Cities 2077, Eulerian Subgraphs 2078, Monster Game I 2084, Monster Game II 2085, Subarray Squares 2086, Houses and Schools 2087, Knuth Division 2088, Apples and Bananas 2111, One Bit Positions 2112, Signal Processing 2113, New Roads Queries 2101, Dynamic Connectivity 2133, Parcel Delivery 2121, Task Assignment 2129, Distinct Routes II 2130.
+**Advanced Techniques (25):** Meet in the Middle 1628, Hamming Distance 2136, Corner Subgrid Check 3360, Corner Subgrid Count 2137, Reachable Nodes 2138, Reachability Queries 2143, Cut and Paste 2072, Substring Reversals 2073, Reversals and Sums 2074, Necessary Roads 2076, Necessary Cities 2077, Eulerian Subgraphs 2078, Monster Game I 2084, Monster Game II 2085, Subarray Squares 2086, Houses and Schools 2087, Knuth Division 2088, Apples and Bananas 2111, One Bit Positions 2112, Signal Processing 2113, New Roads Queries 2101, Dynamic Connectivity 2133, Parcel Delivery 2121, Task Assignment 2129, Distinct Routes II 2130.
 
 **Sliding Window Problems (11):** Sliding Window Sum 3220, Sliding Window Minimum 3221, Sliding Window Xor 3426, Sliding Window Or 3405, Sliding Window Distinct Values 3222, Sliding Window Mode 3224, Sliding Window Mex 3219, Sliding Window Median 1076, Sliding Window Cost 1077, Sliding Window Inversions 3223, Sliding Window Advertisement 3227.
 
