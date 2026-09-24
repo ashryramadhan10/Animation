@@ -215,8 +215,11 @@
     handleDefs(puzzle).filter((handle) => handle.type === "slider" || handle.type === "timeline").forEach((handle) => {
       const y = laneY(puzzle, handle);
       const range = laneRange(handle);
-      out.push(lane({ x: LANE_LEFT, y }, { x: LANE_RIGHT, y }, "muted", { label: handle.label, marks: [{ at: { x: LANE_LEFT, y }, label: fmt(range.lo) }, { at: { x: LANE_RIGHT, y }, label: fmt(range.hi) }] }));
-      out.push(marker({ x: laneX(handle, values[handle.id]), y }, fmt(values[handle.id]), "input", { height: 0.22 }));
+      // "(rounded)" handles reach the function as Math.round(value), so show that integer.
+      const whole = handle.integer === true || /\(rounded\)/i.test(handle.label || "");
+      const show = (n) => (whole && Number.isFinite(n) ? String(Math.round(n)) : fmt(n));
+      out.push(lane({ x: LANE_LEFT, y }, { x: LANE_RIGHT, y }, "muted", { label: handle.label, marks: [{ at: { x: LANE_LEFT, y }, label: show(range.lo) }, { at: { x: LANE_RIGHT, y }, label: show(range.hi) }] }));
+      out.push(marker({ x: laneX(handle, values[handle.id]), y }, show(values[handle.id]), "input", { height: 0.22 }));
     });
     return out;
   }

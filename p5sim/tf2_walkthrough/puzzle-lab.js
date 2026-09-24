@@ -343,6 +343,7 @@
       const fields = document.createElement("div");
       fields.className = "handle-fields";
       const scalar = ["slider", "timeline", "dial"].includes(handle.type);
+      const whole = isWholeHandle(handle);
       const keys = scalar ? ["value"] : (handle.type === "frame" || handle.type === "pose") ? ["x", "y", "yaw"] : ["x", "y"];
       keys.forEach((key) => {
         const field = document.createElement("label");
@@ -351,7 +352,7 @@
         caption.textContent = key === "value" ? (handle.type === "dial" ? "angle °" : "value") : key === "yaw" ? "yaw °" : key;
         const input = document.createElement("input");
         input.type = handle.type === "slider" || handle.type === "timeline" ? "range" : "number";
-        input.step = input.type === "range" ? "any" : "0.1";
+        input.step = whole ? "1" : input.type === "range" ? "any" : "0.1";
         input.dataset.handleId = handle.id;
         input.dataset.key = key;
         if (input.type === "range") {
@@ -364,7 +365,7 @@
           if (!Number.isFinite(number)) return;
           if (scalar) values[handle.id] = handle.type === "dial" ? number * Math.PI / 180 : number;
           else values[handle.id] = { ...values[handle.id], [key]: key === "yaw" ? number * Math.PI / 180 : number };
-          readout.textContent = number.toFixed(2);
+          readout.textContent = formatHandleNumber(number, whole);
           renderScene();
           requestLive();
         });
@@ -383,9 +384,20 @@
       const raw = input.dataset.key === "value" ? values[handle.id] : values[handle.id][input.dataset.key];
       const number = handle.type === "dial" || input.dataset.key === "yaw" ? raw * 180 / Math.PI : raw;
       if (!Number.isFinite(number)) return;
-      input.value = String(Number(number.toFixed(2)));
-      input.nextElementSibling.textContent = number.toFixed(2);
+      const whole = isWholeHandle(handle);
+      input.value = String(whole ? Math.round(number) : Number(number.toFixed(2)));
+      input.nextElementSibling.textContent = formatHandleNumber(number, whole);
     });
+  }
+
+  // Handles labelled "(rounded)" feed Math.round(value) to the function, so their precise
+  // controls step by whole numbers and show the integer the function actually receives.
+  function isWholeHandle(handle) {
+    return handle.integer === true || /\(rounded\)/i.test(handle.label || "");
+  }
+
+  function formatHandleNumber(number, whole) {
+    return whole ? String(Math.round(number)) : number.toFixed(2);
   }
 
   function renderScene() {

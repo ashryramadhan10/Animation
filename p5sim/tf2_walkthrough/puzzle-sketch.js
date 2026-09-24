@@ -90,6 +90,20 @@
         });
         if (!settings.hud) labelBoxes.push(selected.box);
         p.push();
+        if (settings.floating) {
+          // A label pushed away from its spot keeps a faint leader back to where it belongs.
+          const home = { x: Math.max(8, Math.min(p.width - 8, x)), y: Math.max(height + 5, Math.min(p.height - 7, y)) - height * 0.35 };
+          const near = {
+            x: Math.max(selected.box.left, Math.min(selected.box.right, home.x)),
+            y: Math.max(selected.box.top, Math.min(selected.box.bottom, home.y)),
+          };
+          if (Math.hypot(near.x - home.x, near.y - home.y) > 12) {
+            p.stroke.apply(p, color(style || "muted", 120));
+            p.strokeWeight(1);
+            setDash(false);
+            p.line(home.x, home.y, near.x, near.y);
+          }
+        }
         p.noStroke();
         p.fill.apply(p, color(style || "muted"));
         p.textSize(height);
