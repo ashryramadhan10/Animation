@@ -2242,6 +2242,28 @@
     out.push(segments(lines, "muted", { weight: 1 }));
     return out;
   }
+  // A treap laid out by in-order position and depth; a flipped subtree is read mirrored, as the bricks would.
+  function treapLayers(root, left, right, caption, style) {
+    const out = [label(caption, style, { at: { x: left, y: -3.4 } })];
+    const nodes = [];
+    const walk = (t, flipped, depth, parent) => {
+      if (!t || typeof t !== "object" || nodes.length >= 63 || depth > 12) return;
+      const reversed = flipped !== Boolean(t.flip);
+      const holder = { t, depth, parent, index: -1 };
+      walk(reversed ? t.right : t.left, reversed, depth + 1, holder);
+      holder.index = nodes.length;
+      nodes.push(holder);
+      walk(reversed ? t.left : t.right, reversed, depth + 1, holder);
+    };
+    walk(root, false, 0, null);
+    if (!nodes.length) { out.push(label("empty", "muted", { at: { x: left, y: 1.4 } })); return out; }
+    const deepest = Math.max(...nodes.map((h) => h.depth));
+    const step = Math.min(0.9, 4.4 / (deepest + 1));
+    const at = (h) => ({ x: left + (right - left) * (h.index + 0.5) / nodes.length, y: 1.6 - h.depth * step });
+    nodes.forEach((h) => { if (h.parent && h.parent.index >= 0) out.push(segments([[at(h.parent), at(h)]], style, { weight: 1 })); });
+    nodes.forEach((h) => out.push(point(at(h), String(h.t.value) + (h.t.flip ? " ↔" : ""), style)));
+    return out;
+  }
   function heapTreeLayers(heap, style, offsetX, caption) {
     const out = [];
     const positions = [];
@@ -2426,14 +2448,18 @@
         const inputRows = Array.isArray(chosen.a) && chosen.a.length > 0 && (Array.isArray(chosen.a[0]) || typeof chosen.a[0] === "string") ? chosen.a : null;
         if (view === "letter-grid" || inputRows) { drawCells(inputRows, -5, "input"); out.push(label("input", "input", { at: { x: -5, y: 3.3 } })); }
         else { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" \u00b7 "), "input", { at: { x: -5, y: 3.3 } })); }
-        const shown = Array.isArray(context.actual) ? context.actual : (Array.isArray(context.expected) ? context.expected : null);
-        if (shown) { drawCells(shown, 0.4, Array.isArray(context.actual) ? style : "expected"); out.push(label(Array.isArray(context.actual) ? text : "expected", Array.isArray(context.actual) ? style : "expected", { at: { x: 0.4, y: 3.3 } })); }
+        const gridLike = (v) => Array.isArray(v) && v.length > 0 && v.every((row) => Array.isArray(row) || typeof row === "string");
+        const shown = gridLike(context.actual) ? context.actual : (gridLike(context.expected) ? context.expected : null);
+        if (shown) { drawCells(shown, 0.4, gridLike(context.actual) ? style : "expected"); out.push(label(gridLike(context.actual) ? text : "expected", gridLike(context.actual) ? style : "expected", { at: { x: 0.4, y: 3.3 } })); }
       } else if (view === "graph") {
-        const nodeCount = Array.isArray(chosen.a) ? chosen.a.length : (Number.isFinite(chosen.a) ? chosen.a : 0);
+        const forestOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && Array.isArray(v.parent) ? v : null);
+        const forestLinks = (dsu) => { const links = []; for (let v = 1; v < dsu.parent.length; v += 1) if (dsu.parent[v] !== v) links.push([v, dsu.parent[v]]); return links; };
+        const forest = forestOf(chosen.a);
+        const nodeCount = forest ? forest.parent.length - 1 : (Array.isArray(chosen.a) ? chosen.a.length : (Number.isFinite(chosen.a) ? chosen.a : 0));
         const hasPositions = (list) => Array.isArray(list) && list.length > 0 && list[0] && typeof list[0] === "object" && !Array.isArray(list[0]);
         const positions = hasPositions(chosen.positions) ? chosen.positions : (hasPositions(chosen.c) ? chosen.c : ellipseLayout(Math.min(nodeCount, 60)));
-        const edges = Array.isArray(chosen.b) ? chosen.b : (chosen.functional && Array.isArray(chosen.a) ? chosen.a.map((t, i) => [i + 1, t]) : []);
-        const directed = chosen.directed !== undefined ? chosen.directed : edges.some((edge) => edge.length > 2);
+        const edges = forest ? forestLinks(forest) : Array.isArray(chosen.b) ? chosen.b : (chosen.functional && Array.isArray(chosen.a) ? chosen.a.map((t, i) => [i + 1, t]) : []);
+        const directed = forest ? true : chosen.directed !== undefined ? chosen.directed : edges.some((edge) => edge.length > 2);
         edges.forEach((edge) => {
           const a = positions[edge[0] - 1], b = positions[edge[1] - 1];
           if (!a || !b) return;
@@ -2443,14 +2469,37 @@
         });
         positions.forEach((at, i) => out.push(point(at, String(i + 1), "input")));
         const roads = (list, styleName, dashed) => list.forEach((road) => { const a = positions[road[0] - 1], b = positions[road[1] - 1]; if (a && b) out.push(segments([[a, b]], styleName, { weight: 2, dashed })); });
-        if (context.puzzle.id === "building-roads") {
+        if (forest) {
+          const links = (dsu, styleName, dashed) => forestLinks(dsu).forEach((link) => { const a = positions[link[0] - 1], b = positions[link[1] - 1]; if (a && b) out.push(arrow(a, b, styleName, { weight: 2, dashed })); });
+          if (forestOf(context.expected)) links(forestOf(context.expected), "expected", true);
+          if (forestOf(context.actual)) links(forestOf(context.actual), style, false);
+          out.push(label("arrows point to parents · components " + forest.components + (forestOf(context.actual) ? " → " + forestOf(context.actual).components : ""), "input", { row: 3 }));
+        } else if (context.puzzle.id === "building-roads" || context.puzzle.id === "necessary-roads") {
           if (Array.isArray(context.expected)) roads(context.expected, "expected", true);
           if (Array.isArray(context.actual)) roads(context.actual, style, false);
+        } else if (context.puzzle.id === "necessary-cities") {
+          const mark = (list, styleName, dy) => { if (!isNumberList(list)) return; list.forEach((v) => { const at = positions[v - 1]; if (at) out.push(marker({ x: at.x, y: at.y + dy }, "", styleName, { height: 0.25 })); }); };
+          mark(context.expected, "expected", -0.45);
+          mark(context.actual, style, -0.7);
+        } else if ((context.actual && Array.isArray(context.actual.tin)) || (context.expected && Array.isArray(context.expected.tin))) {
+          const tinLow = (result, styleName, dy) => { if (!result || !Array.isArray(result.tin) || !Array.isArray(result.low)) return; result.tin.forEach((t, i) => { const at = positions[i]; if (at) out.push(label(t + "/" + result.low[i], styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
+          tinLow(context.expected, "expected", 0.45);
+          tinLow(context.actual, style, -0.35);
+          out.push(label("labels are tin/low", "muted", { row: 3 }));
         } else {
-          const perNode = (list, styleName, dy, prefix) => { if (!isNumberList(list)) return; list.forEach((v, i) => { const at = positions[i]; if (at) out.push(label(prefix + v, styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
+          const perNode = (list, styleName, dy, prefix) => { if (!isNumberList(list) || list.length !== nodeCount) return; list.forEach((v, i) => { const at = positions[i]; if (at) out.push(label(prefix + v, styleName, { at: { x: at.x + 0.25, y: at.y + dy } })); }); };
           perNode(context.expected, "expected", 0.45, "");
           perNode(context.actual, style, -0.35, "");
         }
+      } else if (view === "treap") {
+        const isNode = (v) => v && typeof v === "object" && !Array.isArray(v) && "priority" in v;
+        const inputs = isNode(chosen.a) && (chosen.b === null || isNode(chosen.b)) ? [[chosen.a, "a"], [chosen.b, "b"]] : [[chosen.a, "treap"]];
+        inputs.forEach(([root, caption], i) => { const width = 4.9 / inputs.length; out.push(...treapLayers(root, -5.2 + i * width, -5.2 + (i + 1) * width - 0.2, caption, "input")); });
+        if (Number.isFinite(chosen.b)) out.push(label("k = " + chosen.b, "input", { row: 3 }));
+        const result = context.actual !== null && context.actual !== undefined ? context.actual : context.expected;
+        const resultStyleName = context.actual !== null && context.actual !== undefined ? style : "expected";
+        if (isNode(result)) out.push(...treapLayers(result, 0.3, 5.2, context.actual ? text : "expected", resultStyleName));
+        else if (Array.isArray(result) && result.length === 2) { out.push(...treapLayers(result[0], 0.3, 2.6, "left", resultStyleName)); out.push(...treapLayers(result[1], 2.9, 5.2, "right", resultStyleName)); }
       } else if (view === "heap") {
         const input = Array.isArray(chosen.a) ? chosen.a : [];
         out.push(...heapTreeLayers(input, "input", -2.6, "input heap"));
@@ -2487,9 +2536,19 @@
       return out;
     },
   };
+  function treapSequence(root) {
+    const values = [];
+    const walk = (t, flipped) => { if (!t || values.length > 24) return; const reversed = flipped !== Boolean(t.flip); walk(reversed ? t.right : t.left, reversed); values.push(t.value); walk(reversed ? t.left : t.right, reversed); };
+    walk(root, false);
+    return "treap [" + values.join(", ") + (values.length > 24 ? ", …" : "") + "]";
+  }
   function describeAlgo(value) {
     if (typeof value === "number") return String(value);
     if (value === null) return "null";
+    const isNode = (v) => v && typeof v === "object" && !Array.isArray(v) && "priority" in v;
+    if (isNode(value)) return treapSequence(value);
+    if (Array.isArray(value) && value.length === 2 && value.every((v) => v === null || isNode(v))) return value.map((v) => (v ? treapSequence(v) : "empty")).join(" | ");
+    if (value && typeof value === "object" && !Array.isArray(value)) { const textValue = JSON.stringify(value); return textValue.length > 60 ? textValue.slice(0, 57) + "…" : textValue; }
     if (Array.isArray(value)) {
       const textValue = JSON.stringify(value);
       return textValue.length > 48 ? textValue.slice(0, 45) + "…" : textValue;
