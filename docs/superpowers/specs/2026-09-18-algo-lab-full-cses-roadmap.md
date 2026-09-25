@@ -43,7 +43,7 @@ Each phase is one spec-plan-build-verify-commit cycle of roughly 20 to 40 puzzle
 | 11 | Advanced Techniques | 25 | meet in the middle, treap, offline DSU, Knuth optimisation, FFT |
 | 12 | Advanced Graph Problems | 28 | Prüfer codes, tree hashing, bridges and articulation points, min cost flow |
 | 13 | Counting Problems | 18 | combinatorics on grids, distributions |
-| 14 | Additional Problems I | 29 | mixed |
+| 14 | Additional Problems I | 30 | mixed |
 | 15 | Additional Problems II | 30 | mixed |
 
 ## Task lists (site order)
@@ -78,7 +78,7 @@ Each phase is one spec-plan-build-verify-commit cycle of roughly 20 to 40 puzzle
 
 **Counting Problems (18):** Filled Subgrid Count I 3413, Filled Subgrid Count II 3414, All Letter Subgrid Count I 3415, All Letter Subgrid Count II 3416, Border Subgrid Count I 3417, Border Subgrid Count II 3418, Raab Game II 3400, Empty String 1080, Permutation Inversions 2229, Counting Bishops 2176, Counting Sequences 2228, Grid Paths II 1078, Counting Permutations 1075, Grid Completion 2429, Counting Reorders 2421, Tournament Graph Distribution 3232, Collecting Numbers Distribution 3157, Functional Graph Distribution 2415.
 
-**Additional Problems I (29):** Shortest Subsequence 1087, Distinct Values Sum 3150, Distinct Values Splits 3190, Swap Game 1670, Beautiful Permutation II 3175, Multiplication Table 2422, Bubble Sort Rounds I 3151, Bubble Sort Rounds II 3152, Nearest Campsites I 3306, Nearest Campsites II 3307, Advertisement 1142, Special Substrings 2186, Counting LCM Arrays 3169, Square Subsets 3193, Subarray Sum Constraints 3294, Water Containers Moves 3213, Water Containers Queries 3214, Stack Weights 2425, Maximum Average Subarrays 3301, Subsets with Fixed Average 3302, Two Array Average 3361, Pyramid Array 1747, Permutation Subsequence 3404, Bit Inversions 1188, Writing Numbers 1086, Letter Pair Move Game 2427, Maximum Building I 1147, Sorting Methods 1162, Cyclic Array 1191, List of Sums 2414.
+**Additional Problems I (30):** Shortest Subsequence 1087, Distinct Values Sum 3150, Distinct Values Splits 3190, Swap Game 1670, Beautiful Permutation II 3175, Multiplication Table 2422, Bubble Sort Rounds I 3151, Bubble Sort Rounds II 3152, Nearest Campsites I 3306, Nearest Campsites II 3307, Advertisement 1142, Special Substrings 2186, Counting LCM Arrays 3169, Square Subsets 3193, Subarray Sum Constraints 3294, Water Containers Moves 3213, Water Containers Queries 3214, Stack Weights 2425, Maximum Average Subarrays 3301, Subsets with Fixed Average 3302, Two Array Average 3361, Pyramid Array 1747, Permutation Subsequence 3404, Bit Inversions 1188, Writing Numbers 1086, Letter Pair Move Game 2427, Maximum Building I 1147, Sorting Methods 1162, Cyclic Array 1191, List of Sums 2414.
 
 **Additional Problems II (30):** Bouncing Ball Steps 3215, Bouncing Ball Cycle 3216, Knight Moves Queries 3218, K Subset Sums I 3108, K Subset Sums II 3109, Increasing Array II 2132, Food Division 1189, Swap Round Sorting 1698, Binary Subsequences 2430, School Excursion 1706, Coin Grid 1709, Grid Coloring II 3312, Programmers and Artists 2426, Removing Digits II 2174, Coin Arrangement 2180, Replace with Difference 3159, Grid Puzzle I 2432, Grid Puzzle II 2131, Bit Substrings 2115, Reversal Sorting 2075, Book Shop II 1159, GCD Subsets 3161, Minimum Cost Pairs 3402, Same Sum Subsets 3425, Mex Grid Queries 1157, Maximum Building II 1148, Stick Divisions 1161, Stick Difference 3401, Coding Company 1665, Two Stacks Sorting 2402.
 
