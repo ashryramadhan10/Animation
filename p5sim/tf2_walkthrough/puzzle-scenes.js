@@ -2323,6 +2323,7 @@
       roundedB: (values) => Math.round(values.b),
       roundedKString: (values) => String(Math.round(values.k)),
       roundedNString: (values) => String(Math.round(values.n)),
+      roundedOddN: (values) => 2 * Math.round(values.k) - 1,
       factorialTable: (values, puzzle) => algoFactorials(algoPreset(values, puzzle).a),
       spfTable: (values, puzzle) => algoSpf(algoPreset(values, puzzle).a),
       roundedDelta: (values) => Math.round(values.delta),
@@ -2382,7 +2383,12 @@
           chosen.a.forEach((price, i) => out.push(point({ x: -4.5 + 8.5 * price / maxPrice, y: -2.8 + 5 * chosen.b[i] / maxPages }, price + " → " + chosen.b[i] + "p", "input")));
           out.push(marker({ x: -4.5 + 8.5 * Math.min(1, Math.round(values.x) / maxPrice), y: -2.8 }, "budget " + Math.round(values.x), "muted", { height: 0.5 }));
         }
-        if (view === "number") { const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider"); out.push(label(sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id])).join(" · "), "input", { row: 3 })); }
+        if (view === "number") {
+          const sliders = context.puzzle.scene.handles.filter((handle) => handle.type === "slider");
+          const parts = sliders.map((handle) => handle.id + " = " + Math.round(values[handle.id]));
+          if (context.puzzle.scene.args.some((arg) => arg && arg.fixture === "roundedOddN")) parts.push("n = " + algoScene.fixtures.roundedOddN(values));
+          out.push(label(parts.join(" · "), "input", { row: 3 }));
+        }
       } else if (view === "rectangle") {
         const rows = Math.round(values.n !== undefined ? values.n : values.a), cols = Math.round(values.m !== undefined ? values.m : values.b);
         if (rows >= 1 && cols >= 1 && rows * cols <= 400) { const cells = []; for (let r = 0; r < rows; r += 1) cells.push(".".repeat(cols)); out.push(...algoGridLayers(cells)); }
